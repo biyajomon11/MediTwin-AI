@@ -55,7 +55,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const isMedicalRole = role === 'doctor' || role === 'nurse' || role === 'admin';
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (
       !firstName ||
@@ -73,37 +73,104 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setIsLoading(true);
 
+    const genderFormatted = gender === 'male' ? 'Male' : gender === 'female' ? 'Female' : 'Other';
+    const username = email.trim().split('@')[0];
+
+    // Try backend registration
+    let backendUserId: number | string | null = null;
+    try {
+      let endpoint = `/api/register/${role}`;
+      let bodyData: any = {
+        firstName,
+        lastName,
+        email: email.trim(),
+        password,
+      };
+
+      if (role === 'patient') {
+        bodyData = {
+          ...bodyData,
+          dob,
+          gender: genderFormatted,
+          bloodGroup,
+        };
+      } else if (role === 'doctor') {
+        bodyData = {
+          ...bodyData,
+          department,
+          specialization: department,
+        };
+      } else if (role === 'nurse') {
+        bodyData = {
+          ...bodyData,
+          department,
+        };
+      } else if (role === 'admin') {
+        bodyData = {
+          ...bodyData,
+          department,
+        };
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyData),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.userId) backendUserId = data.userId;
+      }
+    } catch (err) {
+      console.warn('Backend registration failed, using local storage fallback:', err);
+    }
+
     // Persist registered user to local database storage
     const newUserRecord = {
-      id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
+      id: backendUserId || 'USR-' + Math.floor(1000 + Math.random() * 9000),
       firstName,
       lastName,
-      gender: gender === 'male' ? 'Male' : gender === 'female' ? 'Female' : 'Other',
+      username,
+      gender: genderFormatted,
       role,
       department: isMedicalRole ? department : undefined,
       bloodGroup: !isMedicalRole ? bloodGroup : undefined,
       dob,
-      email,
+      email: email.trim(),
+      password,
       status: 'Active',
       registeredAt: new Date().toISOString().split('T')[0],
     };
 
     try {
       const existing = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
-      localStorage.setItem('meditwin_registered_users', JSON.stringify([newUserRecord, ...existing]));
+      const filtered = existing.filter((u: any) => u.email !== email.trim() && u.username !== username);
+      localStorage.setItem('meditwin_registered_users', JSON.stringify([newUserRecord, ...filtered]));
     } catch (err) {
       console.error('Error saving user to database storage:', err);
     }
 
+    setIsLoading(false);
+    setRegisteredSuccess(true);
+
+    // Write a session so the dashboard role-guard can read the verified role
+    const sessionUser = {
+      userId: newUserRecord.id,
+      email: newUserRecord.email,
+      username: newUserRecord.username,
+      role: newUserRecord.role,
+      firstName,
+      lastName,
+    };
+    localStorage.setItem('meditwin_token', 'demo-token');
+    localStorage.setItem('meditwin_user', JSON.stringify(sessionUser));
+
     setTimeout(() => {
-      setIsLoading(false);
-      setRegisteredSuccess(true);
-      setTimeout(() => {
-        const rolePath = role === 'admin' ? 'hospital-admin' : role;
-        onClose();
-        navigate(`/dashboard/${rolePath}`);
-      }, 1000);
-    }, 1200);
+      const rolePath = role === 'admin' ? 'admin' : role;
+      onClose();
+      navigate(`/dashboard/${rolePath}`);
+    }, 1000);
   };
 
   if (!isOpen) return null;
@@ -287,6 +354,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="date"
                   value={dob}
                   onChange={(e) => setDob(e.target.value)}
+                  max={new Date().toLocaleDateString('en-CA')}
                   icon={<Calendar className="w-4 h-4" />}
                   required
                   className="[color-scheme:dark]"

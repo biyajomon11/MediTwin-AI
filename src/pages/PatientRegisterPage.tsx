@@ -4,7 +4,6 @@ import { motion } from 'framer-motion';
 import {
   User,
   HeartPulse,
-  Stethoscope,
   Phone,
   ShieldCheck,
   CheckCircle2,
@@ -82,6 +81,7 @@ export const PatientRegisterPage: React.FC = () => {
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittedSuccess, setIsSubmittedSuccess] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Field change handler
   const handleChange = (
@@ -116,14 +116,14 @@ export const PatientRegisterPage: React.FC = () => {
   if (!form.dob) {
     errors.dob = 'Please enter a valid date of birth.';
   } else {
-    const dobDate = new Date(form.dob);
-    if (isNaN(dobDate.getTime())) {
-      errors.dob = 'Please enter a valid date of birth.';
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    if (form.dob > todayStr) {
+      errors.dob = 'Date of birth cannot be in the future.';
     } else {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (dobDate >= today) {
-        errors.dob = 'Date of birth must be before today.';
+      const [year, month, day] = form.dob.split('-').map(Number);
+      const dobDate = new Date(year, month - 1, day);
+      if (isNaN(dobDate.getTime())) {
+        errors.dob = 'Please enter a valid date of birth.';
       }
     }
   }
@@ -230,7 +230,7 @@ export const PatientRegisterPage: React.FC = () => {
     setTouched({});
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) {
       const allTouched: Record<string, boolean> = {};
@@ -240,34 +240,92 @@ export const PatientRegisterPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
+    setApiError(null);
 
-    // Save active patient record in localStorage
-    const newPatientRecord = {
-      id: 'PT-' + Math.floor(10000 + Math.random() * 90000),
-      firstName: form.fullName.split(' ')[0] || form.fullName,
-      lastName: form.fullName.split(' ').slice(1).join(' ') || '',
-      email: form.email,
-      role: 'patient',
-      bloodGroup: form.bloodGroup || 'O+',
-      dob: form.dob,
-      phone: `${form.countryCode} ${form.phone}`,
-      emergencyContact: `${form.emergencyName} (${form.emergencyRelationship}) - ${form.emergencyCountryCode} ${form.emergencyPhone}`,
-      status: 'Active',
-      registeredAt: new Date().toISOString().split('T')[0],
-    };
+    const nameParts = form.fullName.trim().split(' ');
+    const firstName = nameParts[0];
+    const lastName  = nameParts.slice(1).join(' ') || nameParts[0];
 
     try {
-      const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
-      localStorage.setItem('meditwin_registered_users', JSON.stringify([newPatientRecord, ...stored]));
-    } catch (err) {
-      console.error('Error saving patient registration:', err);
-    }
+      const res = await fetch('/api/register/patient', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email:                form.email.trim(),
+          password:             form.password,
+          dob:                  form.dob,
+          gender:               form.gender || undefined,
+          phone:                form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          address:              form.address || undefined,
+          bloodGroup:           form.bloodGroup || undefined,
+          emergencyContactName: form.emergencyName || undefined,
+          emergencyContactPhone:form.emergencyPhone
+            ? `${form.emergencyCountryCode} ${form.emergencyPhone}`
+            : undefined,
+        }),
+      });
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setApiError(data.error || 'Registration failed. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Save registered patient in local store
+      try {
+        const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
+        const newRecord = {
+          id: data.userId || 'USR-' + Math.floor(1000 + Math.random() * 9000),
+          firstName,
+          lastName,
+          username: form.username.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          role: 'patient',
+          dob: form.dob,
+          phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          status: 'Active',
+          registeredAt: new Date().toISOString().split('T')[0],
+        };
+        const filtered = stored.filter((u: any) => u.email !== form.email.trim() && u.username !== form.username.trim());
+        localStorage.setItem('meditwin_registered_users', JSON.stringify([newRecord, ...filtered]));
+      } catch (e) {
+        console.error('Error saving local patient record:', e);
+      }
+
       setIsSubmittedSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 1500);
+    } catch {
+      // Offline fallback: save locally
+      try {
+        const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
+        const newRecord = {
+          id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
+          firstName,
+          lastName,
+          username: form.username.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          role: 'patient',
+          dob: form.dob,
+          phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          status: 'Active',
+          registeredAt: new Date().toISOString().split('T')[0],
+        };
+        const filtered = stored.filter((u: any) => u.email !== form.email.trim() && u.username !== form.username.trim());
+        localStorage.setItem('meditwin_registered_users', JSON.stringify([newRecord, ...filtered]));
+        setIsSubmittedSuccess(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch {
+        setApiError('Network error. Please check your connection and try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -460,7 +518,7 @@ export const PatientRegisterPage: React.FC = () => {
                         value={form.dob}
                         onChange={handleChange}
                         onBlur={() => handleBlur('dob')}
-                        max={(() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })()}
+                        max={new Date().toLocaleDateString('en-CA')}
                         className={`w-full py-3 px-4 bg-navy-900 border rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none transition-all [color-scheme:dark] ${
                           touched.dob && errors.dob
                             ? 'border-rose-500 focus:border-rose-500 ring-1 ring-rose-500/30'
@@ -778,17 +836,23 @@ export const PatientRegisterPage: React.FC = () => {
 
                   {/* Known Allergies */}
                   <div className="space-y-1.5 md:col-span-2">
-                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                      Known Allergies <span className="text-gray-500 font-normal">(Optional)</span>
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                        Known Allergies <span className="text-gray-500 font-normal">(Optional)</span>
+                      </label>
+                      <span className="text-[10px] text-accent font-medium">Patient Self-Reported</span>
+                    </div>
                     <textarea
                       name="allergies"
                       rows={2}
                       value={form.allergies}
                       onChange={handleChange}
-                      placeholder="Enter any known allergies (e.g. Penicillin, Peanuts, Latex)"
+                      placeholder="Enter any known allergies (e.g. Penicillin, Peanuts, Latex, Aspirin)"
                       className="w-full py-3 px-4 bg-navy-900 border border-white/15 rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-accent resize-none"
                     />
+                    <p className="text-[11px] text-gray-400 flex items-center gap-1.5">
+                      <span className="text-amber-400 font-bold">ℹ️ Note:</span> Self-reported allergies will be reviewed, cross-checked, and clinically verified by an attending Doctor or Nurse during your initial hospital triage.
+                    </p>
                   </div>
 
                   {/* Existing Medical Conditions */}
@@ -1102,6 +1166,14 @@ export const PatientRegisterPage: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* API Error Banner */}
+              {apiError && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">
+                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
+                  <span>{apiError}</span>
+                </div>
+              )}
 
               {/* ================================================== */}
               {/* SECTION 6 — ACTION BUTTONS                         */}

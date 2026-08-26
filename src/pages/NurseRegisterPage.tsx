@@ -95,6 +95,7 @@ export const NurseRegisterPage: React.FC = () => {
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittedSuccess, setIsSubmittedSuccess] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Field change handler
   const handleChange = (
@@ -125,18 +126,19 @@ export const NurseRegisterPage: React.FC = () => {
     errors.fullName = 'Full name cannot contain numbers.';
   }
 
-  // 2. Date of Birth: Required, valid date, must be before today, user must be at least 18 years old
+  // 2. Date of Birth: Required, valid date, up to present day, user must be at least 18 years old
   if (!form.dob) {
     errors.dob = 'Date of birth is required.';
   } else {
-    const dobDate = new Date(form.dob);
-    if (isNaN(dobDate.getTime())) {
-      errors.dob = 'Please enter a valid date.';
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    if (form.dob > todayStr) {
+      errors.dob = 'Date of birth cannot be in the future.';
     } else {
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (dobDate >= today) {
-        errors.dob = 'Date of birth must be before today.';
+      const [year, month, day] = form.dob.split('-').map(Number);
+      const dobDate = new Date(year, month - 1, day);
+      if (isNaN(dobDate.getTime())) {
+        errors.dob = 'Please enter a valid date.';
       } else {
         let age = today.getFullYear() - dobDate.getFullYear();
         const m = today.getMonth() - dobDate.getMonth();
@@ -337,7 +339,7 @@ export const NurseRegisterPage: React.FC = () => {
     setTouched({});
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) {
       const allTouched: Record<string, boolean> = {};
@@ -347,37 +349,88 @@ export const NurseRegisterPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
+    setApiError(null);
 
-    // Save pending nurse record in localStorage
-    const newNurseRecord = {
-      id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
-      firstName: form.fullName.split(' ')[0] || form.fullName,
-      lastName: form.fullName.split(' ').slice(1).join(' ') || '',
-      email: form.email,
-      role: 'nurse',
-      department: form.department,
-      qualification: form.qualification,
-      specialization: form.specialization,
-      nursingRegNo: form.nursingRegNo,
-      hospital: form.hospital,
-      status: 'Pending Verification',
-      registeredAt: new Date().toISOString().split('T')[0],
-      phone: `${form.countryCode} ${form.phone}`,
-      dob: form.dob,
-    };
+    const nameParts = form.fullName.trim().split(' ');
+    const firstName = nameParts[0];
+    const lastName  = nameParts.slice(1).join(' ') || nameParts[0];
 
     try {
-      const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
-      localStorage.setItem('meditwin_registered_users', JSON.stringify([newNurseRecord, ...stored]));
-    } catch (err) {
-      console.error('Error saving pending nurse registration:', err);
-    }
+      const res = await fetch('/api/register/nurse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email:         form.email.trim(),
+          password:      form.password,
+          phone:         form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          licenseNumber: form.licenseNumber || undefined,
+          department:    form.department || undefined,
+        }),
+      });
 
-    setTimeout(() => {
-      setIsSubmitting(false);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setApiError(data.error || 'Registration failed. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Save registered nurse in local store
+      try {
+        const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
+        const newRecord = {
+          id: data.userId || 'USR-' + Math.floor(1000 + Math.random() * 9000),
+          firstName,
+          lastName,
+          username: form.username.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          role: 'nurse',
+          department: form.department,
+          licenseNumber: form.licenseNumber,
+          phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          status: 'Active',
+          registeredAt: new Date().toISOString().split('T')[0],
+        };
+        const filtered = stored.filter((u: any) => u.email !== form.email.trim() && u.username !== form.username.trim());
+        localStorage.setItem('meditwin_registered_users', JSON.stringify([newRecord, ...filtered]));
+      } catch (e) {
+        console.error('Error saving local nurse record:', e);
+      }
+
       setIsSubmittedSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 1500);
+    } catch {
+      // Offline fallback: save locally
+      try {
+        const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
+        const newRecord = {
+          id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
+          firstName,
+          lastName,
+          username: form.username.trim(),
+          email: form.email.trim(),
+          password: form.password,
+          role: 'nurse',
+          department: form.department,
+          licenseNumber: form.licenseNumber,
+          phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          status: 'Active',
+          registeredAt: new Date().toISOString().split('T')[0],
+        };
+        const filtered = stored.filter((u: any) => u.email !== form.email.trim() && u.username !== form.username.trim());
+        localStorage.setItem('meditwin_registered_users', JSON.stringify([newRecord, ...filtered]));
+        setIsSubmittedSuccess(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch {
+        setApiError('Network error. Please check your connection and try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -570,7 +623,7 @@ export const NurseRegisterPage: React.FC = () => {
                         value={form.dob}
                         onChange={handleChange}
                         onBlur={() => handleBlur('dob')}
-                        max={(() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })()}
+                        max={new Date().toLocaleDateString('en-CA')}
                         className={`w-full py-3 px-4 bg-navy-900 border rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none transition-all [color-scheme:dark] ${
                           touched.dob && errors.dob
                             ? 'border-rose-500 focus:border-rose-500 ring-1 ring-rose-500/30'
@@ -1379,6 +1432,14 @@ export const NurseRegisterPage: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* API Error Banner */}
+              {apiError && (
+                <div className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">
+                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
+                  <span>{apiError}</span>
+                </div>
+              )}
 
               {/* ================================================== */}
               {/* SECTION 6 — ACTION BUTTONS                         */}

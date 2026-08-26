@@ -131,18 +131,19 @@ export const AdminRegisterPage: React.FC = () => {
     errors.fullName = 'Full name cannot contain numbers.';
   }
 
-  // 2. Date of Birth (Age >= 18, must be before today)
+  // 2. Date of Birth (Age >= 18, up to present day)
   if (!form.dob) {
     errors.dob = 'Date of birth is required.';
   } else {
-    const dobDate = new Date(form.dob);
-    if (isNaN(dobDate.getTime())) {
-      errors.dob = 'Please enter a valid date.';
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    if (form.dob > todayStr) {
+      errors.dob = 'Date of birth cannot be in the future.';
     } else {
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (dobDate >= today) {
-        errors.dob = 'Date of birth must be before today.';
+      const [year, month, day] = form.dob.split('-').map(Number);
+      const dobDate = new Date(year, month - 1, day);
+      if (isNaN(dobDate.getTime())) {
+        errors.dob = 'Please enter a valid date.';
       } else {
         let age = today.getFullYear() - dobDate.getFullYear();
         const m = today.getMonth() - dobDate.getMonth();
@@ -336,7 +337,7 @@ export const AdminRegisterPage: React.FC = () => {
     setTouched({});
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isFormValid) {
       const allTouched: Record<string, boolean> = {};
@@ -347,18 +348,23 @@ export const AdminRegisterPage: React.FC = () => {
 
     setIsSubmitting(true);
 
-    // Save pending administrator record in localStorage
+    const firstName = form.fullName.split(' ')[0] || form.fullName;
+    const lastName = form.fullName.split(' ').slice(1).join(' ') || '';
+
+    // Save administrator record in localStorage
     const newAdminRecord = {
       id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
-      firstName: form.fullName.split(' ')[0] || form.fullName,
-      lastName: form.fullName.split(' ').slice(1).join(' ') || '',
-      email: form.officialEmail,
+      firstName,
+      lastName,
+      username: form.username.trim(),
+      email: form.officialEmail.trim(),
+      password: form.password,
       role: 'admin',
       department: form.department,
       designation: form.designation,
       hospital: form.hospitalName,
       employeeId: form.employeeId,
-      status: 'Pending Verification',
+      status: 'Active',
       registeredAt: new Date().toISOString().split('T')[0],
       phone: `${form.countryCode} ${form.phone}`,
       dob: form.dob,
@@ -366,16 +372,38 @@ export const AdminRegisterPage: React.FC = () => {
 
     try {
       const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
-      localStorage.setItem('meditwin_registered_users', JSON.stringify([newAdminRecord, ...stored]));
+      // Update or prepend record
+      const filtered = stored.filter((u: any) => u.email !== form.officialEmail.trim() && u.username !== form.username.trim());
+      localStorage.setItem('meditwin_registered_users', JSON.stringify([newAdminRecord, ...filtered]));
     } catch (err) {
-      console.error('Error saving pending administrator registration:', err);
+      console.error('Error saving administrator registration:', err);
+    }
+
+    // Try backend registration if available
+    try {
+      await fetch('/api/register/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          email: form.officialEmail.trim(),
+          password: form.password,
+          phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          hospitalName: form.hospitalName || undefined,
+          department: form.department || undefined,
+          employeeId: form.employeeId || undefined,
+        }),
+      });
+    } catch {
+      // Backend may be offline in demo mode; localStorage already updated
     }
 
     setTimeout(() => {
       setIsSubmitting(false);
       setIsSubmittedSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 1500);
+    }, 1200);
   };
 
   return (
@@ -576,7 +604,7 @@ export const AdminRegisterPage: React.FC = () => {
                         value={form.dob}
                         onChange={handleChange}
                         onBlur={() => handleBlur('dob')}
-                        max={(() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })()}
+                        max={new Date().toLocaleDateString('en-CA')}
                         className={`w-full py-3 px-4 bg-navy-900 border rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none transition-all [color-scheme:dark] ${
                           touched.dob && errors.dob
                             ? 'border-rose-500 focus:border-rose-500 ring-1 ring-rose-500/30'
