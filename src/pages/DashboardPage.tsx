@@ -6,21 +6,24 @@ import {
   LogOut, CheckCircle2, ChevronRight, ChevronDown, Brain, ClipboardList,
   LayoutDashboard, Menu, X, Users, BookOpen,
   Calendar, Pill, FlaskConical, AlertTriangle, Clock,
-  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen,
+  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen, Heart,
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { NurseObservationsPage } from './NurseObservationsPage';
 import { NursingNotesPage } from './nurse/NursingNotesPage';
-import { PatientMedicalHistoryPage } from './nurse/PatientMedicalHistoryPage';
+import { PatientMedicalHistoryPage, HistoryTab } from './nurse/PatientMedicalHistoryPage';
 import { PatientRecordsPage } from './doctor/PatientRecordsPage';
 import { AIPatientSummaryPage } from './doctor/AIPatientSummaryPage';
 import { ClinicalGuidelinesPage } from './doctor/ClinicalGuidelinesPage';
+import { getPatients as getDoctorPatients } from '../services/doctorService';
+import type { DoctorPatient, PatientStatus } from '../types';
 import { MedicalDocumentsPage } from './patient/MedicalDocumentsPage';
 import { PrescriptionsPage } from './patient/PrescriptionsPage';
 import { MedicalHistoryPage } from './patient/MedicalHistoryPage';
 import { HealthProfilePage } from './patient/HealthProfilePage';
 import { MedicineRemindersPage } from './patient/MedicineRemindersPage';
 import { NotificationsPage } from './patient/NotificationsPage';
+import { AIHealthSummaryPage } from './patient/AIHealthSummaryPage';
 import { HospitalNotificationsPage } from './hospitalAdmin/HospitalNotificationsPage';
 import { HospitalReportsPage } from './hospitalAdmin/HospitalReportsPage';
 import { HospitalActivityPage } from './hospitalAdmin/HospitalActivityPage';
@@ -56,18 +59,25 @@ const PATIENT_NAV: NavItem[] = [
   { id: 'reminders',         label: 'Medicine Reminders',    icon: Clock           },
   { id: 'notifications',     label: 'Notifications',         icon: Bell            },
   { id: 'appointments',      label: 'Appointments',          icon: Calendar, comingSoon: true },
-  { id: 'ai-health-summary', label: 'AI Health Summary',     icon: Brain,    comingSoon: true },
+  { id: 'ai-health-summary', label: 'AI Health Summary',     icon: Brain },
+];
+
+const NURSE_RECORD_SUBITEMS = [
+  { id: 'overview',     label: 'Medical Overview', icon: Heart        },
+  { id: 'medications',  label: 'Medications',      icon: Pill         },
+  { id: 'labs',         label: 'Lab Reports',      icon: FlaskConical },
+  { id: 'appointments', label: 'Appointments',     icon: Calendar     },
 ];
 
 const NURSE_NAV: NavItem[] = [
-  { id: 'dashboard',        label: 'Nurse Dashboard',                    icon: LayoutDashboard },
-  { id: 'observations',     label: 'Patient Observations & Vital Signs', icon: ClipboardList   },
-  { id: 'nursing-notes',    label: 'Nursing Notes & Treatment Records',  icon: ClipboardEdit   },
-  { id: 'medical-history',  label: 'Patient Medical History',            icon: HeartHandshake  },
-  { id: 'treatment-plans',  label: 'Treatment Plans',                    icon: Layers          },
-  { id: 'medicine-reminders', label: 'Medicine Reminders',              icon: Bell,     comingSoon: true },
-  { id: 'hospital-procedures', label: 'Hospital Procedures',            icon: BookOpen, comingSoon: true },
-  { id: 'profile',          label: 'Profile',                            icon: User,     comingSoon: true },
+  { id: 'dashboard',           label: 'Nurse Dashboard',                    icon: LayoutDashboard },
+  { id: 'observations',        label: 'Patient Observations & Vital Signs', icon: ClipboardList   },
+  { id: 'nursing-notes',       label: 'Nursing Notes & Treatment Records',  icon: ClipboardEdit   },
+  { id: 'treatment-plans',     label: 'Treatment Plans',                    icon: Layers          },
+  { id: 'clinical-records',    label: 'Patient Clinical Records',           icon: HeartHandshake, hasSubmenu: true },
+  { id: 'medicine-reminders',  label: 'Medicine Reminders',                icon: Bell,     comingSoon: true },
+  { id: 'hospital-procedures', label: 'Hospital Procedures',              icon: BookOpen, comingSoon: true },
+  { id: 'profile',             label: 'Profile',                            icon: User,     comingSoon: true },
 ];
 
 const PATIENT_RECORD_SUBITEMS = [
@@ -141,7 +151,12 @@ export const DashboardPage: React.FC = () => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [doctorRecordTab, setDoctorRecordTab] = useState<string>('overview');
+  const [doctorInitialStatus, setDoctorInitialStatus] = useState<PatientStatus | ''>('');
+  const [doctorInitialPatientId, setDoctorInitialPatientId] = useState<number | undefined>(undefined);
+  const [criticalPatientsList, setCriticalPatientsList] = useState<DoctorPatient[]>([]);
   const [patientRecordsExpanded, setPatientRecordsExpanded] = useState<boolean>(true);
+  const [nurseRecordTab, setNurseRecordTab] = useState<HistoryTab>('overview');
+  const [nurseRecordsExpanded, setNurseRecordsExpanded] = useState<boolean>(true);
 
   // ── Read the verified session role (source of truth) ──────────
   const storedUser = (() => {
@@ -195,10 +210,23 @@ export const DashboardPage: React.FC = () => {
     }
   }, [isPatient, activeView]);
 
+  // Load critical patients for doctor workstation
+  useEffect(() => {
+    if (isDoctor) {
+      getDoctorPatients(undefined, { status: 'Critical' }).then((data) => {
+        setCriticalPatientsList(data);
+      }).catch(() => {});
+    }
+  }, [isDoctor, activeView]);
+
   // ── Role guard ───────
   if (activeRole === 'doctor' && verifiedRole !== 'doctor') {
     const redirectTarget = verifiedRole ? `/dashboard/${verifiedRole}` : '/login';
     return <AccessDenied redirectTo={redirectTarget} roleName="Doctor" />;
+  }
+  if (activeRole === 'nurse' && verifiedRole !== 'nurse') {
+    const redirectTarget = verifiedRole ? `/dashboard/${verifiedRole}` : '/login';
+    return <AccessDenied redirectTo={redirectTarget} roleName="Nurse" />;
   }
   if (activeRole === 'patient' && verifiedRole && verifiedRole !== 'patient') {
     const redirectTarget = `/dashboard/${verifiedRole}`;
@@ -222,28 +250,28 @@ export const DashboardPage: React.FC = () => {
       icon:     Stethoscope,
       badge:    'Physician Workstation',
       metrics: [
-        { label: 'Assigned Patients',       value: '6',  change: '1 critical'             },
+        { label: 'Assigned Patients',       value: '6',  change: `${criticalPatientsList.length || 1} critical priority` },
         { label: 'AI Summaries Generated',  value: '14', change: 'Today'                   },
         { label: 'Clinical Guidelines',     value: '9',  change: 'Hospital-approved'       },
         { label: 'Pending Lab Reports',     value: '3',  change: 'Awaiting review'         },
       ],
       actions: [
+        '🚨 Urgent Critical Triage',
         'Review Patient Records',
         'Generate AI Summary',
         'Browse Clinical Guidelines',
-        'View Appointments',
       ],
     },
     nurse: {
       title:    'Nurse Ward Care Portal',
-      subtitle: `Head Nurse: ${displayName}`,
+      subtitle: verifiedRole === 'nurse' ? `Head Nurse: ${displayName}` : 'Head Nurse: Staff Nurse Angel Renoy',
       icon:     HeartPulse,
       badge:    'Nursing Workstation',
       metrics: [
         { label: 'Assigned Ward Beds',   value: '12',        change: 'All vitals normal' },
         { label: 'Medication Doses Due', value: '8',         change: 'Next in 15 mins'   },
         { label: 'Shift Handover Notes', value: 'Completed', change: '100% verified'      },
-        { label: 'Telemetry Alerts',     value: '0 Active',  change: 'All clear'          },
+        { label: 'Vital Signs Logged',   value: '24 Today',  change: 'Routine rounds on track' },
       ],
       actions: [
         'Record Patient Vitals',
@@ -264,10 +292,10 @@ export const DashboardPage: React.FC = () => {
         { label: 'Blood Pressure',       value: '134/86',      change: 'Optimal Range' },
       ],
       actions: [
+        'AI Health Summary',
         'Upload Medical Document',
         'View My Prescriptions',
         'Check Medicine Reminders',
-        'View Medical History',
       ],
     },
     admin: {
@@ -333,7 +361,14 @@ export const DashboardPage: React.FC = () => {
   const handleQuickAction = (action: string) => {
     if (isNurse && action === 'Record Patient Vitals') {
       setActiveView('observations');
-    } else if (isDoctor && action === 'Review Patient Records') {
+    } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records')) {
+      if (action === '🚨 Urgent Critical Triage') {
+        setDoctorInitialStatus('Critical');
+        setDoctorInitialPatientId(undefined);
+      } else {
+        setDoctorInitialStatus('');
+        setDoctorInitialPatientId(undefined);
+      }
       setActiveView('patient-records');
     } else if (isDoctor && action === 'Generate AI Summary') {
       setActiveView('ai-summaries');
@@ -352,7 +387,7 @@ export const DashboardPage: React.FC = () => {
         setActiveView('profile');
       } else if (action === 'Book Doctor Appointment') {
         setActiveView('appointments');
-      } else if (action === 'Ask AI Health Assistant') {
+      } else if (action === 'AI Health Summary' || action === 'Ask AI Health Assistant') {
         setActiveView('ai-health-summary');
       } else {
         setActiveView('documents');
@@ -555,7 +590,7 @@ export const DashboardPage: React.FC = () => {
       case 'reminders':         return <MedicineRemindersPage />;
       case 'notifications':     return <NotificationsPage onNavigateTab={(tab) => setActiveView(tab)} />;
       case 'appointments':      return <ComingSoonView label="Appointments" />;
-      case 'ai-health-summary': return <ComingSoonView label="AI Health Summary" />;
+      case 'ai-health-summary': return <AIHealthSummaryPage onNavigateTab={(tab) => setActiveView(tab)} />;
       default:                  return renderDefaultDashboard();
     }
   };
@@ -564,7 +599,13 @@ export const DashboardPage: React.FC = () => {
   const renderDoctorContent = () => {
     switch (activeView) {
       case 'patient-records':
-        return <PatientRecordsPage initialTab={doctorRecordTab} />;
+        return (
+          <PatientRecordsPage
+            initialTab={doctorRecordTab}
+            initialStatusFilter={doctorInitialStatus}
+            initialPatientId={doctorInitialPatientId}
+          />
+        );
       case 'ai-summaries':
         return <AIPatientSummaryPage />;
       case 'medical-history':
@@ -582,8 +623,208 @@ export const DashboardPage: React.FC = () => {
     }
   };
 
+  // ── Sidebar nav for nurses ─────────────────────────────────────
+  const renderNurseSidebar = (mobile = false) => (
+    <nav className="space-y-1">
+      {NURSE_NAV.map(({ id, label, icon: Icon, comingSoon, hasSubmenu }) => {
+        const isSelectedCRSection =
+          activeView === 'clinical-records' &&
+          ['overview', 'medications', 'labs', 'appointments'].includes(nurseRecordTab);
+
+        const isActive = activeView === id || (id === 'clinical-records' && isSelectedCRSection);
+
+        return (
+          <div key={id} className="space-y-1">
+            <button
+              onClick={() => {
+                if (hasSubmenu) {
+                  setActiveView('clinical-records');
+                  setNurseRecordTab('overview');
+                  setNurseRecordsExpanded((prev) => (activeView === 'clinical-records' ? !prev : true));
+                } else if (id === 'treatment-plans') {
+                  setActiveView('treatment-plans');
+                  if (mobile) setMobileNavOpen(false);
+                } else {
+                  setActiveView(id);
+                  if (mobile) setMobileNavOpen(false);
+                }
+              }}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-xs font-semibold transition-all w-full group ${
+                isActive
+                  ? 'bg-primary text-white shadow-glow-primary border border-primary-light/30'
+                  : 'text-gray-400 hover:text-white hover:bg-white/10 border border-transparent'
+              }`}
+            >
+              <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-accent'}`} />
+              <span className="flex-1">{label}</span>
+              {comingSoon && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400 font-medium">SOON</span>
+              )}
+              {hasSubmenu && (
+                <ChevronDown
+                  className={`w-3.5 h-3.5 ml-auto transition-transform duration-200 ${
+                    nurseRecordsExpanded ? 'transform rotate-180 text-white' : 'text-gray-400'
+                  }`}
+                />
+              )}
+              {!hasSubmenu && isActive && !comingSoon && <ChevronRight className="w-3 h-3 ml-auto" />}
+            </button>
+
+            {/* Clinical Records Dropdown Submenu */}
+            {hasSubmenu && (
+              <AnimatePresence>
+                {nurseRecordsExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="pl-3.5 pr-1 py-1 space-y-1 border-l-2 border-primary/30 ml-3.5 my-1"
+                  >
+                    {NURSE_RECORD_SUBITEMS.map((sub) => {
+                      const SubIcon = sub.icon;
+                      const isSubActive = activeView === 'clinical-records' && nurseRecordTab === sub.id;
+
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={() => {
+                            setActiveView('clinical-records');
+                            setNurseRecordTab(sub.id as HistoryTab);
+                            if (mobile) setMobileNavOpen(false);
+                          }}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[11px] font-medium transition-all w-full group ${
+                            isSubActive
+                              ? 'bg-accent/20 text-accent font-bold border border-accent/40 shadow-sm'
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-white/5 border border-transparent'
+                          }`}
+                        >
+                          <SubIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isSubActive ? 'text-accent' : 'text-gray-500 group-hover:text-gray-300'}`} />
+                          <span className="flex-1 truncate">{sub.label}</span>
+                          {isSubActive && <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />}
+                        </button>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
+  // ── Main content renderer for Nurse ────────────────────────────
+  const renderNurseContent = () => {
+    switch (activeView) {
+      case 'observations':
+        return <NurseObservationsPage />;
+      case 'nursing-notes':
+        return <NursingNotesPage />;
+      case 'treatment-plans':
+        return <PatientMedicalHistoryPage initialTab="treatment-plan" />;
+      case 'clinical-records':
+      case 'medical-history':
+        return <PatientMedicalHistoryPage initialTab={nurseRecordTab} />;
+      case 'medicine-reminders':
+        return <ComingSoonView label="Medicine Reminders" />;
+      case 'hospital-procedures':
+        return <ComingSoonView label="Hospital Procedures" />;
+      case 'profile':
+        return <ComingSoonView label="Profile" />;
+      default:
+        return renderDefaultDashboard();
+    }
+  };
+
   const renderDefaultDashboard = () => (
     <>
+      {/* ── Doctor Urgent Critical Care Triage Alert Banner ── */}
+      {isDoctor && criticalPatientsList.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 sm:p-6 rounded-2xl bg-gradient-to-b from-rose-950/85 via-navy-900/95 to-navy-950/95 border-2 border-rose-500/60 shadow-[0_4px_25px_rgba(244,63,94,0.2)] space-y-4"
+        >
+          {/* Top Banner Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-rose-500/20">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white font-black text-[10px] uppercase tracking-wider shadow-sm">
+                    CRITICAL CARE TRIAGE
+                  </span>
+                  <span className="text-sm font-bold text-white">
+                    {criticalPatientsList.length} Patient{criticalPatientsList.length > 1 ? 's' : ''} Requiring Immediate Attention
+                  </span>
+                </div>
+                <p className="text-xs text-rose-200/70 mt-0.5">
+                  High-acuity clinical status — review telemetry, active orders, and treatment protocols
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setDoctorInitialStatus('Critical');
+                setDoctorInitialPatientId(undefined);
+                setActiveView('patient-records');
+              }}
+              className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 hover:text-white border border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <span>View All in Records</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Clean Grid of Critical Patients */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {criticalPatientsList.map((cp) => (
+              <div
+                key={cp.id}
+                className="p-3.5 rounded-xl bg-black/40 hover:bg-black/60 border border-rose-500/30 hover:border-rose-400/60 transition-all flex items-center justify-between gap-3 group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-400 flex items-center justify-center text-white text-xs font-black flex-shrink-0 shadow-md">
+                    {cp.firstName[0]}{cp.lastName[0]}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-white truncate">{cp.firstName} {cp.lastName}</p>
+                      <span className="text-[10px] text-rose-300 font-mono font-semibold px-1 rounded bg-rose-500/20 border border-rose-500/30">
+                        P-{cp.id}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-rose-200/90 font-medium truncate mt-0.5">
+                      {cp.primaryCondition || 'Critical Care Needed'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 truncate">
+                      {cp.department} {cp.ward ? `• ${cp.ward}` : ''}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setDoctorInitialPatientId(cp.id);
+                    setDoctorInitialStatus('');
+                    setActiveView('patient-records');
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1 flex-shrink-0 cursor-pointer group-hover:scale-105 active:scale-95 whitespace-nowrap"
+                >
+                  <span>Chart</span>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       {/* Banner */}
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -608,20 +849,37 @@ export const DashboardPage: React.FC = () => {
 
       {/* Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {config.metrics.map((m, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-            className="glass-card-interactive p-5 border border-white/10 text-left flex flex-col justify-between"
-          >
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">{m.label}</div>
-            <div className="text-2xl font-black text-white mt-2 gradient-text">{m.value}</div>
-            <div className="text-[11px] text-accent mt-2 font-medium flex items-center gap-1">
-              <Activity className="w-3 h-3 text-emerald-400" /> {m.change}
-            </div>
-          </motion.div>
-        ))}
+        {config.metrics.map((m, idx) => {
+          const isDoctorPatients = isDoctor && m.label === 'Assigned Patients';
+
+          return (
+            <motion.div
+              key={idx}
+              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              onClick={() => {
+                if (isDoctorPatients) {
+                  setDoctorInitialStatus('Critical');
+                  setDoctorInitialPatientId(undefined);
+                  setActiveView('patient-records');
+                }
+              }}
+              className={`glass-card-interactive p-5 border text-left flex flex-col justify-between transition-all ${
+                isDoctorPatients ? 'border-rose-500/40 hover:border-rose-400 cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'border-white/10'
+              }`}
+            >
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center justify-between">
+                <span>{m.label}</span>
+                {isDoctorPatients && <span className="text-[10px] text-rose-300 bg-rose-500/20 px-1.5 py-0.5 rounded border border-rose-500/30">Click to Triage</span>}
+              </div>
+              <div className="text-2xl font-black text-white mt-2 gradient-text">{m.value}</div>
+              <div className={`text-[11px] mt-2 font-medium flex items-center gap-1 ${isDoctorPatients ? 'text-rose-300 font-bold' : 'text-accent'}`}>
+                {isDoctorPatients ? <AlertTriangle className="w-3 h-3 text-rose-400" /> : <Activity className="w-3 h-3 text-emerald-400" />}
+                {m.change}
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Quick Actions */}
@@ -750,43 +1008,15 @@ export const DashboardPage: React.FC = () => {
         {/* ── Nurse Sidebar ── */}
         {isNurse && (
           <>
-            <aside className="hidden sm:flex flex-col w-56 flex-shrink-0 py-6 pl-4 pr-2 space-y-1 sticky top-[73px] self-start max-h-[calc(100vh-73px)] overflow-y-auto">
-              {NURSE_NAV.map(({ id, label, icon: Icon, comingSoon }) => (
-                <button
-                  key={id}
-                  onClick={() => setActiveView(id)}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-xs font-semibold transition-all w-full group ${
-                    activeView === id
-                      ? 'bg-primary text-white shadow-glow-primary border border-primary-light/30'
-                      : 'text-gray-400 hover:text-white hover:bg-white/10 border border-transparent'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 flex-shrink-0 ${activeView === id ? 'text-white' : 'text-gray-500 group-hover:text-accent'}`} />
-                  <span className="flex-1">{label}</span>
-                  {comingSoon && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400 font-medium">SOON</span>
-                  )}
-                  {activeView === id && !comingSoon && <ChevronRight className="w-3 h-3 ml-auto" />}
-                </button>
-              ))}
+            <aside className="hidden sm:flex flex-col w-56 flex-shrink-0 py-6 pl-4 pr-2 sticky top-[73px] self-start max-h-[calc(100vh-73px)] overflow-y-auto">
+              {renderNurseSidebar(false)}
             </aside>
             {mobileNavOpen && (
               <motion.div
                 initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
-                className="sm:hidden fixed top-[73px] left-0 right-0 z-30 bg-navy-900/98 backdrop-blur-xl border-b border-white/10 px-4 py-3 space-y-1"
+                className="sm:hidden fixed top-[73px] left-0 right-0 z-30 bg-navy-900/98 backdrop-blur-xl border-b border-white/10 px-4 py-3"
               >
-                {NURSE_NAV.map(({ id, label, icon: Icon, comingSoon }) => (
-                  <button
-                    key={id}
-                    onClick={() => { setActiveView(id); setMobileNavOpen(false); }}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-sm font-semibold transition-all w-full ${
-                      activeView === id ? 'bg-primary text-white' : 'text-gray-300 hover:bg-white/10'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />{label}
-                    {comingSoon && <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400">SOON</span>}
-                  </button>
-                ))}
+                {renderNurseSidebar(true)}
               </motion.div>
             )}
           </>
@@ -815,20 +1045,8 @@ export const DashboardPage: React.FC = () => {
             renderAdminContent()
           ) : isPatient ? (
             renderPatientContent()
-          ) : isNurse && activeView === 'observations' ? (
-            <NurseObservationsPage />
-          ) : isNurse && activeView === 'nursing-notes' ? (
-            <NursingNotesPage />
-          ) : isNurse && activeView === 'medical-history' ? (
-            <PatientMedicalHistoryPage />
-          ) : isNurse && activeView === 'treatment-plans' ? (
-            <PatientMedicalHistoryPage initialTab="treatment-plan" />
-          ) : isNurse && activeView === 'medicine-reminders' ? (
-            <ComingSoonView label="Medicine Reminders" />
-          ) : isNurse && activeView === 'hospital-procedures' ? (
-            <ComingSoonView label="Hospital Procedures" />
-          ) : isNurse && activeView === 'profile' ? (
-            <ComingSoonView label="Profile" />
+          ) : isNurse ? (
+            renderNurseContent()
           ) : isDoctor ? (
             renderDoctorContent()
           ) : (

@@ -17,11 +17,9 @@ import {
   Stethoscope,
   FlaskConical,
   Loader2,
-  RefreshCw,
   AlertCircle,
   X,
 } from 'lucide-react';
-import { Button } from '../../components/Button';
 import * as patientService from '../../services/patientService';
 import type { PatientMedicalHistoryRecord, PatientHealthProfile } from '../../types';
 
@@ -161,33 +159,22 @@ export const MedicalHistoryPage: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-accent/20 text-accent text-xs font-bold border border-accent/40">
-              Patient EHR Timeline
-            </span>
-            <span className="text-xs text-emerald-400 flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" /> HIPAA Verified
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white mt-1 flex items-center gap-2.5">
-            <History className="w-7 h-7 text-accent" /> Medical History & Clinical Records
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
-            Chronological log of verified clinical diagnoses, surgeries, hospitalizations, and treatment outcomes.
-          </p>
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-accent tracking-widest uppercase">
+            Authenticated Health Record
+          </span>
+          <span className="text-gray-500">•</span>
+          <span className="text-xs text-emerald-400 flex items-center gap-1">
+            <ShieldCheck className="w-3.5 h-3.5" /> HIPAA Verified
+          </span>
         </div>
-
-        <Button
-          variant="glass"
-          onClick={loadHistoryData}
-          disabled={loading}
-          className="self-start sm:self-auto text-xs py-2 px-3 flex items-center gap-1.5"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
-        </Button>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-white mt-1 flex items-center gap-2.5">
+          <History className="w-7 h-7 text-accent" /> Medical History & Clinical Records
+        </h1>
+        <p className="text-xs sm:text-sm text-gray-400 mt-0.5">
+          Chronological log of verified clinical diagnoses, surgeries, hospitalizations, and treatment outcomes.
+        </p>
       </div>
 
       {/* ── Clinical Verification Provenance Standard Banner ── */}

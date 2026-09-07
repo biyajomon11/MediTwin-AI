@@ -8,6 +8,7 @@ import observationsRouter from './routes/observations';
 import patientsRouter     from './routes/patients';
 import registerRouter     from './routes/register';
 import doctorRouter       from './routes/doctor';
+import patientRouter      from './routes/patient';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.use(express.json());
 app.use('/api/auth',                  authRouter);
 app.use('/api/register',              registerRouter);
 app.use('/api/doctor',                doctorRouter);
+app.use('/api/patient',               patientRouter);
 app.use('/api/nurse/observations',    observationsRouter);
 app.use('/api/nurse/patients',        patientsRouter);
 

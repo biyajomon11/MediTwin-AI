@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain, RefreshCw, Copy, Printer, AlertTriangle, CheckCircle2,
@@ -47,12 +47,12 @@ export const AIPatientSummaryPage: React.FC = () => {
   const [genError, setGenError]         = useState<string | null>(null);
   const [copied, setCopied]             = useState(false);
 
-  // Load patient list on mount (lazily on first interaction)
-  const loadPatients = async () => {
+  // Load patient list on mount
+  const loadPatients = useCallback(async () => {
     if (patientsLoaded) return;
     setPatientsLoading(true);
     try {
-      const data = await getPatients();
+      const data = await getPatients(undefined, { sortBy: 'criticalFirst' });
       setPatients(data);
       setPatientsLoaded(true);
     } catch {
@@ -60,7 +60,11 @@ export const AIPatientSummaryPage: React.FC = () => {
     } finally {
       setPatientsLoading(false);
     }
-  };
+  }, [patientsLoaded]);
+
+  useEffect(() => {
+    loadPatients();
+  }, [loadPatients]);
 
   const handleGenerate = async () => {
     if (!selectedId) return;
@@ -123,6 +127,38 @@ export const AIPatientSummaryPage: React.FC = () => {
 
       {/* Patient Selector + Action Buttons */}
       <div className="glass-card p-5 border border-white/10 space-y-4">
+        {/* Critical Patient Quick Select */}
+        {patients.some(p => p.status === 'Critical') && (
+          <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs">
+            <span className="text-rose-300 font-bold flex items-center gap-1.5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+              </span>
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              Critical Patients Detected:
+            </span>
+            {patients.filter(p => p.status === 'Critical').map(cp => (
+              <button
+                key={cp.id}
+                type="button"
+                onClick={() => {
+                  setSelectedId(cp.id);
+                  setSummary(null);
+                  setGenError(null);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedId === cp.id
+                    ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-400/60'
+                    : 'bg-rose-500/20 text-rose-200 hover:bg-rose-500/40 border border-rose-500/40'
+                }`}
+              >
+                <span>⚡ {cp.firstName} {cp.lastName} ({cp.primaryCondition})</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <h3 className="text-sm font-bold text-white">Select Patient</h3>
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
@@ -139,11 +175,14 @@ export const AIPatientSummaryPage: React.FC = () => {
             >
               <option value="" className="bg-[#0F172A]">— Select a patient —</option>
               {patientsLoading && <option disabled className="bg-[#0F172A]">Loading patients...</option>}
-              {patients.map((p) => (
-                <option key={p.id} value={p.id} className="bg-[#0F172A]">
-                  {p.firstName} {p.lastName} (P-{p.id}) — {p.department}
-                </option>
-              ))}
+              {patients.map((p) => {
+                const isCrit = p.status === 'Critical';
+                return (
+                  <option key={p.id} value={p.id} className={isCrit ? 'bg-rose-950 text-rose-200 font-bold' : 'bg-[#0F172A]'}>
+                    {isCrit ? '🚨 [CRITICAL] ' : ''}{p.firstName} {p.lastName} (P-{p.id}) — {p.primaryCondition || p.department}
+                  </option>
+                );
+              })}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>

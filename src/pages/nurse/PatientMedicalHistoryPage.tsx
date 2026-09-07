@@ -15,7 +15,7 @@ import { getTallManName } from '../../utils/medicationSafety';
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab type
 // ─────────────────────────────────────────────────────────────────────────────
-type HistoryTab = 'overview' | 'medications' | 'labs' | 'appointments' | 'treatment-plan';
+export type HistoryTab = 'overview' | 'medications' | 'labs' | 'appointments' | 'treatment-plan';
 
 const TABS: { id: HistoryTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'overview',       label: 'Medical Overview',  icon: Heart        },
@@ -96,6 +96,12 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
   initialTab = 'overview',
 }) => {
   const [activeTab, setActiveTab] = useState<HistoryTab>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // ── Patients ─────────────────────────────────────────────────────
   const [patients, setPatients]       = useState<NursePatient[]>([]);

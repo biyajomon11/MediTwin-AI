@@ -671,3 +671,104 @@ export interface HospitalActivity {
   metadata?: string;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Patient Module Phase 1 — AI Health Summary Types
+// ─────────────────────────────────────────────────────────────────
+
+export interface PatientAIHealthOverview {
+  age: number | string;
+  gender: string;
+  bloodGroup: string;
+  height?: string;
+  weight?: string;
+  knownAllergiesCount: number;
+  recordedConditionsCount: number;
+  summaryText: string;
+  isComplete: boolean;
+}
+
+export interface PatientAIMedicalHistoryItem {
+  id: string;
+  date: string;
+  conditionOrEvent: string;
+  description: string;
+  hospitalOrProvider: string;
+  status: string;
+  verificationStatus?: string;
+}
+
+export interface PatientAIMedicationItem {
+  id: string;
+  medicineName: string;
+  dosage: string;
+  frequency: string;
+  route?: string;
+  duration?: string;
+  prescribedBy: string;
+  prescriptionDate: string;
+  hospitalOrSource: string;
+  instructions?: string;
+  status?: string;
+}
+
+export interface PatientAIAllergyItem {
+  id?: string;
+  substance: string;
+  reaction: string;
+  severity: string;
+  verificationStatus?: string;
+  source?: string;
+}
+
+export interface PatientAILabReportItem {
+  id: string;
+  testName: string;
+  date: string;
+  result: string;
+  referenceRange?: string;
+  status?: string;
+  hospitalOrProvider: string;
+  documentRefId?: string;
+}
+
+export interface PatientAIRecentVisitItem {
+  id: string;
+  hospital: string;
+  visitDate: string;
+  visitType: string;
+  chiefComplaint?: string;
+  recordedDiagnosis?: string;
+  treatmentSummary?: string;
+  followUp?: string;
+  caseSheetNumber?: string;
+}
+
+export interface PatientAITreatmentItem {
+  id: string;
+  title: string;
+  details: string;
+  sourceHospital: string;
+  date: string;
+  instructions?: string;
+}
+
+export interface PatientAIHealthSummary {
+  patientId: number | string;
+  generatedAt: string;
+  disclaimer: string;
+  patientInfo: {
+    name: string;
+    patientId: string;
+    hospitalName?: string;
+    dateOfBirth?: string;
+  };
+  healthOverview: PatientAIHealthOverview;
+  medicalHistory: PatientAIMedicalHistoryItem[];
+  currentMedications: PatientAIMedicationItem[];
+  allergies: PatientAIAllergyItem[];
+  laboratoryReports: PatientAILabReportItem[];
+  recentVisits: PatientAIRecentVisitItem[];
+  treatmentInformation: PatientAITreatmentItem[];
+  importantInformation: string[];
+}
+

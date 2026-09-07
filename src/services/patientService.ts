@@ -273,6 +273,43 @@ export async function deleteMedicalDocument(docId: string): Promise<void> {
   _documents = _documents.filter((d) => d.id !== docId);
 }
 
+export async function verifyMedicalDocument(
+  docId: string,
+  verifiedBy: string = 'Dr. Priya Sharma, MD (Cardiology)',
+  verificationSource: string = 'Clinical Attending Sign-Off & Diagnostic Reconciliation'
+): Promise<PatientUploadedDocument> {
+  await delay(300);
+  const idx = _documents.findIndex((d) => d.id === docId);
+  if (idx === -1) throw new Error('Document not found.');
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const updated: PatientUploadedDocument = {
+    ..._documents[idx],
+    status: 'Verified',
+    verificationStatus: 'Verified & Authenticated',
+    verifiedBy,
+    verificationSource,
+    verifiedDate: todayStr,
+  };
+
+  _documents[idx] = updated;
+
+  // Add auto notification for document verification confirmation
+  const newNotif: PatientNotification = {
+    id: `notif-${Date.now()}`,
+    patientId: updated.patientId,
+    title: 'Medical Document Verified',
+    message: `"${updated.title}" has been reviewed and clinically verified by ${verifiedBy}.`,
+    dateTime: 'Just now',
+    type: 'document',
+    isRead: false,
+    linkTab: 'documents',
+  };
+  _notifications = [newNotif, ..._notifications];
+
+  return updated;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. Medicine Reminders
 // ─────────────────────────────────────────────────────────────────────────────

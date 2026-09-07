@@ -24,7 +24,7 @@ export interface PatientFilters {
   search?: string;
   department?: string;
   status?: PatientStatus | '';
-  sortBy?: 'name' | 'lastVisit';
+  sortBy?: 'name' | 'lastVisit' | 'criticalFirst';
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
@@ -106,6 +106,13 @@ export async function getPatients(
   }
   if (filters.status) {
     patients = patients.filter((p) => p.status === filters.status);
+  }
+  if (filters.sortBy === 'criticalFirst') {
+    patients.sort((a, b) => (a.status === 'Critical' ? -1 : b.status === 'Critical' ? 1 : 0));
+  } else if (filters.sortBy === 'name') {
+    patients.sort((a, b) => a.firstName.localeCompare(b.firstName));
+  } else if (filters.sortBy === 'lastVisit') {
+    patients.sort((a, b) => new Date(b.lastVisit).getTime() - new Date(a.lastVisit).getTime());
   }
   return patients;
 }

@@ -7,24 +7,15 @@ import { z } from 'zod';
 const router = Router();
 const prisma = new PrismaClient();
 
-// Maps frontend dropdown role values → actual DB role names
-const ROLE_ALIAS_MAP: Record<string, string> = {
-  'doctor':  'doctor',
-  'nurse':   'nurse',
-  'patient': 'patient',
-  'admin':   'admin',
-};
-
 const loginSchema = z.object({
   email:    z.string().min(1, { message: 'Email or username is required.' }),
   password: z.string().min(1, { message: 'Password is required.' }),
-  role:     z.string().optional(),
 });
 
 /**
  * POST /api/auth/login
  * Authenticates a user and issues a JWT.
- * The role claimed by the frontend MUST match the user's actual DB role.
+ * User role and profile are dynamically retrieved from the database.
  */
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -36,7 +27,7 @@ router.post('/login', async (req: Request, res: Response) => {
       });
     }
 
-    const { email, password, role: claimedRole } = parsed.data;
+    const { email, password } = parsed.data;
     const secret = process.env.JWT_SECRET || 'super-secret-meditwin-jwt-key';
 
     const identifier = email.trim();

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, ArrowRight, Sparkles, AlertCircle, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Mail, ArrowRight, Sparkles, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Input } from './Input';
 import { PasswordInput } from './PasswordInput';
 import { Button } from './Button';
@@ -12,18 +12,10 @@ export const LoginForm: React.FC = () => {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('doctor');
   const [rememberMe, setRememberMe] = useState(true);
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
-
-  const roles = [
-    { value: 'doctor',  label: 'Doctor'  },
-    { value: 'nurse',   label: 'Nurse'   },
-    { value: 'patient', label: 'Patient' },
-    { value: 'admin',   label: 'Admin'   },
-  ];
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -87,7 +79,7 @@ export const LoginForm: React.FC = () => {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password, role }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
 
       const contentType = res.headers.get('content-type') ?? '';
@@ -95,10 +87,10 @@ export const LoginForm: React.FC = () => {
         const data = await res.json();
 
         if (res.ok && data.success) {
-          const dbRole = (data.user.role || '').toLowerCase();
-          const targetRole = dbRole || role.toLowerCase();
+          const dbRole = (data.user.role || 'doctor').toLowerCase();
+          const targetRole = dbRole;
 
-          // Real backend login success
+          // Real backend login success — role is dynamically retrieved from database
           const sessionUser = {
             ...data.user,
             role: targetRole,
@@ -124,7 +116,7 @@ export const LoginForm: React.FC = () => {
           }, 1000);
           return;
         } else {
-          // If backend returns 401/403, try local user fallback first before failing
+          // If backend returns 401/403, check local user fallback before failing
           if (!matchingLocalUser) {
             setErrors({ general: data.error || 'Invalid email/username or password.' });
             setIsLoading(false);
@@ -144,7 +136,7 @@ export const LoginForm: React.FC = () => {
         return;
       }
 
-      const targetRole = (matchingLocalUser.role || role).toLowerCase();
+      const targetRole = (matchingLocalUser.role || 'doctor').toLowerCase();
       writeSession({
         userId: matchingLocalUser.id || 'USR-LOCAL',
         email: matchingLocalUser.email || email.trim(),
@@ -167,31 +159,31 @@ export const LoginForm: React.FC = () => {
       return;
     }
 
-    // Built-in Demo accounts role check (prevent cross-role login)
-    const normalizedEmail = email.trim().toLowerCase();
-    if (normalizedEmail.includes('doctor') && role !== 'doctor') {
-      setErrors({ general: 'Access denied. Doctor credentials cannot log in as Nurse, Patient, or Admin.' });
-      setIsLoading(false);
+    // Fallback for built-in demo offline accounts if backend is disconnected
+    if (normalizedInput.includes('nurse')) {
+      writeSession({ userId: 'DEMO-NURSE', email: email.trim(), username: 'nurse_demo', role: 'nurse', firstName: 'Elena', lastName: 'Rostova' });
+      setLoginSuccess(true);
+      setTimeout(() => navigate('/dashboard/nurse'), 1000);
       return;
-    }
-    if (normalizedEmail.includes('nurse') && role !== 'nurse') {
-      setErrors({ general: 'Access denied. Nurse credentials cannot log in as Doctor, Patient, or Admin.' });
-      setIsLoading(false);
+    } else if (normalizedInput.includes('patient')) {
+      writeSession({ userId: 'DEMO-PATIENT', email: email.trim(), username: 'patient_demo', role: 'patient', firstName: 'John', lastName: 'Doe' });
+      setLoginSuccess(true);
+      setTimeout(() => navigate('/dashboard/patient'), 1000);
       return;
-    }
-    if (normalizedEmail.includes('patient') && role !== 'patient') {
-      setErrors({ general: 'Access denied. Patient credentials cannot log in as Doctor, Nurse, or Admin.' });
-      setIsLoading(false);
+    } else if (normalizedInput.includes('admin')) {
+      writeSession({ userId: 'DEMO-ADMIN', email: email.trim(), username: 'admin_demo', role: 'admin', firstName: 'System', lastName: 'Administrator' });
+      setLoginSuccess(true);
+      setTimeout(() => navigate('/dashboard/admin'), 1000);
       return;
-    }
-    if (normalizedEmail.includes('admin') && role !== 'admin') {
-      setErrors({ general: 'Access denied. Admin credentials cannot log in as Doctor, Nurse, or Patient.' });
-      setIsLoading(false);
+    } else if (normalizedInput.includes('doctor')) {
+      writeSession({ userId: 'DEMO-DOCTOR', email: email.trim(), username: 'doctor_demo', role: 'doctor', firstName: 'Sarah', lastName: 'Chen' });
+      setLoginSuccess(true);
+      setTimeout(() => navigate('/dashboard/doctor'), 1000);
       return;
     }
 
     // Unrecognized account
-    setErrors({ general: 'Account not found. Please check your email/username and select the correct role.' });
+    setErrors({ general: 'Invalid email/username or password. Account not found.' });
     setIsLoading(false);
   };
 
@@ -230,26 +222,6 @@ export const LoginForm: React.FC = () => {
       {/* Main Login Form */}
       <form onSubmit={handleSubmit} className="space-y-4 text-left" noValidate>
 
-        {/* Role Selector */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Login As *</label>
-          <div className="relative">
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              disabled={isLoading || loginSuccess}
-              className="w-full appearance-none bg-white/5 border border-white/15 text-white text-sm rounded-xl px-4 py-3 pr-10 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-all cursor-pointer disabled:opacity-50"
-            >
-              {roles.map((r) => (
-                <option key={r.value} value={r.value} className="bg-[#0F172A] text-white">
-                  {r.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-          </div>
-        </div>
-
         {/* Email or Username */}
         <Input
           label="Email Address or Username *"
@@ -259,7 +231,7 @@ export const LoginForm: React.FC = () => {
             setEmail(e.target.value);
             if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
           }}
-          placeholder="e.g. admin@meditwin.ai or admin_username"
+          placeholder="e.g. name@meditwin.ai or username"
           icon={<Mail className="w-4 h-4" />}
           error={errors.email}
           disabled={isLoading || loginSuccess}
@@ -328,3 +300,4 @@ export const LoginForm: React.FC = () => {
     </div>
   );
 };
+

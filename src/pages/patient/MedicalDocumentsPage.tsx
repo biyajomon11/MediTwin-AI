@@ -18,6 +18,11 @@ import {
   RefreshCw,
   Plus,
   ShieldCheck,
+  ChevronDown,
+  Filter,
+  LayoutGrid,
+  List,
+  Clock,
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import * as patientService from '../../services/patientService';
@@ -63,9 +68,10 @@ export const MedicalDocumentsPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Filtering & search
+  // Filtering, search & view mode
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   // Form & Upload state
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -74,9 +80,26 @@ export const MedicalDocumentsPage: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Modals
+  // Modals & verification
   const [previewDoc, setPreviewDoc] = useState<PatientUploadedDocument | null>(null);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  const handleVerifyDocument = async (docId: string) => {
+    try {
+      setVerifying(true);
+      const updated = await patientService.verifyMedicalDocument(docId);
+      setDocuments((prev) => prev.map((d) => (d.id === docId ? updated : d)));
+      if (previewDoc && previewDoc.id === docId) {
+        setPreviewDoc(updated);
+      }
+      setSuccessMsg(`Document "${updated.title}" has been successfully verified & authenticated.`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to verify document.');
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -554,8 +577,9 @@ export const MedicalDocumentsPage: React.FC = () => {
       </AnimatePresence>
 
       {/* ── Filters and Search ── */}
-      <div className="glass-card p-4 border border-white/10 space-y-3">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="glass-card p-4 border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+        {/* Left Side: Search + Category Dropdown Filter */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto flex-1">
           {/* Search */}
           <div className="relative w-full sm:w-80">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -564,7 +588,7 @@ export const MedicalDocumentsPage: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by title, lab, provider..."
-              className="w-full py-2.5 pl-10 pr-9 text-xs sm:text-sm text-white bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-accent/60"
+              className="w-full py-2.5 pl-10 pr-9 text-xs sm:text-sm text-white bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-accent/60 placeholder-gray-400 transition-all"
             />
             {searchQuery && (
               <button
@@ -576,71 +600,73 @@ export const MedicalDocumentsPage: React.FC = () => {
             )}
           </div>
 
-          {/* Refresh */}
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <Button variant="glass" size="sm" onClick={loadDocuments} icon={<RefreshCw className="w-3.5 h-3.5" />}>
-              Refresh
-            </Button>
+          {/* Document Category Dropdown */}
+          <div className="relative w-full sm:w-64">
+            <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full appearance-none py-2.5 pl-10 pr-10 text-xs sm:text-sm text-white bg-navy-900 border border-white/15 rounded-xl focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/40 transition-all cursor-pointer"
+            >
+              <option value="All" className="bg-navy-900 text-white">
+                All Documents ({documents.length})
+              </option>
+              {DOCUMENT_CATEGORIES.map((cat) => {
+                const count = documents.filter((d) => d.documentType === cat).length;
+                return (
+                  <option key={cat} value={cat} className="bg-navy-900 text-white">
+                    {cat} ({count})
+                  </option>
+                );
+              })}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
         </div>
 
-        {/* Categories wrapping pill tabs */}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <button
-            onClick={() => setSelectedCategory('All')}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-              selectedCategory === 'All'
-                ? 'bg-primary text-white border border-accent/40 shadow-glow-primary font-bold'
-                : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
-            }`}
-          >
-            <span>All Documents</span>
-            <span
-              className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                selectedCategory === 'All' ? 'bg-white/20 text-white' : 'bg-white/5 text-gray-400 border border-white/10'
+        {/* Right Side: View Mode Toggle & Refresh */}
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          {/* View Mode Toggle (Grid vs Table) */}
+          <div className="flex items-center p-1 bg-white/5 border border-white/10 rounded-xl">
+            <button
+              onClick={() => setViewMode('grid')}
+              title="Grid Card View"
+              className={`p-1.5 rounded-lg transition-all ${
+                viewMode === 'grid'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-gray-400 hover:text-white'
               }`}
             >
-              {documents.length}
-            </span>
-          </button>
-          {DOCUMENT_CATEGORIES.map((cat) => {
-            const count = documents.filter((d) => d.documentType === cat).length;
-            const isSelected = selectedCategory === cat;
-            return (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  isSelected
-                    ? 'bg-primary text-white border border-accent/40 shadow-glow-primary font-bold'
-                    : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
-                }`}
-              >
-                <span>{cat}</span>
-                {count > 0 && (
-                  <span
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                      isSelected ? 'bg-white/20 text-white' : 'bg-white/5 text-gray-400 border border-white/10'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('table')}
+              title="List Table View"
+              className={`p-1.5 rounded-lg transition-all ${
+                viewMode === 'table'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+
+          <Button variant="glass" size="sm" onClick={loadDocuments} icon={<RefreshCw className="w-3.5 h-3.5" />}>
+            Refresh
+          </Button>
         </div>
       </div>
 
       {/* ── Document List ── */}
-      <div className="glass-card border border-white/10 overflow-hidden">
+      <div>
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
+          <div className="glass-card border border-white/10 flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
             <Loader2 className="w-8 h-8 animate-spin text-accent" />
-            <p className="text-sm font-medium">Loading your medical information...</p>
+            <p className="text-sm font-medium">Loading your medical documents...</p>
           </div>
         ) : filteredDocs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center px-4">
+          <div className="glass-card border border-white/10 flex flex-col items-center justify-center py-20 gap-4 text-center px-4">
             <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500">
               <File className="w-8 h-8" />
             </div>
@@ -667,60 +693,181 @@ export const MedicalDocumentsPage: React.FC = () => {
               </Button>
             )}
           </div>
+        ) : viewMode === 'grid' ? (
+          /* ── Modern User-Friendly Card Grid ── */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredDocs.map((doc) => (
+              <motion.div
+                key={doc.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                whileHover={{ y: -2 }}
+                className="glass-card p-5 border border-white/15 bg-navy-900/80 backdrop-blur-xl rounded-2xl flex flex-col justify-between hover:border-accent/40 transition-all text-left space-y-4 shadow-lg group relative overflow-hidden"
+              >
+                {/* Top Ambient Highlight */}
+                <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-accent/40 via-primary/30 to-accent/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                <div className="space-y-3">
+                  {/* Category & Status Row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-accent/15 border border-accent/30 text-accent truncate">
+                      {doc.documentType}
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex-shrink-0 flex items-center gap-1 ${
+                        doc.status === 'Verified'
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          : doc.status === 'Pending Review'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                          : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
+                      }`}
+                    >
+                      {doc.status === 'Verified' ? (
+                        <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Clock className="w-3 h-3 text-amber-400" />
+                      )}
+                      <span>{doc.status}</span>
+                    </span>
+                  </div>
+
+                  {/* Document Title */}
+                  <div>
+                    <h3 className="font-bold text-white text-base leading-snug group-hover:text-accent transition-colors flex items-start gap-2">
+                      <FileText className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
+                      <span>{doc.title}</span>
+                    </h3>
+                    <p className="text-xs text-gray-300 font-medium mt-1 pl-7">
+                      {doc.reportName}
+                    </p>
+                  </div>
+
+                  {/* Metadata Grid */}
+                  <div className="pl-7 space-y-1.5 text-xs text-gray-400 border-t border-white/5 pt-3">
+                    <div className="flex items-center gap-2">
+                      <Building className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <span className="truncate text-gray-300">{doc.healthcareProvider}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        <span>Date: {doc.dateOfReport}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-white/10 text-gray-300 font-mono text-[10px]">
+                        {doc.fileType} • {doc.fileSize}
+                      </span>
+                    </div>
+                    {doc.verifiedBy && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-medium pt-0.5">
+                        <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">Verified by {doc.verifiedBy}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Optional Description */}
+                  {doc.description && (
+                    <p className="text-[11px] text-gray-400 italic bg-white/5 p-2 rounded-xl border border-white/5">
+                      "{doc.description}"
+                    </p>
+                  )}
+                </div>
+
+                {/* Card Action Buttons */}
+                <div className="pt-3 border-t border-white/10 flex items-center gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setPreviewDoc(doc)}
+                    className="flex-1 justify-center text-xs py-2 shadow-sm font-semibold"
+                    icon={<Eye className="w-3.5 h-3.5" />}
+                  >
+                    View Document
+                  </Button>
+                  {doc.status === 'Pending Review' && (
+                    <button
+                      onClick={() => handleVerifyDocument(doc.id)}
+                      title="Verify Document"
+                      disabled={verifying}
+                      className="px-2.5 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition-colors"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Verify</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setPreviewDoc(doc)}
+                    title="Download Report"
+                    className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setDeleteDocId(doc.id)}
+                    title="Delete Document"
+                    className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
         ) : (
-          <div className="overflow-x-auto">
+          /* ── Clean Responsive Table View ── */
+          <div className="glass-card border border-white/10 overflow-hidden overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-white/10 bg-white/[0.03]">
-                  {['Document Title', 'Category', 'Test / Report Name', 'Report Date', 'Provider / Hospital', 'Format', 'Uploaded', 'Status', 'Actions'].map(
-                    (head) => (
-                      <th
-                        key={head}
-                        className="px-4 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap"
-                      >
-                        {head}
-                      </th>
-                    )
-                  )}
+                  <th className="px-4 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Document</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Category</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Hospital / Provider</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Date</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Format</th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3.5 text-right text-[11px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
                 {filteredDocs.map((doc, idx) => (
                   <tr
                     key={doc.id}
-                    className={`hover:bg-white/[0.04] transition-colors ${idx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}
+                    onClick={() => setPreviewDoc(doc)}
+                    className={`hover:bg-white/[0.06] transition-colors cursor-pointer ${idx % 2 === 0 ? '' : 'bg-white/[0.01]'}`}
                   >
-                    <td className="px-4 py-3.5 font-bold text-white whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent flex-shrink-0">
-                          <FileText className="w-3.5 h-3.5" />
+                    <td className="px-4 py-3.5 font-bold text-white">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent flex-shrink-0">
+                          <FileText className="w-4 h-4" />
                         </div>
-                        <span className="truncate max-w-[200px]" title={doc.title}>
-                          {doc.title}
-                        </span>
+                        <div>
+                          <div className="text-sm font-semibold text-white hover:text-accent">{doc.title}</div>
+                          <div className="text-[11px] text-gray-400 font-normal">{doc.reportName}</div>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-accent/10 border border-accent/20 text-accent">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent/10 border border-accent/20 text-accent">
                         {doc.documentType}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-gray-300 max-w-[180px] truncate" title={doc.reportName}>
-                      {doc.reportName}
+                    <td className="px-4 py-3.5 text-gray-300">
+                      <div className="flex items-center gap-1.5">
+                        <Building className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                        <span>{doc.healthcareProvider}</span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3.5 text-gray-300 whitespace-nowrap">{doc.dateOfReport}</td>
-                    <td className="px-4 py-3.5 text-gray-300 max-w-[160px] truncate" title={doc.healthcareProvider}>
-                      {doc.healthcareProvider}
+                    <td className="px-4 py-3.5 text-gray-300 whitespace-nowrap">
+                      {doc.dateOfReport}
                     </td>
                     <td className="px-4 py-3.5 whitespace-nowrap font-mono text-[11px]">
-                      <span className="px-1.5 py-0.5 rounded bg-white/10 text-gray-300">
+                      <span className="px-2 py-0.5 rounded bg-white/10 text-gray-300">
                         {doc.fileType} • {doc.fileSize}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-gray-400 whitespace-nowrap text-[11px]">{doc.uploadedDate}</td>
                     <td className="px-4 py-3.5 whitespace-nowrap">
                       <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 ${
                           doc.status === 'Verified'
                             ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                             : doc.status === 'Pending Review'
@@ -728,24 +875,37 @@ export const MedicalDocumentsPage: React.FC = () => {
                             : 'bg-gray-500/20 text-gray-400 border-gray-500/30'
                         }`}
                       >
-                        {doc.status}
+                        {doc.status === 'Verified' ? (
+                          <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <Clock className="w-3 h-3 text-amber-400" />
+                        )}
+                        <span>{doc.status}</span>
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
+                    <td className="px-4 py-3.5 whitespace-nowrap text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => setPreviewDoc(doc)}
                           title="View & Preview"
-                          className="p-1.5 rounded-lg bg-accent/10 hover:bg-accent/25 text-accent transition-colors"
+                          className="px-2.5 py-1 rounded-lg bg-accent/15 hover:bg-accent/30 text-accent text-xs font-semibold flex items-center gap-1 transition-colors"
                         >
-                          <Eye className="w-3.5 h-3.5" />
+                          <Eye className="w-3.5 h-3.5" /> View
                         </button>
+                        {doc.status === 'Pending Review' && (
+                          <button
+                            onClick={() => handleVerifyDocument(doc.id)}
+                            title="Verify Document"
+                            disabled={verifying}
+                            className="px-2 py-1 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 transition-colors"
+                          >
+                            <ShieldCheck className="w-3 h-3" /> Verify
+                          </button>
+                        )}
                         <button
-                          onClick={() => {
-                            setPreviewDoc(doc);
-                          }}
-                          title="Download / Save"
-                          className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-400 transition-colors"
+                          onClick={() => setPreviewDoc(doc)}
+                          title="Download"
+                          className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors"
                         >
                           <Download className="w-3.5 h-3.5" />
                         </button>
@@ -828,31 +988,62 @@ export const MedicalDocumentsPage: React.FC = () => {
                 </div>
               </div>
 
-              {(previewDoc.verifiedBy || previewDoc.verificationSource) && (
-                <div className="p-3.5 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-1 text-xs">
+              {/* Verification & Authenticity Certificate Block */}
+              {previewDoc.status === 'Verified' ? (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border border-emerald-500/30 space-y-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                      Document Authentication & Clinical Sign-Off
+                    <span className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      Clinical Verification Certificate & EHR Digital Authenticity
                     </span>
-                    {previewDoc.verifiedDate && (
-                      <span className="text-[10px] text-emerald-400 font-mono">
-                        {previewDoc.verifiedDate}
-                      </span>
-                    )}
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> EHR Authenticated
+                    </span>
                   </div>
-                  {previewDoc.verifiedBy && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-emerald-500/15">
                     <p className="text-gray-200 text-xs">
                       <span className="text-gray-400 font-medium">Verified by:</span>{' '}
-                      <strong className="text-white font-semibold">{previewDoc.verifiedBy}</strong>
+                      <strong className="text-white font-semibold">{previewDoc.verifiedBy || 'Attending Clinical Specialist'}</strong>
                     </p>
-                  )}
-                  {previewDoc.verificationSource && (
-                    <p className="text-gray-300 text-[11px]">
-                      <span className="text-gray-400 font-medium">Authority / Ledger:</span>{' '}
-                      <span className="text-emerald-300 font-medium">{previewDoc.verificationSource}</span>
+                    <p className="text-gray-200 text-xs">
+                      <span className="text-gray-400 font-medium">Verification Date:</span>{' '}
+                      <span className="text-emerald-300 font-mono">{previewDoc.verifiedDate || previewDoc.dateOfReport}</span>
                     </p>
-                  )}
+                    <p className="text-gray-300 text-[11px] sm:col-span-2">
+                      <span className="text-gray-400 font-medium">Authentication Protocol:</span>{' '}
+                      <span className="text-emerald-300 font-medium">
+                        {previewDoc.verificationSource || 'Certified Diagnostic LIS / Clinical Electronic Signature'}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      Verification Status: Pending Clinical Review
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      Awaiting Sign-Off
+                    </span>
+                  </div>
+                  <p className="text-gray-300 text-xs leading-relaxed">
+                    This document was uploaded to your medical records and is currently in queue for verification and reconciliation by an attending physician or hospital records department.
+                  </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-amber-500/20">
+                    <span className="text-[11px] text-gray-400">Clinical reconciliation action:</span>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={verifying}
+                      icon={verifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                      onClick={() => handleVerifyDocument(previewDoc.id)}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs py-1.5"
+                    >
+                      {verifying ? 'Signing Off...' : 'Verify Document (Physician Sign-Off)'}
+                    </Button>
+                  </div>
                 </div>
               )}
 

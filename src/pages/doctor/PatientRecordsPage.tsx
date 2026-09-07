@@ -4,7 +4,7 @@ import {
   Search, Filter, SortAsc, ChevronRight, ArrowLeft, User, Phone,
   Mail, MapPin, Calendar, AlertTriangle, Pill, FileText, FlaskConical,
   CheckCircle2, XCircle, Plus, Save, Loader2, Users,
-  Activity, FolderOpen, RefreshCw, Printer, ShieldAlert, StopCircle, Stethoscope,
+  Activity, FolderOpen, Printer, ShieldAlert, StopCircle, Stethoscope,
 } from 'lucide-react';
 import type {
   DoctorPatient, PatientStatus, ClinicalNote, Prescription,
@@ -840,19 +840,38 @@ const PatientRecord: React.FC<{
 
 export interface PatientRecordsPageProps {
   initialTab?: string;
+  initialStatusFilter?: PatientStatus | '';
+  initialPatientId?: number;
 }
 
-export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({ initialTab = 'overview' }) => {
-  const [patients, setPatients]           = useState<DoctorPatient[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [error, setError]                 = useState<string | null>(null);
+export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
+  initialTab = 'overview',
+  initialStatusFilter = '',
+  initialPatientId,
+}) => {
+  const [patients, setPatients]               = useState<DoctorPatient[]>([]);
+  const [allPatients, setAllPatients]         = useState<DoctorPatient[]>([]);
+  const [loading, setLoading]                 = useState(true);
+  const [error, setError]                     = useState<string | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<DoctorPatient | null>(null);
   const lastTabRef = useRef<string>(initialTab);
 
   const [search, setSearch]         = useState('');
   const [department, setDepartment] = useState('');
-  const [status, setStatus]         = useState<PatientStatus | ''>('');
-  const [sortBy, setSortBy]         = useState<'name' | 'lastVisit'>('name');
+  const [status, setStatus]         = useState<PatientStatus | ''>(initialStatusFilter);
+  const [sortBy, setSortBy]         = useState<'name' | 'lastVisit' | 'criticalFirst'>('criticalFirst');
+
+  // Load all patients once for accurate filter counts & emergency alert banner
+  const loadAllPatients = useCallback(async () => {
+    try {
+      const all = await getPatients(undefined, { sortBy: 'criticalFirst' });
+      setAllPatients(all);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => { loadAllPatients(); }, [loadAllPatients]);
 
   const fetchPatients = useCallback(async () => {
     setLoading(true);
@@ -874,7 +893,16 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({ initialT
     const updated = { ...selectedPatient, clinicalNotes: [note, ...selectedPatient.clinicalNotes] };
     setSelectedPatient(updated);
     setPatients(prev => prev.map(p => p.id === updated.id ? updated : p));
+    setAllPatients(prev => prev.map(p => p.id === updated.id ? updated : p));
   };
+
+  // Auto-select patient when initialPatientId is provided
+  useEffect(() => {
+    if (initialPatientId && allPatients.length > 0 && !selectedPatient) {
+      const target = allPatients.find(p => p.id === initialPatientId);
+      if (target) setSelectedPatient(target);
+    }
+  }, [initialPatientId, allPatients, selectedPatient]);
 
   // Only auto-select when the requested tab actually changes from the navigation sidebar
   useEffect(() => {
@@ -897,18 +925,200 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({ initialT
     );
   }
 
+  // Calculate status counts
+  const pool = allPatients.length > 0 ? allPatients : patients;
+  const criticalCount   = pool.filter(p => p.status === 'Critical').length;
+  const admittedCount   = pool.filter(p => p.status === 'Admitted').length;
+  const obsCount        = pool.filter(p => p.status === 'Under Observation').length;
+  const activeCount     = pool.filter(p => p.status === 'Active').length;
+  const dischargedCount = pool.filter(p => p.status === 'Discharged').length;
+  const criticalList    = pool.filter(p => p.status === 'Critical');
+
   return (
     <div className="space-y-6">
       {/* Title */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
             <Users className="w-6 h-6 text-accent" /> Patient Records
           </h1>
-          <p className="text-sm text-gray-400 mt-1">Showing patients assigned to your care</p>
+          <p className="text-sm text-gray-400 mt-0.5">Showing patients assigned to your clinical care</p>
         </div>
-        <button onClick={fetchPatients} className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-gray-400 hover:text-white transition-colors" aria-label="Refresh">
-          <RefreshCw className="w-4 h-4" />
+
+        {criticalCount > 0 && (
+          <div className="flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold shadow-sm">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+            </span>
+            <AlertTriangle className="w-4 h-4 text-rose-400" />
+            <span>{criticalCount} Critical Patient{criticalCount > 1 ? 's' : ''} on Duty</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Emergency Priority Triage Alert Banner (always visible when critical patients exist) ── */}
+      {status !== 'Discharged' && criticalList.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 rounded-2xl bg-gradient-to-b from-rose-950/85 via-navy-900/95 to-navy-950/95 border-2 border-rose-500/60 shadow-[0_4px_25px_rgba(244,63,94,0.2)] space-y-4"
+        >
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-rose-500/20">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 flex-shrink-0">
+                <ShieldAlert className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-600 text-white font-black text-[10px] uppercase tracking-wider shadow-sm">
+                    CRITICAL CARE TRIAGE
+                  </span>
+                  <span className="text-sm font-bold text-white">
+                    {criticalList.length} Critical Patient{criticalList.length > 1 ? 's' : ''} on Service
+                  </span>
+                </div>
+                <p className="text-xs text-rose-200/70 mt-0.5">
+                  High-acuity clinical status — select any patient below for rapid chart evaluation
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setStatus('Critical')}
+              className={`self-start sm:self-auto px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                status === 'Critical'
+                  ? 'bg-rose-600 text-white border border-rose-400 shadow-md'
+                  : 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 hover:text-white border border-rose-500/40'
+              }`}
+            >
+              <span>{status === 'Critical' ? 'Filtering Critical' : 'Filter Critical Patients'}</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Clean Grid of Critical Patients */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {criticalList.map((cp) => (
+              <div
+                key={cp.id}
+                className="p-3.5 rounded-xl bg-black/40 hover:bg-black/60 border border-rose-500/30 hover:border-rose-400/60 transition-all flex items-center justify-between gap-3 group"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-rose-400 flex items-center justify-center text-white text-xs font-black flex-shrink-0 shadow-md">
+                    {cp.firstName[0]}{cp.lastName[0]}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-xs font-bold text-white truncate">{cp.firstName} {cp.lastName}</p>
+                      <span className="text-[10px] text-rose-300 font-mono font-semibold px-1 rounded bg-rose-500/20 border border-rose-500/30">
+                        P-{cp.id}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-rose-200/90 font-medium truncate mt-0.5">
+                      {cp.primaryCondition || 'Critical Care Needed'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 truncate">
+                      {cp.department} {cp.ward ? `• ${cp.ward}` : ''}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedPatient(cp)}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1 flex-shrink-0 cursor-pointer group-hover:scale-105 active:scale-95 whitespace-nowrap"
+                >
+                  <span>Chart</span>
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── 1-Click Fast Status Filter Pills ── */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+        <button
+          onClick={() => setStatus('')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            status === ''
+              ? 'bg-primary text-white border border-accent/40 shadow-glow-primary font-bold'
+              : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+          }`}
+        >
+          <span>All Patients</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/20 text-white font-bold">{pool.length}</span>
+        </button>
+
+        {criticalCount > 0 && (
+          <button
+            onClick={() => setStatus('Critical')}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer border ${
+              status === 'Critical'
+                ? 'bg-rose-600 text-white border-rose-400 shadow-[0_0_18px_rgba(244,63,94,0.5)] ring-2 ring-rose-400/50'
+                : 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 border-rose-500/40 hover:border-rose-400'
+            }`}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+            </span>
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+            <span>🚨 Critical Priority</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/40 text-white border border-rose-400/40 font-black">
+              {criticalCount}
+            </span>
+          </button>
+        )}
+
+        <button
+          onClick={() => setStatus('Admitted')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            status === 'Admitted'
+              ? 'bg-primary text-white border border-accent/40 shadow-glow-primary font-bold'
+              : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+          }`}
+        >
+          <span>Admitted</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-300">{admittedCount}</span>
+        </button>
+
+        <button
+          onClick={() => setStatus('Under Observation')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            status === 'Under Observation'
+              ? 'bg-primary text-white border border-accent/40 shadow-glow-primary font-bold'
+              : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+          }`}
+        >
+          <span>Under Observation</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-300">{obsCount}</span>
+        </button>
+
+        <button
+          onClick={() => setStatus('Active')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            status === 'Active'
+              ? 'bg-primary text-white border border-accent/40 shadow-glow-primary font-bold'
+              : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+          }`}
+        >
+          <span>Active</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-300">{activeCount}</span>
+        </button>
+
+        <button
+          onClick={() => setStatus('Discharged')}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+            status === 'Discharged'
+              ? 'bg-primary text-white border border-accent/40 shadow-glow-primary font-bold'
+              : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10 border border-white/10'
+          }`}
+        >
+          <span>Discharged</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-300">{dischargedCount}</span>
         </button>
       </div>
 
@@ -918,7 +1128,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({ initialT
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or patient ID..."
+            placeholder="Search by name, condition, or patient ID..."
             className="glass-input w-full pl-9 pr-4 py-2.5 text-sm text-white"
           />
         </div>
@@ -939,14 +1149,20 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({ initialT
       </div>
 
       {/* Sort */}
-      <div className="flex items-center gap-2 text-xs text-gray-400">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
         <SortAsc className="w-4 h-4" />
         <span>Sort by:</span>
-        {[{ v: 'name', l: 'Name' }, { v: 'lastVisit', l: 'Last Visit' }].map(({ v, l }) => (
+        {[
+          { v: 'criticalFirst', l: '🚨 Triage Priority (Critical First)' },
+          { v: 'name', l: 'Name' },
+          { v: 'lastVisit', l: 'Last Visit' },
+        ].map(({ v, l }) => (
           <button
             key={v}
-            onClick={() => setSortBy(v as 'name' | 'lastVisit')}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${sortBy === v ? 'bg-primary text-white' : 'bg-white/10 text-gray-300 hover:bg-white/20'}`}
+            onClick={() => setSortBy(v as 'name' | 'lastVisit' | 'criticalFirst')}
+            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
+              sortBy === v ? 'bg-primary text-white font-bold' : 'bg-white/10 text-gray-300 hover:bg-white/20'
+            }`}
           >
             {l}
           </button>
@@ -986,50 +1202,83 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({ initialT
       {!loading && !error && patients.length > 0 && (
         <div className="space-y-3">
           <p className="text-xs text-gray-400">{patients.length} patient{patients.length !== 1 ? 's' : ''} found</p>
-          {patients.map((p, i) => (
-            <motion.div
-              key={p.id}
-              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04 }}
-              className="glass-card-interactive p-4 sm:p-5 border border-white/10 flex flex-col sm:flex-row sm:items-center gap-4"
-            >
-              {/* Avatar */}
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white text-base font-bold flex-shrink-0">
-                {p.firstName[0]}{p.lastName[0]}
-              </div>
+          {patients.map((p, i) => {
+            const isCritical = p.status === 'Critical';
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-bold text-white">{p.firstName} {p.lastName}</p>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[p.status]}`}>{p.status}</span>
-                </div>
-                <p className="text-xs text-gray-400 mt-0.5">P-{p.id} · {p.age} yrs · {p.gender?.name} · {p.department}</p>
-                {p.primaryCondition && <p className="text-xs text-gray-300 mt-0.5 truncate">{p.primaryCondition}</p>}
-                <p className="text-[11px] text-gray-500 mt-1">Last visit: {fmtDate(p.lastVisit)}{p.nextAppointment ? ` · Next: ${fmtDate(p.nextAppointment)}` : ''}</p>
-              </div>
-
-              {/* Alerts */}
-              <div className="flex flex-wrap gap-2 flex-shrink-0">
-                {p.status === 'Critical' && (
-                  <span className="flex items-center gap-1 text-[11px] font-bold text-rose-300 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/30">
-                    <AlertTriangle className="w-3 h-3" />CRITICAL
-                  </span>
-                )}
-                {p.labReports.some(l => l.status === 'Pending') && (
-                  <span className="text-[11px] font-medium text-amber-300 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30">Pending Labs</span>
-                )}
-              </div>
-
-              {/* View */}
-              <button
-                onClick={() => setSelectedPatient(p)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary/80 transition-colors flex-shrink-0"
+            return (
+              <motion.div
+                key={p.id}
+                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.04 }}
+                className={`glass-card-interactive p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 transition-all ${
+                  isCritical
+                    ? 'border-2 border-rose-500/60 bg-gradient-to-r from-rose-950/35 via-navy-900/85 to-navy-900/90 shadow-[0_0_20px_rgba(244,63,94,0.18)]'
+                    : 'border border-white/10'
+                }`}
               >
-                View Record <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </motion.div>
-          ))}
+                {/* Avatar */}
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white text-base font-bold flex-shrink-0 ${
+                  isCritical
+                    ? 'bg-gradient-to-tr from-rose-600 to-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.4)]'
+                    : 'bg-gradient-to-tr from-primary to-accent'
+                }`}>
+                  {p.firstName[0]}{p.lastName[0]}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-bold text-white flex items-center gap-1.5">
+                      {p.firstName} {p.lastName}
+                      {isCritical && (
+                        <span className="relative flex h-2.5 w-2.5 ml-1">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                        </span>
+                      )}
+                    </p>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[p.status]}`}>{p.status}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">P-{p.id} · {p.age} yrs · {p.gender?.name} · {p.department} {p.ward ? `· ${p.ward}` : ''}</p>
+                  {p.primaryCondition && (
+                    <p className={`text-xs mt-0.5 truncate font-medium ${isCritical ? 'text-rose-200 font-bold' : 'text-gray-300'}`}>
+                      {p.primaryCondition}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-gray-500 mt-1">Last visit: {fmtDate(p.lastVisit)}{p.nextAppointment ? ` · Next: ${fmtDate(p.nextAppointment)}` : ''}</p>
+                </div>
+
+                {/* Alerts */}
+                <div className="flex flex-wrap gap-2 flex-shrink-0">
+                  {isCritical && (
+                    <span className="flex items-center gap-1 text-[11px] font-black text-white px-2.5 py-1 rounded-full bg-rose-600 border border-rose-400 shadow-sm animate-pulse">
+                      <AlertTriangle className="w-3.5 h-3.5" />CRITICAL PRIORITY
+                    </span>
+                  )}
+                  {p.labReports.some(l => l.status === 'Critical') && (
+                    <span className="flex items-center gap-1 text-[11px] font-bold text-rose-300 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40">
+                      <FlaskConical className="w-3 h-3 text-rose-400" /> Critical Labs
+                    </span>
+                  )}
+                  {p.labReports.some(l => l.status === 'Pending') && (
+                    <span className="text-[11px] font-medium text-amber-300 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30">Pending Labs</span>
+                  )}
+                </div>
+
+                {/* View */}
+                <button
+                  onClick={() => setSelectedPatient(p)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 cursor-pointer ${
+                    isCritical
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-900/40 hover:scale-105 active:scale-95'
+                      : 'bg-primary text-white hover:bg-primary/80'
+                  }`}
+                >
+                  {isCritical ? 'Open Emergency Chart' : 'View Record'} <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </motion.div>
+            );
+          })}
         </div>
       )}
     </div>

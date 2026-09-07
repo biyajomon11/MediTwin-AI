@@ -50,7 +50,9 @@ export function getCurrentNurseId(): number {
     const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
     if (raw) {
       const u = JSON.parse(raw);
-      return u.nurseId || u.id || MOCK_NURSE_SELF_ID;
+      if (u.role === 'nurse') {
+        return u.nurseId || u.id || MOCK_NURSE_SELF_ID;
+      }
     }
   } catch {
     // fallback
@@ -63,20 +65,63 @@ export function getCurrentNurseName(): string {
     const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
     if (raw) {
       const u = JSON.parse(raw);
-      if (u.firstName && u.lastName) return `${u.firstName} ${u.lastName}`;
-      if (u.firstName) return u.firstName;
-      if (u.username) return u.username;
+      if (u.role === 'nurse') {
+        if (u.firstName && u.lastName) return `${u.firstName} ${u.lastName}`;
+        if (u.firstName) return u.firstName;
+        if (u.username) return u.username;
+      }
     }
   } catch {
     // fallback
   }
-  return 'Nurse Practitioner';
+  return 'Staff Nurse Angel Renoy';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // READ: Patients accessible to the nurse on duty
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getPatients(_nurseId?: number): Promise<NursePatient[]> {
+  try {
+    const token = localStorage.getItem('meditwin_token') || sessionStorage.getItem('meditwin_token');
+    const res = await fetch('/api/doctor/patients', {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data.map((p: any) => ({
+          id: p.id,
+          patientId: `PAT-2024-${String(p.id).padStart(3, '0')}`,
+          assignedNurseId: 1,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          dateOfBirth: p.dateOfBirth || '2000-01-01',
+          age: p.age || 25,
+          gender: p.gender || { name: 'Unspecified' },
+          bloodGroup: p.bloodGroup,
+          department: p.department || 'General Medicine',
+          ward: p.ward || 'Ward 2 – Bed 12',
+          assignedDoctor: p.assignedDoctorName || 'Dr. Sarah Joseph',
+          phone: p.phone,
+          email: p.email,
+          address: p.address,
+          emergencyContactName: p.emergencyContact?.name || p.emergencyContactName,
+          emergencyContactPhone: p.emergencyContact?.phone || p.emergencyContactPhone,
+          allergies: p.allergies || [],
+          status: p.status || 'Active',
+          primaryCondition: p.primaryCondition || 'General Consultation',
+          admissionDate: p.lastVisit || '2026-08-10',
+        }));
+      }
+    }
+  } catch {
+    // fallback
+  }
+
   await delay(150);
   return [...MOCK_NURSE_PATIENTS];
 }
@@ -85,9 +130,9 @@ export async function getPatientById(
   id: number,
   _nurseId?: number,
 ): Promise<NursePatient> {
-  await delay(150);
-  const patient = MOCK_NURSE_PATIENTS.find((p) => p.id === id);
-  if (!patient) throw new Error('Patient not found in ward directory.');
+  const all = await getPatients(_nurseId);
+  const patient = all.find((p) => p.id === id);
+  if (!patient) throw new Error('Patient not found in directory.');
   return patient;
 }
 
@@ -95,10 +140,10 @@ export async function searchPatients(
   query: string,
   _nurseId?: number,
 ): Promise<NursePatient[]> {
-  await delay(150);
+  const all = await getPatients(_nurseId);
   const q = query.toLowerCase().trim();
-  if (!q) return [...MOCK_NURSE_PATIENTS];
-  return MOCK_NURSE_PATIENTS.filter(
+  if (!q) return all;
+  return all.filter(
     (p) =>
       `${p.firstName} ${p.lastName}`.toLowerCase().includes(q) ||
       p.patientId.toLowerCase().includes(q) ||
@@ -323,25 +368,91 @@ export async function deleteTreatmentRecord(id: string): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MEDICAL HISTORY (read-only for nurses)
+// MEDICAL HISTORY (read-only for nurses & doctors)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getMedicalHistory(
   patientId: number,
   _nurseId?: number,
 ): Promise<NurseMedicalHistory> {
+  // 1. Try local mock dataset match
+  const directMatch = MOCK_MEDICAL_HISTORIES.find((h) => h.patientId === patientId);
+  if (directMatch) return directMatch;
+
+  // 2. Try fetching from live backend
+  try {
+    const token = localStorage.getItem('meditwin_token') || sessionStorage.getItem('meditwin_token');
+    const res = await fetch(`/api/doctor/patients/${patientId}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        const p = json.data;
+        return {
+          patientId: p.id,
+          conditions: (p.medicalHistory || []).map((m: any) => ({
+            condition: m.condition,
+            diagnosedDate: m.diagnosedDate,
+            status: m.status || 'Active',
+            notes: m.notes,
+          })),
+          hospitalizations: [],
+          surgeries: [],
+          familyHistory: 'Family medical history on file.',
+          currentMedications: (p.currentMedications || []).map((med: any) => ({
+            name: med.name,
+            dosage: med.dosage,
+            frequency: med.frequency,
+            startDate: med.startDate,
+            prescribedBy: med.prescribedBy,
+            status: 'Active',
+          })),
+          labReports: (p.labReports || []).map((l: any) => ({
+            id: l.id,
+            testName: l.testName,
+            date: l.date,
+            result: l.result,
+            referenceRange: l.referenceRange,
+            unit: l.unit,
+            status: l.status,
+            orderedBy: p.assignedDoctorName || 'Dr. Sarah Joseph',
+            notes: l.notes,
+          })),
+          appointments: (p.appointments || []).map((a: any) => ({
+            id: a.id,
+            date: a.date,
+            time: a.time,
+            reason: a.reason,
+            doctorName: a.doctorName,
+            department: p.department || 'General Medicine',
+            status: a.status,
+            notes: a.notes,
+          })),
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
   await delay(150);
-  const history = MOCK_MEDICAL_HISTORIES.find((h) => h.patientId === patientId) || MOCK_MEDICAL_HISTORIES[0];
-  if (!history) throw new Error('No medical history found for this patient.');
-  return history;
+  return MOCK_MEDICAL_HISTORIES[0];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TREATMENT PLAN (read-only for nurses)
+// TREATMENT PLAN (read-only for nurses & doctors)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getTreatmentPlan(
   patientId: number,
   _nurseId?: number,
 ): Promise<NurseTreatmentPlan | null> {
+  const directPlan = MOCK_TREATMENT_PLANS.find((tp) => tp.patientId === patientId);
+  if (directPlan) return directPlan;
+
   await delay(150);
-  return MOCK_TREATMENT_PLANS.find((tp) => tp.patientId === patientId) ?? MOCK_TREATMENT_PLANS[0] ?? null;
+  return MOCK_TREATMENT_PLANS[0] ?? null;
 }
