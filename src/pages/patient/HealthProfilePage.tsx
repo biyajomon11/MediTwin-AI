@@ -15,7 +15,6 @@ import {
   AlertCircle,
   Lock,
   Loader2,
-  RefreshCw,
   Stethoscope,
   Building2,
   Calendar,
@@ -191,8 +190,8 @@ export const HealthProfilePage: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {!isEditing && (
+          {!isEditing && (
+            <div className="flex items-center gap-2">
               <Button
                 variant="primary"
                 size="sm"
@@ -201,11 +200,8 @@ export const HealthProfilePage: React.FC = () => {
               >
                 Edit Contact Info
               </Button>
-            )}
-            <Button variant="glass" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={loadProfile}>
-              Refresh
-            </Button>
-          </div>
+            </div>
+          )}
         </div>
       </motion.div>
 

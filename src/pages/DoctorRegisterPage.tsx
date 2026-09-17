@@ -37,7 +37,7 @@ export interface DoctorFormData {
   specialization: string;
   department: string;
   experienceYears: string;
-  hospital: string;
+  designation: string;
   licenseNumber: string;
   issuingAuthority: string;
   licenseExpiry: string;
@@ -62,7 +62,7 @@ const initialForm: DoctorFormData = {
   specialization: 'General Medicine',
   department: 'General Medicine',
   experienceYears: '',
-  hospital: '',
+  designation: '',
   licenseNumber: '',
   issuingAuthority: '',
   licenseExpiry: '',
@@ -196,9 +196,9 @@ export const DoctorRegisterPage: React.FC = () => {
     }
   }
 
-  // 11. Hospital
-  if (!form.hospital.trim()) {
-    errors.hospital = 'Hospital or Organization is required.';
+  // 11. Clinical Designation
+  if (!form.designation.trim()) {
+    errors.designation = 'Clinical designation / title is required.';
   }
 
   // 12. Medical License Number
@@ -922,34 +922,34 @@ export const DoctorRegisterPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Hospital / Organization */}
+                  {/* Clinical Designation / Title */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                      Hospital / Organization *
+                      Clinical Designation / Title *
                     </label>
                     <div className="relative">
                       <input
                         type="text"
-                        name="hospital"
-                        value={form.hospital}
+                        name="designation"
+                        value={form.designation}
                         onChange={handleChange}
-                        onBlur={() => handleBlur('hospital')}
-                        placeholder="e.g. Mayo Clinic / St. Jude Hospital"
+                        onBlur={() => handleBlur('designation')}
+                        placeholder="e.g. Senior Consultant / Attending Physician / Resident"
                         className={`w-full py-3 px-4 bg-navy-900 border rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none transition-all ${
-                          touched.hospital && errors.hospital
+                          touched.designation && errors.designation
                             ? 'border-rose-500 focus:border-rose-500 ring-1 ring-rose-500/30'
-                            : touched.hospital && !errors.hospital
+                            : touched.designation && !errors.designation
                             ? 'border-emerald-500/80 focus:border-emerald-500'
                             : 'border-white/15 focus:border-accent'
                         }`}
                       />
-                      {touched.hospital && !errors.hospital && (
+                      {touched.designation && !errors.designation && (
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 absolute right-3.5 top-3.5" />
                       )}
                     </div>
-                    {touched.hospital && errors.hospital && (
+                    {touched.designation && errors.designation && (
                       <p className="text-xs text-rose-400 flex items-center gap-1 mt-1">
-                        <AlertCircle className="w-3.5 h-3.5" /> {errors.hospital}
+                        <AlertCircle className="w-3.5 h-3.5" /> {errors.designation}
                       </p>
                     )}
                   </div>

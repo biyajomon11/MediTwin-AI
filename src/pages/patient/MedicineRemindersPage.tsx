@@ -12,7 +12,6 @@ import {
   Eye,
   AlertCircle,
   Loader2,
-  RefreshCw,
   ChevronDown,
   Filter,
   Search,
@@ -200,9 +199,6 @@ export const MedicineRemindersPage: React.FC = () => {
               </p>
             </div>
           </div>
-          <Button variant="glass" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={loadReminders}>
-            Refresh
-          </Button>
         </div>
       </motion.div>
 

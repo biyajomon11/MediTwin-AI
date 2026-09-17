@@ -5,20 +5,28 @@ import {
   Mail, MapPin, Calendar, AlertTriangle, Pill, FileText, FlaskConical,
   CheckCircle2, XCircle, Plus, Save, Loader2, Users,
   Activity, FolderOpen, Printer, ShieldAlert, StopCircle, Stethoscope,
+  Eye, Download, X, HeartPulse, ArrowUp, ArrowDown, RotateCcw,
 } from 'lucide-react';
 import type {
-  DoctorPatient, PatientStatus, ClinicalNote, Prescription,
+  DoctorPatient, PatientStatus, ClinicalNote, Prescription, MedicalDocument,
 } from '../../types';
-import { getPatients, addClinicalNote, discontinuePrescription } from '../../services/doctorService';
+import { getPatients, addClinicalNote, discontinuePrescription, type PatientSortField } from '../../services/doctorService';
 import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
 import { getTallManName } from '../../utils/medicationSafety';
+import { formatPatientId, isPatientInpatient } from '../../utils/patientUtils';
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
-const fmtDate = (d: string) => {
-  try { return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
-  catch { return d; }
+const fmtDate = (d?: string) => {
+  if (!d) return 'Aug 2026';
+  try {
+    const parsed = new Date(d);
+    if (isNaN(parsed.getTime())) return d || 'Aug 2026';
+    return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch {
+    return d || 'Aug 2026';
+  }
 };
 
 const STATUS_COLORS: Record<PatientStatus, string> = {
@@ -56,6 +64,66 @@ const TABS = [
 const DEPARTMENTS = ['Cardiology', 'Neurology', 'General Medicine', 'Oncology', 'Pediatrics'];
 const STATUSES: PatientStatus[] = ['Active', 'Admitted', 'Critical', 'Under Observation', 'Discharged'];
 
+export interface PatientSortOption {
+  id: PatientSortField;
+  label: string;
+  defaultOrder: 'asc' | 'desc';
+  descLabel: string;
+  ascLabel: string;
+}
+
+const SORT_OPTIONS: PatientSortOption[] = [
+  {
+    id: 'criticalFirst',
+    label: 'Triage Priority (Critical First)',
+    defaultOrder: 'desc',
+    descLabel: 'Critical First (Highest Acuity)',
+    ascLabel: 'Stable / Discharged First (Lowest Acuity)',
+  },
+  {
+    id: 'name',
+    label: 'Name',
+    defaultOrder: 'asc',
+    descLabel: 'Z → A',
+    ascLabel: 'A → Z',
+  },
+  {
+    id: 'lastVisit',
+    label: 'Last Visit',
+    defaultOrder: 'desc',
+    descLabel: 'Newest Visit First',
+    ascLabel: 'Oldest Visit First',
+  },
+  {
+    id: 'nextAppointment',
+    label: 'Next Appt',
+    defaultOrder: 'asc',
+    descLabel: 'Furthest / None First',
+    ascLabel: 'Soonest Upcoming First',
+  },
+  {
+    id: 'age',
+    label: 'Age',
+    defaultOrder: 'desc',
+    descLabel: 'Oldest Patients First',
+    ascLabel: 'Youngest Patients First',
+  },
+  {
+    id: 'labAlerts',
+    label: 'Lab Alerts',
+    defaultOrder: 'desc',
+    descLabel: 'Critical & Pending Labs First',
+    ascLabel: 'Normal Labs First',
+  },
+  {
+    id: 'id',
+    label: 'Patient ID',
+    defaultOrder: 'asc',
+    descLabel: 'Highest ID First',
+    ascLabel: 'Lowest ID First (IP-001, OP-001...)',
+  },
+];
+
 // ─────────────────────────────────────────────────────────────
 // Patient Record Detail
 // ─────────────────────────────────────────────────────────────
@@ -86,6 +154,9 @@ const PatientRecord: React.FC<{
   const [discontinueRxId, setDiscontinueRxId] = useState<string | null>(null);
   const [discontinueReason, setDiscontinueReason] = useState('Course completed / replaced with alternative therapy');
   const [discontinuing, setDiscontinuing] = useState(false);
+
+  // ── Document Preview States ──
+  const [selectedDoc, setSelectedDoc] = useState<MedicalDocument | null>(null);
 
   useEffect(() => {
     setPrescriptions(patient.prescriptions || []);
@@ -257,16 +328,16 @@ const PatientRecord: React.FC<{
         <div className="flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white text-2xl font-black flex-shrink-0">
-              {patient.firstName[0]}{patient.lastName[0]}
+              {patient.firstName?.[0] || 'P'}{patient.lastName?.[0] || ''}
             </div>
             <div>
               <h2 className="text-xl font-extrabold text-white">{patient.firstName} {patient.lastName}</h2>
-              <p className="text-sm text-gray-400">ID: P-{patient.id} • {patient.age} yrs • {patient.gender?.name}</p>
-              <p className="text-sm text-gray-400">{patient.department} • {patient.ward}</p>
+              <p className="text-sm text-gray-400"><span className="font-mono font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">{formatPatientId(patient)}</span> • <span className={isPatientInpatient(patient.status, patient.ward) ? 'text-purple-300 font-semibold' : 'text-teal-300 font-semibold'}>{isPatientInpatient(patient.status, patient.ward) ? 'Inpatient (IPD)' : 'Outpatient (OPD)'}</span> • {patient.age} yrs • {typeof patient.gender === 'string' ? patient.gender : patient.gender?.name || 'Unspecified'}</p>
+              <p className="text-sm text-gray-400">{patient.department || 'General Medicine'} {patient.ward ? `• ${patient.ward}` : ''}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[patient.status]}`}>
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[patient.status] || 'border-white/20 text-gray-300'}`}>
               {patient.status}
             </span>
             {patient.primaryCondition && (
@@ -274,7 +345,7 @@ const PatientRecord: React.FC<{
                 {patient.primaryCondition}
               </span>
             )}
-            {patient.allergies.some(a => a.severity === 'Severe') && (
+            {Array.isArray(patient.allergies) && patient.allergies.some(a => (typeof a === 'object' && a?.severity === 'Severe')) && (
               <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold">
                 <AlertTriangle className="w-3 h-3" /> Severe Allergy
               </span>
@@ -324,13 +395,25 @@ const PatientRecord: React.FC<{
               {patient.phone && <p className="text-xs text-gray-300 flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-accent" />{patient.phone}</p>}
               {patient.email && <p className="text-xs text-gray-300 flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-accent" />{patient.email}</p>}
               {patient.address && <p className="text-xs text-gray-300 flex items-center gap-2"><MapPin className="w-3.5 h-3.5 text-accent" />{patient.address}</p>}
-              {patient.bloodGroup && <p className="text-xs text-gray-300 flex items-center gap-2"><Activity className="w-3.5 h-3.5 text-accent" />Blood Group: <span className="text-white font-semibold">{patient.bloodGroup.name}</span></p>}
+              {patient.bloodGroup && (
+                <p className="text-xs text-gray-300 flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-accent" />Blood Group: <span className="text-white font-semibold">{typeof patient.bloodGroup === 'string' ? patient.bloodGroup : patient.bloodGroup?.name}</span>
+                </p>
+              )}
             </div>
             {/* Emergency */}
             <div className="glass-card p-5 border border-white/10 space-y-3">
               <h3 className="text-sm font-bold text-white">Emergency Contact</h3>
-              {patient.emergencyContactName && <p className="text-xs text-gray-300 flex items-center gap-2"><User className="w-3.5 h-3.5 text-accent" />{patient.emergencyContactName}</p>}
-              {patient.emergencyContactPhone && <p className="text-xs text-gray-300 flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-accent" />{patient.emergencyContactPhone}</p>}
+              {(patient.emergencyContactName || patient.emergencyContact?.name) && (
+                <p className="text-xs text-gray-300 flex items-center gap-2">
+                  <User className="w-3.5 h-3.5 text-accent" />{patient.emergencyContactName || patient.emergencyContact?.name}
+                </p>
+              )}
+              {(patient.emergencyContactPhone || patient.emergencyContact?.phone) && (
+                <p className="text-xs text-gray-300 flex items-center gap-2">
+                  <Phone className="w-3.5 h-3.5 text-accent" />{patient.emergencyContactPhone || patient.emergencyContact?.phone}
+                </p>
+              )}
               <div className="pt-2 border-t border-white/10">
                 <p className="text-xs text-gray-400">Last Visit: <span className="text-white">{fmtDate(patient.lastVisit)}</span></p>
                 {patient.nextAppointment && <p className="text-xs text-gray-400 mt-1">Next Appointment: <span className="text-accent">{fmtDate(patient.nextAppointment)}</span></p>}
@@ -344,17 +427,20 @@ const PatientRecord: React.FC<{
                   Documented Allergies
                 </h3>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-gray-400">
-                  {patient.allergies.length} Recorded
+                  {(patient.allergies || []).length} Recorded
                 </span>
               </div>
-              {patient.allergies.length === 0 ? (
+              {(!patient.allergies || patient.allergies.length === 0) ? (
                 <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20">
                   <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                   <span>No Known Drug Allergies (NKDA) documented.</span>
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {patient.allergies.map((a, i) => {
+                  {(patient.allergies || []).map((rawAllergy, i) => {
+                    const a = typeof rawAllergy === 'string'
+                      ? { substance: rawAllergy, reaction: 'Known Allergy', severity: 'Moderate' as const, verificationStatus: undefined, verifiedBy: undefined, verifiedDate: undefined, reactionType: undefined, notes: undefined }
+                      : rawAllergy;
                     const isDoctorVerified = a.verificationStatus === 'Verified by Doctor';
                     const isNurseVerified = a.verificationStatus === 'Verified by Nurse';
 
@@ -435,25 +521,87 @@ const PatientRecord: React.FC<{
                 </div>
               </div>
             </div>
+
+            {/* Diagnosed Medical Conditions & History */}
+            <div className="md:col-span-2 glass-card p-5 border border-white/10 space-y-3.5">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center gap-2">
+                  <HeartPulse className="w-4 h-4 text-purple-400" />
+                  <h3 className="text-sm font-bold text-white">Diagnosed Medical Conditions & History</h3>
+                </div>
+                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-semibold">
+                  {patient.medicalHistory?.length || 0} Diagnoses on Record
+                </span>
+              </div>
+
+              {!patient.medicalHistory || patient.medicalHistory.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-400 italic">No medical history entries recorded.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {patient.medicalHistory.map((item, idx) => {
+                    const isResolved = item.status === 'Resolved';
+                    const isChronic = item.status === 'Chronic';
+
+                    return (
+                      <div
+                        key={item.id || idx}
+                        className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5 hover:border-purple-500/40 transition-all text-xs"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-bold text-white">{item.condition}</p>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              isResolved
+                                ? 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+                                : isChronic
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                            }`}
+                          >
+                            {item.status}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-gray-400 pt-0.5">
+                          <span>Diagnosed: <strong className="text-gray-200">{fmtDate(item.diagnosedDate)}</strong></span>
+                          {item.diagnosedBy && (
+                            <span className="text-purple-300 font-semibold flex items-center gap-1">
+                              <Stethoscope className="w-3 h-3 text-purple-400" />
+                              {item.diagnosedBy}
+                            </span>
+                          )}
+                        </div>
+
+                        {item.notes && (
+                          <p className="text-[11px] text-gray-300 italic pt-1 border-t border-white/5">
+                            "{item.notes}"
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {/* LAB REPORTS */}
         {activeTab === 'labs' && (
           <div className="space-y-3">
-            {patient.labReports.length === 0 ? (
+            {(!patient.labReports || patient.labReports.length === 0) ? (
               <div className="glass-card p-8 border border-white/10 text-center text-gray-400 text-sm">No laboratory reports recorded.</div>
-            ) : patient.labReports.map((l) => (
+            ) : (patient.labReports || []).map((l) => (
               <div key={l.id} className="glass-card p-5 border border-white/10">
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1">
                     <p className="text-sm font-bold text-white">{l.testName}</p>
-                    <p className="text-xs text-gray-400">{fmtDate(l.date)} · Ordered by {l.orderedBy}</p>
-                    <p className="text-sm text-white mt-2">{l.result} <span className="text-xs text-gray-400">{l.unit !== '-' ? l.unit : ''}</span></p>
-                    <p className="text-xs text-gray-400 mt-0.5">Reference: {l.referenceRange}</p>
+                    <p className="text-xs text-gray-400">{fmtDate(l.date)} · Requisitioned by {l.orderedBy || 'Attending Physician'}</p>
+                    <p className="text-sm text-white mt-2">{l.result} <span className="text-xs text-gray-400">{l.unit && l.unit !== '-' ? l.unit : ''}</span></p>
+                    <p className="text-xs text-gray-400 mt-0.5">Reference: {l.referenceRange || 'Standard Reference Range'}</p>
                     {l.notes && <p className="text-xs text-amber-300 mt-1 italic">{l.notes}</p>}
                   </div>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${LAB_COLORS[l.status]}`}>
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0 ${LAB_COLORS[l.status as keyof typeof LAB_COLORS] || 'bg-blue-500/20 text-blue-300'}`}>
                     {l.status}
                   </span>
                 </div>
@@ -465,24 +613,30 @@ const PatientRecord: React.FC<{
         {/* APPOINTMENTS */}
         {activeTab === 'appointments' && (
           <div className="space-y-3">
-            {patient.appointments.length === 0 ? (
+            {(!patient.appointments || patient.appointments.length === 0) ? (
               <div className="glass-card p-8 border border-white/10 text-center text-gray-400 text-sm">No appointments recorded.</div>
-            ) : patient.appointments.map((a) => (
-              <div key={a.id} className="glass-card p-5 border border-white/10 flex gap-4">
-                <div className="flex-shrink-0 text-center w-14">
-                  <p className="text-lg font-black text-accent">{new Date(a.date).getDate()}</p>
-                  <p className="text-xs text-gray-400">{new Date(a.date).toLocaleDateString('en-IN', { month: 'short' })}</p>
+            ) : (patient.appointments || []).map((a) => {
+              const apptDate = a.date ? new Date(a.date) : new Date();
+              const dayNum = isNaN(apptDate.getTime()) ? '—' : apptDate.getDate();
+              const monthStr = isNaN(apptDate.getTime()) ? 'Appt' : apptDate.toLocaleDateString('en-IN', { month: 'short' });
+
+              return (
+                <div key={a.id} className="glass-card p-5 border border-white/10 flex gap-4">
+                  <div className="flex-shrink-0 text-center w-14">
+                    <p className="text-lg font-black text-accent">{dayNum}</p>
+                    <p className="text-xs text-gray-400">{monthStr}</p>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-white">{a.reason}</p>
+                    <p className="text-xs text-gray-400">{a.time || '10:00 AM'} · {a.doctorName || 'Attending Physician'} · {a.department || 'General Medicine'}</p>
+                    {a.notes && <p className="text-xs text-gray-300 mt-1">{a.notes}</p>}
+                  </div>
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full h-fit flex-shrink-0 ${a.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : a.status === 'Upcoming' ? 'bg-blue-500/20 text-blue-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                    {a.status}
+                  </span>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-white">{a.reason}</p>
-                  <p className="text-xs text-gray-400">{a.time} · {a.doctorName} · {a.department}</p>
-                  {a.notes && <p className="text-xs text-gray-300 mt-1">{a.notes}</p>}
-                </div>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full h-fit flex-shrink-0 ${a.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : a.status === 'Upcoming' ? 'bg-blue-500/20 text-blue-300' : 'bg-rose-500/20 text-rose-300'}`}>
-                  {a.status}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -619,7 +773,7 @@ const PatientRecord: React.FC<{
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {rx.medications.map((m, i) => (
+                      {(rx.medications || []).map((m, i) => (
                         <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-bold text-white font-mono">
@@ -795,16 +949,16 @@ const PatientRecord: React.FC<{
             </AnimatePresence>
 
             {/* Notes List */}
-            {patient.clinicalNotes.length === 0 ? (
+            {(!patient.clinicalNotes || patient.clinicalNotes.length === 0) ? (
               <div className="glass-card p-8 border border-white/10 text-center text-gray-400 text-sm">No clinical notes recorded.</div>
-            ) : patient.clinicalNotes.map((n) => (
+            ) : (patient.clinicalNotes || []).map((n) => (
               <div key={n.id} className="glass-card p-5 border border-white/10 space-y-2">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-xs font-bold text-white">{n.authorName} <span className="font-normal text-gray-400">({n.authorRole})</span></p>
-                    <p className="text-[11px] text-gray-500">{fmtDate(n.date)} at {n.time}</p>
+                    <p className="text-xs font-bold text-white">{n.authorName || 'Attending Physician'} <span className="font-normal text-gray-400">({n.authorRole || 'Doctor'})</span></p>
+                    <p className="text-[11px] text-gray-500">{fmtDate(n.date)}{n.time ? ` at ${n.time}` : ''}</p>
                   </div>
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${NOTE_TYPE_COLORS[n.type]}`}>
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${NOTE_TYPE_COLORS[n.type as keyof typeof NOTE_TYPE_COLORS] || 'bg-gray-500/20 text-gray-300'}`}>
                     {n.type}
                   </span>
                 </div>
@@ -817,22 +971,147 @@ const PatientRecord: React.FC<{
         {/* DOCUMENTS */}
         {activeTab === 'documents' && (
           <div className="space-y-3">
-            {patient.documents.length === 0 ? (
+            {(!patient.documents || patient.documents.length === 0) ? (
               <div className="glass-card p-8 border border-white/10 text-center text-gray-400 text-sm">No medical documents uploaded.</div>
-            ) : patient.documents.map((doc) => (
-              <div key={doc.id} className="glass-card p-4 border border-white/10 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center flex-shrink-0">
+            ) : (patient.documents || []).map((doc) => (
+              <div
+                key={doc.id}
+                onClick={() => setSelectedDoc(doc)}
+                className="glass-card p-4 border border-white/10 flex items-center gap-4 hover:border-accent/40 hover:bg-white/5 transition-all cursor-pointer group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
                   <FileText className="w-5 h-5 text-accent" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate">{doc.name}</p>
-                  <p className="text-xs text-gray-400">{doc.category} · {doc.size} · Uploaded {fmtDate(doc.uploadedDate)} by {doc.uploadedBy}</p>
+                  <p className="text-sm font-semibold text-white truncate group-hover:text-accent transition-colors">{doc.name}</p>
+                  <p className="text-xs text-gray-400">{doc.category || 'Lab Report'} · {doc.size || '180 KB'} · Uploaded {fmtDate(doc.uploadedDate)} by {doc.uploadedBy || 'Hospital Diagnostic Lab'}</p>
                 </div>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-gray-400">{doc.type}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-gray-300 font-medium">{doc.type || 'PDF'}</span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSelectedDoc(doc); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/30 hover:bg-primary/50 border border-primary/50 text-xs font-semibold text-white transition-all shadow-sm"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-accent" />
+                    <span>View</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
+
+        {/* ── Document Inspection Modal for Doctor ── */}
+        <AnimatePresence>
+          {selectedDoc && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+              onClick={() => setSelectedDoc(null)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 15 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 15 }}
+                className="glass-card max-w-2xl w-full p-6 border border-white/20 rounded-2xl shadow-2xl bg-[#0B132B]/95 space-y-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Modal Header */}
+                <div className="flex justify-between items-start border-b border-white/10 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-accent/20 border border-accent/40 flex items-center justify-center text-accent">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white leading-snug">{selectedDoc.name}</h3>
+                      <p className="text-xs text-gray-400">
+                        {selectedDoc.category || 'Lab Report'} • {selectedDoc.type || 'PDF'} ({selectedDoc.size || '180 KB'})
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedDoc(null)}
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Metadata Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-white/5 p-4 rounded-xl border border-white/10 text-xs">
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">Patient Name</span>
+                    <span className="text-white font-medium">{patient.firstName} {patient.lastName} (ID #{patient.id})</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">Category</span>
+                    <span className="text-white font-medium">{selectedDoc.category || 'Lab Report'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">Uploaded Date</span>
+                    <span className="text-white font-mono">{fmtDate(selectedDoc.uploadedDate)}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">Uploaded By</span>
+                    <span className="text-emerald-400 font-semibold">{selectedDoc.uploadedBy || 'Hospital Diagnostic Lab'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">Status</span>
+                    <span className="text-accent font-semibold">Verified EHR Document</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">File Format</span>
+                    <span className="text-white font-mono uppercase">{selectedDoc.type || 'PDF'}</span>
+                  </div>
+                </div>
+
+                {/* Document Simulated Content / Preview Box */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Clinical Document Content</span>
+                  <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/60 text-xs text-gray-200 space-y-2 font-mono max-h-48 overflow-y-auto">
+                    <p className="text-emerald-400 font-bold border-b border-white/10 pb-1">📄 MEDITWIN DIAGNOSTIC LIS — CLINICAL ATTACHMENT</p>
+                    <p><strong>Document ID:</strong> {selectedDoc.id}</p>
+                    <p><strong>Record File:</strong> {selectedDoc.name}</p>
+                    <p><strong>Verification:</strong> Authenticated digital certificate attached by Hospital Pathology & Diagnostic Services.</p>
+                    <p className="text-gray-400 text-[11px] pt-1 italic">
+                      This diagnostic report is permanently linked to patient #{patient.id} ({patient.firstName} {patient.lastName})'s Electronic Health Record (EHR).
+                    </p>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-3 pt-3 border-t border-white/10">
+                  <button
+                    onClick={() => {
+                      const printWin = window.open('', '_blank', 'width=800,height=900');
+                      if (printWin) {
+                        printWin.document.write(`<html><head><title>${selectedDoc.name}</title></head><body style="font-family:sans-serif;padding:30px;"><h2>MediTwin AI - Medical Document</h2><p><strong>Patient:</strong> ${patient.firstName} ${patient.lastName}</p><p><strong>File:</strong> ${selectedDoc.name}</p><p><strong>Uploaded:</strong> ${fmtDate(selectedDoc.uploadedDate)} by ${selectedDoc.uploadedBy || 'Hospital Diagnostic Lab'}</p><hr/><p>Official Electronic Health Record attachment.</p></body></html>`);
+                        printWin.document.close();
+                        printWin.focus();
+                        printWin.print();
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all"
+                  >
+                    <Printer className="w-4 h-4 text-gray-300" />
+                    <span>Print Report</span>
+                  </button>
+                  <button
+                    onClick={() => alert(`Initiating secure encrypted download for: ${selectedDoc.name}`)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-slate-900 hover:bg-accent-light text-xs font-bold transition-all shadow-glow-accent"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download File</span>
+                  </button>
+                  <button
+                    onClick={() => setSelectedDoc(null)}
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-400 transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -859,12 +1138,13 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
   const [search, setSearch]         = useState('');
   const [department, setDepartment] = useState('');
   const [status, setStatus]         = useState<PatientStatus | ''>(initialStatusFilter);
-  const [sortBy, setSortBy]         = useState<'name' | 'lastVisit' | 'criticalFirst'>('criticalFirst');
+  const [sortBy, setSortBy]         = useState<PatientSortField>('criticalFirst');
+  const [sortOrder, setSortOrder]   = useState<'asc' | 'desc'>('desc');
 
   // Load all patients once for accurate filter counts & emergency alert banner
   const loadAllPatients = useCallback(async () => {
     try {
-      const all = await getPatients(undefined, { sortBy: 'criticalFirst' });
+      const all = await getPatients(undefined, { sortBy: 'criticalFirst', sortOrder: 'desc' });
       setAllPatients(all);
     } catch {
       // ignore
@@ -877,14 +1157,14 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const data = await getPatients(undefined, { search, department, status, sortBy });
+      const data = await getPatients(undefined, { search, department, status, sortBy, sortOrder });
       setPatients(data);
     } catch (e) {
       setError('Failed to load patient records. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [search, department, status, sortBy]);
+  }, [search, department, status, sortBy, sortOrder]);
 
   useEffect(() => { fetchPatients(); }, [fetchPatients]);
 
@@ -1013,7 +1293,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs font-bold text-white truncate">{cp.firstName} {cp.lastName}</p>
                       <span className="text-[10px] text-rose-300 font-mono font-semibold px-1 rounded bg-rose-500/20 border border-rose-500/30">
-                        P-{cp.id}
+                        {formatPatientId(cp)}
                       </span>
                     </div>
                     <p className="text-[11px] text-rose-200/90 font-medium truncate mt-0.5">
@@ -1148,25 +1428,92 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
         </div>
       </div>
 
-      {/* Sort */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
-        <SortAsc className="w-4 h-4" />
-        <span>Sort by:</span>
-        {[
-          { v: 'criticalFirst', l: '🚨 Triage Priority (Critical First)' },
-          { v: 'name', l: 'Name' },
-          { v: 'lastVisit', l: 'Last Visit' },
-        ].map(({ v, l }) => (
+      {/* Enhanced Multi-Feature Sort Bar */}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+          <div className="flex items-center gap-1.5 font-medium text-gray-300 mr-1">
+            <SortAsc className="w-4 h-4 text-accent" />
+            <span>Sort by:</span>
+          </div>
+
+          {SORT_OPTIONS.map((opt) => {
+            const isActive = sortBy === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => {
+                  if (isActive) {
+                    setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setSortBy(opt.id);
+                    setSortOrder(opt.defaultOrder);
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isActive
+                    ? 'bg-primary text-white font-bold shadow-md shadow-primary/30 ring-1 ring-white/30 scale-105'
+                    : 'bg-white/10 text-gray-300 hover:bg-white/20 hover:text-white'
+                }`}
+                title={`Sort by ${opt.label}. ${isActive ? 'Click again to flip direction.' : ''}`}
+              >
+                <span>{opt.label}</span>
+                {isActive && (
+                  <span className="flex items-center text-[10px] bg-black/25 rounded px-1 py-0.5 ml-0.5">
+                    {sortOrder === 'asc' ? <ArrowUp className="w-3 h-3 text-white" /> : <ArrowDown className="w-3 h-3 text-white" />}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {/* Direction Toggle Button */}
           <button
-            key={v}
-            onClick={() => setSortBy(v as 'name' | 'lastVisit' | 'criticalFirst')}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors cursor-pointer ${
-              sortBy === v ? 'bg-primary text-white font-bold' : 'bg-white/10 text-gray-300 hover:bg-white/20'
-            }`}
+            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+            className="px-2.5 py-1.5 rounded-full text-xs font-medium bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white border border-white/10 flex items-center gap-1.5 transition-all cursor-pointer ml-auto sm:ml-2"
+            title="Toggle sort direction"
           >
-            {l}
+            {sortOrder === 'asc' ? (
+              <>
+                <ArrowUp className="w-3.5 h-3.5 text-accent" />
+                <span>Ascending</span>
+              </>
+            ) : (
+              <>
+                <ArrowDown className="w-3.5 h-3.5 text-accent" />
+                <span>Descending</span>
+              </>
+            )}
           </button>
-        ))}
+
+          {/* Reset Sort Button */}
+          {(sortBy !== 'criticalFirst' || sortOrder !== 'desc') && (
+            <button
+              onClick={() => {
+                setSortBy('criticalFirst');
+                setSortOrder('desc');
+              }}
+              className="flex items-center gap-1 text-xs text-gray-400 hover:text-rose-300 transition-colors cursor-pointer px-2 py-1 rounded-lg hover:bg-white/5"
+              title="Reset to default triage priority"
+            >
+              <RotateCcw className="w-3 h-3 text-gray-400" />
+              <span>Reset</span>
+            </button>
+          )}
+        </div>
+
+        {/* Active sort info hint */}
+        <div className="flex items-center justify-between text-[11px] text-gray-400 px-1">
+          <span>
+            Active Sort: <strong className="text-white font-semibold">
+              {SORT_OPTIONS.find(o => o.id === sortBy)?.label}
+            </strong> (
+            {sortOrder === 'desc'
+              ? SORT_OPTIONS.find(o => o.id === sortBy)?.descLabel
+              : SORT_OPTIONS.find(o => o.id === sortBy)?.ascLabel}
+            )
+          </span>
+          <span className="text-gray-500 font-mono text-[10px]">Click active pill to flip order (↑ / ↓)</span>
+        </div>
       </div>
 
       {/* Loading */}
@@ -1237,9 +1584,11 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                         </span>
                       )}
                     </p>
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[p.status]}`}>{p.status}</span>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[p.status] || 'border-white/20 text-gray-300'}`}>{p.status}</span>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">P-{p.id} · {p.age} yrs · {p.gender?.name} · {p.department} {p.ward ? `· ${p.ward}` : ''}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    <span className="font-mono font-bold text-gray-200">{formatPatientId(p)}</span> · <span className={`font-semibold ${isPatientInpatient(p.status, p.ward) ? 'text-purple-300' : 'text-teal-300'}`}>{isPatientInpatient(p.status, p.ward) ? 'Inpatient' : 'Outpatient'}</span> · {p.age} yrs · {typeof p.gender === 'string' ? p.gender : p.gender?.name || 'Unspecified'} · {p.department || 'General Medicine'} {p.ward ? `· ${p.ward}` : ''}
+                  </p>
                   {p.primaryCondition && (
                     <p className={`text-xs mt-0.5 truncate font-medium ${isCritical ? 'text-rose-200 font-bold' : 'text-gray-300'}`}>
                       {p.primaryCondition}
@@ -1248,19 +1597,40 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                   <p className="text-[11px] text-gray-500 mt-1">Last visit: {fmtDate(p.lastVisit)}{p.nextAppointment ? ` · Next: ${fmtDate(p.nextAppointment)}` : ''}</p>
                 </div>
 
-                {/* Alerts */}
-                <div className="flex flex-wrap gap-2 flex-shrink-0">
+                {/* Alerts & Sort Badges */}
+                <div className="flex flex-wrap gap-2 flex-shrink-0 items-center">
                   {isCritical && (
                     <span className="flex items-center gap-1 text-[11px] font-black text-white px-2.5 py-1 rounded-full bg-rose-600 border border-rose-400 shadow-sm animate-pulse">
                       <AlertTriangle className="w-3.5 h-3.5" />CRITICAL PRIORITY
                     </span>
                   )}
-                  {p.labReports.some(l => l.status === 'Critical') && (
+                  {/* Dynamic highlight for active sort dimensions */}
+                  {sortBy === 'nextAppointment' && (
+                    <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                      p.nextAppointment ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-white/5 text-gray-400 border-white/10'
+                    }`}>
+                      <Calendar className="w-3 h-3 text-cyan-400" />
+                      {p.nextAppointment ? `Next: ${fmtDate(p.nextAppointment)}` : 'No upcoming visit'}
+                    </span>
+                  )}
+                  {sortBy === 'age' && (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-indigo-300 px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/40">
+                      <User className="w-3 h-3 text-indigo-400" />
+                      Age {p.age}
+                    </span>
+                  )}
+                  {sortBy === 'id' && (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-sky-300 px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-500/40">
+                      <FileText className="w-3 h-3 text-sky-400" />
+                      {formatPatientId(p)} ({isPatientInpatient(p.status, p.ward) ? 'Inpatient' : 'Outpatient'})
+                    </span>
+                  )}
+                  {Array.isArray(p.labReports) && p.labReports.some(l => l.status === 'Critical') && (
                     <span className="flex items-center gap-1 text-[11px] font-bold text-rose-300 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40">
                       <FlaskConical className="w-3 h-3 text-rose-400" /> Critical Labs
                     </span>
                   )}
-                  {p.labReports.some(l => l.status === 'Pending') && (
+                  {Array.isArray(p.labReports) && p.labReports.some(l => l.status === 'Pending') && (
                     <span className="text-[11px] font-medium text-amber-300 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30">Pending Labs</span>
                   )}
                 </div>

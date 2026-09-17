@@ -17,6 +17,7 @@ import { AIPatientSummaryPage } from './doctor/AIPatientSummaryPage';
 import { ClinicalGuidelinesPage } from './doctor/ClinicalGuidelinesPage';
 import { getPatients as getDoctorPatients } from '../services/doctorService';
 import type { DoctorPatient, PatientStatus } from '../types';
+import { formatPatientId } from '../utils/patientUtils';
 import { MedicalDocumentsPage } from './patient/MedicalDocumentsPage';
 import { PrescriptionsPage } from './patient/PrescriptionsPage';
 import { MedicalHistoryPage } from './patient/MedicalHistoryPage';
@@ -41,12 +42,11 @@ interface NavItem {
 }
 
 const HOSPITAL_ADMIN_NAV: NavItem[] = [
-  { id: 'dashboard',      label: 'Executive Dashboard',        icon: LayoutDashboard },
-  { id: 'notifications',  label: 'Hospital Notifications',     icon: Bell            },
-  { id: 'reports',        label: 'Hospital Reports & Stats',   icon: BarChart3       },
-  { id: 'activities',     label: 'Hospital Activity Monitor',  icon: Activity        },
-  { id: 'departments',    label: 'Department Analytics',       icon: Building2, comingSoon: true },
-  { id: 'staff-rosters',  label: 'Staff Rosters',              icon: Users,     comingSoon: true },
+  { id: 'dashboard',      label: 'Admin Dashboard',           icon: LayoutDashboard },
+  { id: 'notifications',  label: 'Hospital Notifications',    icon: Bell            },
+  { id: 'reports',        label: 'Hospital Reports & Stats',  icon: BarChart3       },
+  { id: 'activities',     label: 'Hospital Activity Monitor', icon: Activity        },
+  { id: 'departments',    label: 'Department Analytics',      icon: Building2       },
   { id: 'profile',        label: 'Administrator Profile',      icon: User,      comingSoon: true },
 ];
 
@@ -63,10 +63,10 @@ const PATIENT_NAV: NavItem[] = [
 ];
 
 const NURSE_RECORD_SUBITEMS = [
-  { id: 'overview',     label: 'Medical Overview', icon: Heart        },
-  { id: 'medications',  label: 'Medications',      icon: Pill         },
-  { id: 'labs',         label: 'Lab Reports',      icon: FlaskConical },
-  { id: 'appointments', label: 'Appointments',     icon: Calendar     },
+  { id: 'overview',            label: 'Medical Overview',   icon: Heart },
+  { id: 'medications',         label: 'Medications',        icon: Pill },
+  { id: 'labs',                label: 'Lab Reports',        icon: FlaskConical },
+  { id: 'appointments',        label: 'Appointments',       icon: Calendar },
 ];
 
 const NURSE_NAV: NavItem[] = [
@@ -75,7 +75,6 @@ const NURSE_NAV: NavItem[] = [
   { id: 'nursing-notes',       label: 'Nursing Notes & Treatment Records',  icon: ClipboardEdit   },
   { id: 'treatment-plans',     label: 'Treatment Plans',                    icon: Layers          },
   { id: 'clinical-records',    label: 'Patient Clinical Records',           icon: HeartHandshake, hasSubmenu: true },
-  { id: 'medicine-reminders',  label: 'Medicine Reminders',                icon: Bell,     comingSoon: true },
   { id: 'hospital-procedures', label: 'Hospital Procedures',              icon: BookOpen, comingSoon: true },
   { id: 'profile',             label: 'Profile',                            icon: User,     comingSoon: true },
 ];
@@ -201,6 +200,15 @@ export const DashboardPage: React.FC = () => {
   const isPatient = activeRole === 'patient';
   const isAdmin   = activeRole === 'admin' || activeRole === 'hospital-admin';
 
+  const userCleanName = (() => {
+    let raw = fullName || displayName;
+    if (!raw || raw === 'User') {
+      raw = isDoctor ? 'Sarah Joseph' : isNurse ? 'Ananya' : 'User';
+    }
+    const cleaned = raw.replace(/^(dr\.?\s*|doctor\s+|nurse\s+|patient\s+|admin\s+)/i, '').trim();
+    return cleaned || raw;
+  })();
+
   // Load unread notification count for patient
   useEffect(() => {
     if (isPatient) {
@@ -269,15 +277,15 @@ export const DashboardPage: React.FC = () => {
       badge:    'Nursing Workstation',
       metrics: [
         { label: 'Assigned Ward Beds',   value: '12',        change: 'All vitals normal' },
-        { label: 'Medication Doses Due', value: '8',         change: 'Next in 15 mins'   },
+        { label: 'Active Treatment Plans', value: '8',       change: 'Under active care' },
         { label: 'Shift Handover Notes', value: 'Completed', change: '100% verified'      },
         { label: 'Vital Signs Logged',   value: '24 Today',  change: 'Routine rounds on track' },
       ],
       actions: [
         'Record Patient Vitals',
-        'Log Medication Administered',
-        'Update Shift Handover',
-        'Request Physician Triage',
+        'Treatment Plans',
+        'Nursing Notes & Treatment Records',
+        'Patient Clinical Records',
       ],
     },
     patient: {
@@ -359,8 +367,19 @@ export const DashboardPage: React.FC = () => {
 
   // Quick actions navigation
   const handleQuickAction = (action: string) => {
-    if (isNurse && action === 'Record Patient Vitals') {
-      setActiveView('observations');
+    if (isNurse) {
+      if (action === 'Record Patient Vitals') {
+        setActiveView('observations');
+      } else if (action === 'Nursing Notes & Treatment Records') {
+        setActiveView('nursing-notes');
+      } else if (action === 'Patient Clinical Records') {
+        setActiveView('clinical-records');
+        setNurseRecordTab('overview');
+      } else if (action === 'Treatment Plans') {
+        setActiveView('treatment-plans');
+      } else {
+        setActiveView('observations');
+      }
     } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records')) {
       if (action === '🚨 Urgent Critical Triage') {
         setDoctorInitialStatus('Critical');
@@ -629,7 +648,7 @@ export const DashboardPage: React.FC = () => {
       {NURSE_NAV.map(({ id, label, icon: Icon, comingSoon, hasSubmenu }) => {
         const isSelectedCRSection =
           activeView === 'clinical-records' &&
-          ['overview', 'medications', 'labs', 'appointments'].includes(nurseRecordTab);
+          ['overview', 'medications', 'medication-schedule', 'labs', 'appointments'].includes(nurseRecordTab);
 
         const isActive = activeView === id || (id === 'clinical-records' && isSelectedCRSection);
 
@@ -727,8 +746,6 @@ export const DashboardPage: React.FC = () => {
       case 'clinical-records':
       case 'medical-history':
         return <PatientMedicalHistoryPage initialTab={nurseRecordTab} />;
-      case 'medicine-reminders':
-        return <ComingSoonView label="Medicine Reminders" />;
       case 'hospital-procedures':
         return <ComingSoonView label="Hospital Procedures" />;
       case 'profile':
@@ -796,7 +813,7 @@ export const DashboardPage: React.FC = () => {
                     <div className="flex items-center gap-1.5">
                       <p className="text-xs font-bold text-white truncate">{cp.firstName} {cp.lastName}</p>
                       <span className="text-[10px] text-rose-300 font-mono font-semibold px-1 rounded bg-rose-500/20 border border-rose-500/30">
-                        P-{cp.id}
+                        {formatPatientId(cp)}
                       </span>
                     </div>
                     <p className="text-[11px] text-rose-200/90 font-medium truncate mt-0.5">
@@ -919,7 +936,9 @@ export const DashboardPage: React.FC = () => {
             </div>
             <div>
               <span className="text-xl font-extrabold text-white">MediTwin <span className="text-accent">AI</span></span>
-              <span className="text-[10px] text-gray-400 block -mt-1">Authenticated Workstation</span>
+              <span className="text-[10px] text-gray-400 block -mt-1">
+                {isDoctor ? `${userCleanName} · Authenticated Workstation` : 'Authenticated Workstation'}
+              </span>
             </div>
           </Link>
 
@@ -951,9 +970,15 @@ export const DashboardPage: React.FC = () => {
               </button>
             )}
 
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 border border-white/15 text-xs text-gray-300">
-              <RoleIcon className="w-4 h-4 text-accent" />
-              <span className="font-semibold text-white uppercase">{activeRole.replace('-', ' ')}</span>
+            <div className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/10 border border-white/15 text-xs text-gray-300 shadow-sm">
+              <div className="flex flex-col items-center justify-center">
+                <RoleIcon className="w-4 h-4 text-accent" />
+                <span className="text-[10px] font-bold text-accent leading-none mt-1 max-w-[130px] truncate text-center">
+                  {userCleanName}
+                </span>
+              </div>
+              <div className="h-6 w-px bg-white/15" />
+              <span className="font-semibold text-white uppercase text-[11px] tracking-wide">{activeRole.replace('-', ' ')}</span>
             </div>
 
             <Link to="/login" onClick={() => {

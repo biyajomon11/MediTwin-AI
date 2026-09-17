@@ -38,7 +38,7 @@ export interface NurseFormData {
   specialization: string;
   department: string;
   experienceYears: string;
-  hospital: string;
+  assignedWard: string;
   licenseNumber: string;
   issuingAuthority: string;
   licenseExpiry: string;
@@ -63,7 +63,7 @@ const initialForm: NurseFormData = {
   specialization: 'General Nursing',
   department: 'General Medicine',
   experienceYears: '',
-  hospital: '',
+  assignedWard: '',
   licenseNumber: '',
   issuingAuthority: '',
   licenseExpiry: '',
@@ -202,9 +202,9 @@ export const NurseRegisterPage: React.FC = () => {
     }
   }
 
-  // 10. Hospital / Organization
-  if (!form.hospital.trim()) {
-    errors.hospital = 'Hospital or Organization is required.';
+  // 10. Assigned Ward / Station
+  if (!form.assignedWard.trim()) {
+    errors.assignedWard = 'Assigned ward or nursing station is required.';
   }
 
   // 11. License Number
@@ -936,34 +936,34 @@ export const NurseRegisterPage: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Hospital / Organization */}
+                  {/* Assigned Ward / Nursing Station */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                      Hospital / Organization *
+                      Assigned Ward / Nursing Station *
                     </label>
                     <div className="relative">
                       <input
                         type="text"
-                        name="hospital"
-                        value={form.hospital}
+                        name="assignedWard"
+                        value={form.assignedWard}
                         onChange={handleChange}
-                        onBlur={() => handleBlur('hospital')}
-                        placeholder="e.g. General City Hospital"
+                        onBlur={() => handleBlur('assignedWard')}
+                        placeholder="e.g. ICU Ward 3 / General Ward 2B / Emergency Wing"
                         className={`w-full py-3 px-4 bg-navy-900 border rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none transition-all ${
-                          touched.hospital && errors.hospital
+                          touched.assignedWard && errors.assignedWard
                             ? 'border-rose-500 focus:border-rose-500 ring-1 ring-rose-500/30'
-                            : touched.hospital && !errors.hospital
+                            : touched.assignedWard && !errors.assignedWard
                             ? 'border-emerald-500/80 focus:border-emerald-500'
                             : 'border-white/15 focus:border-accent'
                         }`}
                       />
-                      {touched.hospital && !errors.hospital && (
+                      {touched.assignedWard && !errors.assignedWard && (
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 absolute right-3.5 top-3.5" />
                       )}
                     </div>
-                    {touched.hospital && errors.hospital && (
+                    {touched.assignedWard && errors.assignedWard && (
                       <p className="text-xs text-rose-400 flex items-center gap-1 mt-1">
-                        <AlertCircle className="w-3.5 h-3.5" /> {errors.hospital}
+                        <AlertCircle className="w-3.5 h-3.5" /> {errors.assignedWard}
                       </p>
                     )}
                   </div>

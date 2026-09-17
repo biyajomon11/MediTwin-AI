@@ -53,9 +53,9 @@ export const MOCK_PATIENTS: DoctorPatient[] = [
       { name: 'Montelukast Sodium', dosage: '10 mg', frequency: 'Once daily at bedtime', startDate: '2026-08-10', prescribedBy: 'Dr. Sarah Joseph' },
     ],
     medicalHistory: [
-      { condition: 'Mild Essential Hypertension', diagnosedDate: '2024-03-12', status: 'Active', notes: 'Stage 1 hypertension. Maintained on lifestyle modification and low-dose ACE inhibitor.' },
-      { condition: 'Seasonal Allergic Rhinitis', diagnosedDate: '2023-08-20', status: 'Active', notes: 'IgE-mediated nasal congestion. Responds to antihistamines.' },
-      { condition: 'Diagnostic Laparoscopy & Appendectomy', diagnosedDate: '2021-06-18', status: 'Resolved', notes: 'Elective laparoscopic appendectomy.' },
+      { condition: 'Mild Essential Hypertension', diagnosedDate: '2024-03-12', diagnosedBy: 'Dr. Sarah Joseph (Cardiology)', status: 'Active', notes: 'Stage 1 hypertension. Maintained on lifestyle modification and low-dose ACE inhibitor.' },
+      { condition: 'Seasonal Allergic Rhinitis', diagnosedDate: '2023-08-20', diagnosedBy: 'Dr. Sarah Joseph (General Medicine)', status: 'Active', notes: 'IgE-mediated nasal congestion. Responds to antihistamines.' },
+      { condition: 'Diagnostic Laparoscopy & Appendectomy', diagnosedDate: '2021-06-18', diagnosedBy: 'Dr. P. Kumar (Surgical Consultant)', status: 'Resolved', notes: 'Elective laparoscopic appendectomy.' },
     ],
     labReports: [
       { id: 'LAB-101', testName: 'Complete Blood Count (CBC) & Serum Ferritin', date: '2026-08-10', result: '12.8', unit: 'g/dL', referenceRange: '12.0 - 15.5', status: 'Normal', orderedBy: 'Dr. Sarah Joseph', notes: 'Optimal iron stores.' },
@@ -109,9 +109,9 @@ export const MOCK_PATIENTS: DoctorPatient[] = [
       { name: 'Atorvastatin Calcium', dosage: '20 mg', frequency: 'Once daily at night', startDate: '2026-07-22', prescribedBy: 'Dr. Rahul Verma' },
     ],
     medicalHistory: [
-      { condition: 'Type 2 Diabetes Mellitus', diagnosedDate: '2023-04-10', status: 'Active', notes: 'Well controlled on Metformin and diet. Target HbA1c < 6.5%.' },
-      { condition: 'Hyperlipidemia', diagnosedDate: '2024-02-18', status: 'Active', notes: 'Controlled with Atorvastatin.' },
-      { condition: 'Right Knee Arthroscopy & Meniscal Repair', diagnosedDate: '2022-11-05', status: 'Resolved', notes: 'Minimally invasive repair of meniscus tear.' },
+      { condition: 'Type 2 Diabetes Mellitus', diagnosedDate: '2023-04-10', diagnosedBy: 'Dr. Rahul Verma (Endocrinology Lead)', status: 'Active', notes: 'Well controlled on Metformin and diet. Target HbA1c < 6.5%.' },
+      { condition: 'Hyperlipidemia', diagnosedDate: '2024-02-18', diagnosedBy: 'Dr. Rahul Verma (Endocrinology)', status: 'Active', notes: 'Controlled with Atorvastatin.' },
+      { condition: 'Right Knee Arthroscopy & Meniscal Repair', diagnosedDate: '2022-11-05', diagnosedBy: 'Dr. Vikram Rao (Orthopedics Lead)', status: 'Resolved', notes: 'Minimally invasive repair of meniscus tear.' },
     ],
     labReports: [
       { id: 'LAB-301', testName: 'HbA1c & Fasting Glycemic Panel', date: '2026-07-22', result: '6.2', unit: '%', referenceRange: '< 6.5', status: 'Normal', orderedBy: 'Dr. Rahul Verma', notes: 'Target achieved.' },
@@ -166,9 +166,9 @@ export const MOCK_PATIENTS: DoctorPatient[] = [
       { name: 'Montelukast Sodium', dosage: '10 mg', frequency: 'Once daily at night', startDate: '2026-08-05', prescribedBy: 'Dr. Priya Sharma' },
     ],
     medicalHistory: [
-      { condition: 'Bronchial Asthma (Moderate Persistent)', diagnosedDate: '2022-03-15', status: 'Active', notes: 'Managed with Montelukast and rescue inhaler.' },
-      { condition: 'Hypothyroidism (Hashimoto Thyroiditis)', diagnosedDate: '2023-09-08', status: 'Active', notes: 'Euthyroid on Levothyroxine 50 mcg.' },
-      { condition: 'Tonsillectomy', diagnosedDate: '2016-08-14', status: 'Resolved', notes: 'Childhood tonsillectomy.' },
+      { condition: 'Bronchial Asthma (Moderate Persistent)', diagnosedDate: '2022-03-15', diagnosedBy: 'Dr. Priya Sharma (Pulmonology Lead)', status: 'Active', notes: 'Managed with Montelukast and rescue inhaler.' },
+      { condition: 'Hypothyroidism (Hashimoto Thyroiditis)', diagnosedDate: '2023-09-08', diagnosedBy: 'Dr. Biya Jomon (Endocrinology Lead)', status: 'Active', notes: 'Euthyroid on Levothyroxine 50 mcg.' },
+      { condition: 'Tonsillectomy', diagnosedDate: '2016-08-14', diagnosedBy: 'Dr. Bittu Jomon (General Surgery / ENT)', status: 'Resolved', notes: 'Childhood tonsillectomy.' },
     ],
     labReports: [
       { id: 'LAB-501', testName: 'Thyroid Function Panel (Free T4 & TSH)', date: '2026-08-05', result: '2.15', unit: 'mIU/L', referenceRange: '0.4 - 4.0', status: 'Normal', orderedBy: 'Dr. Priya Sharma' },

@@ -3,12 +3,12 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 
-import authRouter         from './routes/auth';
-import observationsRouter from './routes/observations';
-import patientsRouter     from './routes/patients';
-import registerRouter     from './routes/register';
-import doctorRouter       from './routes/doctor';
-import patientRouter      from './routes/patient';
+import authRouter           from './routes/auth';
+import observationsRouter   from './routes/observations';
+import patientsRouter       from './routes/patients';
+import registerRouter       from './routes/register';
+import doctorRouter         from './routes/doctor';
+import patientRouter        from './routes/patient';
 
 dotenv.config();
 

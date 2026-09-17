@@ -12,7 +12,6 @@ import {
   Check,
   X,
   Loader2,
-  RefreshCw,
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import * as patientService from '../../services/patientService';
@@ -139,8 +138,8 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {unreadCount > 0 && (
+          {unreadCount > 0 && (
+            <div className="flex items-center gap-2">
               <Button
                 variant="primary"
                 size="sm"
@@ -149,11 +148,8 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
               >
                 Mark All as Read
               </Button>
-            )}
-            <Button variant="glass" size="sm" icon={<RefreshCw className="w-3.5 h-3.5" />} onClick={loadNotifications}>
-              Refresh
-            </Button>
-          </div>
+            </div>
+          )}
         </div>
       </motion.div>
 

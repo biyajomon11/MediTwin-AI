@@ -18,11 +18,11 @@ import { getTallManName } from '../../utils/medicationSafety';
 export type HistoryTab = 'overview' | 'medications' | 'labs' | 'appointments' | 'treatment-plan';
 
 const TABS: { id: HistoryTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'overview',       label: 'Medical Overview',  icon: Heart        },
-  { id: 'medications',    label: 'Medications',        icon: Pill         },
-  { id: 'labs',           label: 'Lab Reports',        icon: FlaskConical },
-  { id: 'appointments',   label: 'Appointments',       icon: Calendar     },
-  { id: 'treatment-plan', label: 'Treatment Plan',     icon: Target       },
+  { id: 'overview',       label: 'Medical Overview', icon: Heart        },
+  { id: 'medications',    label: 'Medications',      icon: Pill         },
+  { id: 'labs',           label: 'Lab Reports',      icon: FlaskConical },
+  { id: 'appointments',   label: 'Appointments',     icon: Calendar     },
+  { id: 'treatment-plan', label: 'Treatment Plan',   icon: Target       },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,10 +111,10 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
   const [patientDropdown, setPatientDropdown] = useState(false);
 
   // ── Data ─────────────────────────────────────────────────────────
-  const [history, setHistory]           = useState<NurseMedicalHistory | null>(null);
-  const [plan, setPlan]                 = useState<NurseTreatmentPlan | null>(null);
-  const [dataLoading, setDataLoading]   = useState(false);
-  const [errorMsg, setErrorMsg]         = useState('');
+  const [history, setHistory]         = useState<NurseMedicalHistory | null>(null);
+  const [plan, setPlan]               = useState<NurseTreatmentPlan | null>(null);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [errorMsg, setErrorMsg]       = useState('');
 
   // ── Load patients ─────────────────────────────────────────────────
   useEffect(() => {
@@ -337,7 +337,7 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                   <div>
                     <p className="text-sm font-bold text-white">{lab.testName}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{lab.date} · Ordered by {lab.orderedBy}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{lab.date} · Requisitioned by {lab.orderedBy}</p>
                   </div>
                   <StatusBadge status={lab.status} />
                 </div>

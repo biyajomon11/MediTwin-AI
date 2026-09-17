@@ -6,6 +6,7 @@ import { Input } from './Input';
 import { PasswordInput } from './PasswordInput';
 import { Button } from './Button';
 import { SocialLogin } from './SocialLogin';
+import { GoogleAuthModal } from './GoogleAuthModal';
 
 export const LoginForm: React.FC = () => {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ export const LoginForm: React.FC = () => {
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
   const [isLoading, setIsLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -187,9 +189,35 @@ export const LoginForm: React.FC = () => {
     setIsLoading(false);
   };
 
-  const handleSocialLogin = (_provider: 'google' | 'microsoft') => {
-    // Social login not connected to backend — placeholder behaviour
-    setErrors({ general: 'Social login is not yet configured. Please use email and password.' });
+  const handleGoogleSuccess = (user: any, role: string) => {
+    setIsGoogleModalOpen(false);
+    const targetRole = (role || user.role || 'patient').toLowerCase();
+    const dashboardPath =
+      targetRole === 'admin' || targetRole === 'hospital-admin' ? 'admin' :
+      targetRole === 'doctor'  ? 'doctor'  :
+      targetRole === 'nurse'   ? 'nurse'   :
+      targetRole === 'patient' ? 'patient' :
+      targetRole;
+
+    writeSession({
+      userId: user.userId || user.id || 'GOOGLE-USR',
+      email: user.email,
+      role: targetRole,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    });
+
+    setLoginSuccess(true);
+    setTimeout(() => {
+      navigate(`/dashboard/${dashboardPath}`);
+    }, 1000);
+  };
+
+  const handleSocialLogin = (provider: 'google') => {
+    setErrors({});
+    if (provider === 'google') {
+      setIsGoogleModalOpen(true);
+    }
   };
 
   return (
@@ -297,6 +325,14 @@ export const LoginForm: React.FC = () => {
 
       {/* Social Login Buttons */}
       <SocialLogin onSocialClick={handleSocialLogin} />
+
+      {/* Google Auth Modal */}
+      <GoogleAuthModal
+        isOpen={isGoogleModalOpen}
+        onClose={() => setIsGoogleModalOpen(false)}
+        prefillEmail={email}
+        onSuccess={handleGoogleSuccess}
+      />
     </div>
   );
 };

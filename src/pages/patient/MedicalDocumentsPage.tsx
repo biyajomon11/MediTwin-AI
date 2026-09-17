@@ -15,7 +15,6 @@ import {
   Building,
   Calendar,
   Loader2,
-  RefreshCw,
   Plus,
   ShieldCheck,
   ChevronDown,
@@ -624,7 +623,7 @@ export const MedicalDocumentsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Side: View Mode Toggle & Refresh */}
+        {/* Right Side: View Mode Toggle */}
         <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
           {/* View Mode Toggle (Grid vs Table) */}
           <div className="flex items-center p-1 bg-white/5 border border-white/10 rounded-xl">
@@ -651,10 +650,6 @@ export const MedicalDocumentsPage: React.FC = () => {
               <List className="w-4 h-4" />
             </button>
           </div>
-
-          <Button variant="glass" size="sm" onClick={loadDocuments} icon={<RefreshCw className="w-3.5 h-3.5" />}>
-            Refresh
-          </Button>
         </div>
       </div>
 

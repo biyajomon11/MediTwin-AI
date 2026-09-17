@@ -8,7 +8,6 @@ import {
   User,
   ShieldCheck,
   Loader2,
-  RefreshCw,
   Info,
   AlertCircle,
   X,
@@ -184,16 +183,6 @@ export const PrescriptionsPage: React.FC = () => {
                 View active and historical prescriptions provided by your attending healthcare providers
               </p>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="glass"
-              size="sm"
-              icon={<RefreshCw className="w-3.5 h-3.5" />}
-              onClick={loadPrescriptions}
-            >
-              Refresh
-            </Button>
           </div>
         </div>
       </motion.div>

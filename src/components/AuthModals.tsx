@@ -7,6 +7,7 @@ import { LoginForm } from './LoginForm';
 import { Input } from './Input';
 import { PasswordInput } from './PasswordInput';
 import { SocialLogin } from './SocialLogin';
+import { GoogleAuthModal } from './GoogleAuthModal';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -52,8 +53,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
   const isMedicalRole = role === 'doctor' || role === 'nurse' || role === 'admin';
+
+  const handleGoogleSuccess = (user: any, targetRole: string) => {
+    setIsGoogleModalOpen(false);
+    onClose();
+    const finalRole = (targetRole || user.role || 'patient').toLowerCase();
+    const dashboardPath =
+      finalRole === 'admin' || finalRole === 'hospital-admin' ? 'admin' :
+      finalRole === 'doctor'  ? 'doctor'  :
+      finalRole === 'nurse'   ? 'nurse'   :
+      finalRole === 'patient' ? 'patient' :
+      finalRole;
+
+    localStorage.setItem('meditwin_token', 'google-token');
+    localStorage.setItem('meditwin_user', JSON.stringify({
+      userId: user.userId || user.id || 'GOOGLE-USR',
+      email: user.email,
+      role: finalRole,
+      firstName: user.firstName,
+      lastName: user.lastName,
+    }));
+
+    navigate(`/dashboard/${dashboardPath}`);
+  };
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -435,7 +460,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </span>
               </div>
 
-              <SocialLogin onSocialClick={() => navigate('/dashboard/doctor')} />
+              <SocialLogin onSocialClick={() => setIsGoogleModalOpen(true)} />
             </form>
           )}
 
@@ -470,6 +495,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <ShieldCheck className="w-3.5 h-3.5 text-accent" /> Encrypted via 256-bit SSL & HIPAA Vault
           </div>
         </motion.div>
+
+        {/* Google Auth Modal */}
+        <GoogleAuthModal
+          isOpen={isGoogleModalOpen}
+          onClose={() => setIsGoogleModalOpen(false)}
+          prefillEmail={email}
+          onSuccess={handleGoogleSuccess}
+        />
       </div>
     </AnimatePresence>
   );

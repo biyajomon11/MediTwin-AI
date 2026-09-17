@@ -68,6 +68,7 @@ export interface PatientSummary {
   user?: { email: string };
   department?: string;
   ward?: string;
+  patientCode?: string;
 }
 
 export interface ObservationFormData {
@@ -163,8 +164,10 @@ export interface Medication {
 }
 
 export interface MedicalHistoryEntry {
+  id?: string;
   condition: string;
   diagnosedDate: string;
+  diagnosedBy?: string;
   status: 'Active' | 'Resolved' | 'Chronic';
   notes?: string;
 }
@@ -239,20 +242,43 @@ export interface DoctorPatient extends PatientSummary {
   documents: MedicalDocument[];
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  emergencyContact?: {
+    name?: string;
+    phone?: string;
+    relationship?: string;
+  };
   primaryCondition?: string;
 }
 
-// ── AI Summary (Phase 1 — no diagnoses, no disease predictions) ──
+// ── AI Summary (Phase 1 — Doctor-Tailored Clinical Synthesis) ──
+
+export type AISummaryPreset =
+  | 'rapid'      // ⚡ 30-Second Rapid Triage
+  | 'pharma'     // 💊 Pharmacology & Drug Safety
+  | 'labs'       // 🧪 Abnormal Labs & Diagnostics
+  | 'cardio'     // 🫀 Cardio-Metabolic Profile
+  | 'preop'      // 📋 Pre-Operative Clearance
+  | 'full'       // 🔍 Longitudinal EHR Review
+  | 'custom';    // 🎯 Doctor-Directed Query
+
+export type AISummaryFormat = 'bullets' | 'structured' | 'direct';
+
+export interface AISummaryOptions {
+  preset?: AISummaryPreset;
+  customQuery?: string;
+  selectedSections?: string[];
+  formatStyle?: AISummaryFormat;
+}
 
 export interface AISummarySection {
   title: string;
   content: string;
+  isHighlight?: boolean;
 }
 
 /**
- * Phase 1 mock AI summary.
- * Derived from structured patient record data only.
- * Must NOT contain diagnoses, treatment recommendations, or disease predictions.
+ * Doctor-tailored AI clinical summary.
+ * Derived from structured patient record data with focus on physician requirements.
  */
 export interface AISummary {
   patientId: number;
@@ -260,6 +286,11 @@ export interface AISummary {
   sections: AISummarySection[];
   disclaimer: string;
   phase: string;
+  preset?: AISummaryPreset;
+  formatStyle?: AISummaryFormat;
+  customQuery?: string;
+  keyAlerts?: string[];
+  readingTimeMinutes?: number;
 }
 
 // ── Clinical Guidelines ────────────────────────────────────────
@@ -771,4 +802,63 @@ export interface PatientAIHealthSummary {
   treatmentInformation: PatientAITreatmentItem[];
   importantInformation: string[];
 }
+
+// ─────────────────────────────────────────────────────────────
+// Nurse Module — Medication Reminder & Scheduling System
+// ─────────────────────────────────────────────────────────────
+
+export type NurseReminderStatus =
+  | 'PENDING'
+  | 'DUE'
+  | 'ADMINISTERED'
+  | 'MISSED'
+  | 'SKIPPED'
+  | 'CANCELLED'
+  | 'NEEDS_REVIEW';
+
+export type MedicationSkipReason =
+  | 'Patient unavailable'
+  | 'Patient refused'
+  | 'Medication unavailable'
+  | 'Clinical instruction'
+  | 'Other';
+
+export interface NurseMedicationReminder {
+  id: string;
+  patientId: number;
+  patientName: string;
+  patientCode?: string; // e.g. "PT-1024"
+  prescriptionId: string;
+  medicineName: string;
+  strength: string;
+  dose: string;
+  route: string; // 'Oral' | 'IV' | 'IM' | 'Subcutaneous' | 'Inhalation' | 'Topical' | 'Other'
+  frequency: string;
+  scheduledDate: string; // YYYY-MM-DD
+  scheduledTime: string; // HH:mm (e.g. "10:00")
+  status: NurseReminderStatus;
+  doctorName?: string;
+  prescribingDoctorId?: number;
+  notes?: string;
+  reminderType?: string;
+  administeredAt?: string;
+  administeredByNurseId?: number;
+  administeredByNurseName?: string;
+  skippedAt?: string;
+  skipReason?: MedicationSkipReason;
+  skipNotes?: string;
+  patientAllergies?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface NurseReminderStats {
+  total: number;
+  pending: number;
+  dueNow: number;
+  completed: number;
+  needsReview: number;
+  missedOrSkipped: number;
+}
+
 

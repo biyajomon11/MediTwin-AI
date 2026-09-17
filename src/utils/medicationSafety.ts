@@ -187,8 +187,11 @@ export function checkAllergyConflicts(
   const alerts: SafetyAlert[] = [];
   const candidateLower = candidateMedicineName.toLowerCase();
 
-  for (const allergy of patientAllergies) {
-    const substance = (typeof allergy === 'string' ? allergy : allergy.substance).toLowerCase();
+  for (const allergy of patientAllergies || []) {
+    if (!allergy) continue;
+    const rawSubstance = typeof allergy === 'string' ? allergy : allergy.substance;
+    if (!rawSubstance) continue;
+    const substance = rawSubstance.toLowerCase();
     const isVerified = typeof allergy !== 'string' && allergy.verificationStatus?.startsWith('Verified');
     const verifier = typeof allergy !== 'string' && allergy.verifiedBy ? ` (${allergy.verifiedBy})` : '';
 

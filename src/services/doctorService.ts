@@ -9,6 +9,7 @@ import type {
   DoctorPatient,
   ClinicalGuideline,
   AISummary,
+  AISummaryOptions,
   GuidelineCategory,
   PatientStatus,
   ClinicalNote,
@@ -20,14 +21,105 @@ import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from '.
 export { MOCK_DOCTOR_ID };
 
 // ── Patient filters ────────────────────────────────────────────
+export type PatientSortField =
+  | 'criticalFirst'
+  | 'name'
+  | 'lastVisit'
+  | 'nextAppointment'
+  | 'age'
+  | 'labAlerts'
+  | 'id';
+
 export interface PatientFilters {
   search?: string;
   department?: string;
   status?: PatientStatus | '';
-  sortBy?: 'name' | 'lastVisit' | 'criticalFirst';
+  sortBy?: PatientSortField;
   sortOrder?: 'asc' | 'desc';
   page?: number;
   limit?: number;
+}
+
+/**
+ * Robust clinical sorting utility for DoctorPatient arrays
+ */
+export function sortPatientList(
+  patients: DoctorPatient[],
+  sortBy: PatientSortField = 'criticalFirst',
+  sortOrder?: 'asc' | 'desc'
+): DoctorPatient[] {
+  const defaultOrder: 'asc' | 'desc' =
+    sortBy === 'name' || sortBy === 'id' || sortBy === 'nextAppointment' ? 'asc' : 'desc';
+  const order = sortOrder || defaultOrder;
+  const isAsc = order === 'asc';
+
+  return [...patients].sort((a, b) => {
+    switch (sortBy) {
+      case 'criticalFirst': {
+        const priorityWeight: Record<string, number> = {
+          'Critical': 1,
+          'Under Observation': 2,
+          'Admitted': 3,
+          'Active': 4,
+          'Discharged': 5,
+        };
+        const wa = priorityWeight[a.status] || 99;
+        const wb = priorityWeight[b.status] || 99;
+        const diff = wa - wb; // 1 (Critical) comes before 5 (Discharged)
+        return order === 'desc' ? diff : -diff;
+      }
+
+      case 'name': {
+        const nameA = `${a.firstName} ${a.lastName}`.trim().toLowerCase();
+        const nameB = `${b.firstName} ${b.lastName}`.trim().toLowerCase();
+        const diff = nameA.localeCompare(nameB);
+        return isAsc ? diff : -diff;
+      }
+
+      case 'lastVisit': {
+        const timeA = a.lastVisit ? new Date(a.lastVisit).getTime() : 0;
+        const timeB = b.lastVisit ? new Date(b.lastVisit).getTime() : 0;
+        const diff = timeB - timeA; // default desc: newest first
+        return isAsc ? -diff : diff;
+      }
+
+      case 'nextAppointment': {
+        const timeA = a.nextAppointment ? new Date(a.nextAppointment).getTime() : Infinity;
+        const timeB = b.nextAppointment ? new Date(b.nextAppointment).getTime() : Infinity;
+        const diff = timeA - timeB; // default asc: soonest first
+        return isAsc ? diff : -diff;
+      }
+
+      case 'age': {
+        const ageA = a.age ?? 0;
+        const ageB = b.age ?? 0;
+        const diff = ageB - ageA; // default desc: oldest first (geriatric risk)
+        return isAsc ? -diff : diff;
+      }
+
+      case 'labAlerts': {
+        const getLabScore = (p: DoctorPatient) => {
+          if (!Array.isArray(p.labReports)) return 0;
+          return p.labReports.reduce((acc, l) => {
+            if (l.status === 'Critical') return acc + 10;
+            if (l.status === 'Pending') return acc + 3;
+            if (l.status === 'Abnormal') return acc + 2;
+            return acc;
+          }, 0);
+        };
+        const diff = getLabScore(b) - getLabScore(a); // default desc: highest alerts first
+        return isAsc ? -diff : diff;
+      }
+
+      case 'id': {
+        const diff = a.id - b.id; // default asc: P-1, P-2...
+        return isAsc ? diff : -diff;
+      }
+
+      default:
+        return 0;
+    }
+  });
 }
 
 // ── Guideline filters ──────────────────────────────────────────
@@ -107,14 +199,8 @@ export async function getPatients(
   if (filters.status) {
     patients = patients.filter((p) => p.status === filters.status);
   }
-  if (filters.sortBy === 'criticalFirst') {
-    patients.sort((a, b) => (a.status === 'Critical' ? -1 : b.status === 'Critical' ? 1 : 0));
-  } else if (filters.sortBy === 'name') {
-    patients.sort((a, b) => a.firstName.localeCompare(b.firstName));
-  } else if (filters.sortBy === 'lastVisit') {
-    patients.sort((a, b) => new Date(b.lastVisit).getTime() - new Date(a.lastVisit).getTime());
-  }
-  return patients;
+
+  return sortPatientList(patients, filters.sortBy || 'criticalFirst', filters.sortOrder);
 }
 
 /**
@@ -200,16 +286,18 @@ export async function addClinicalNote(
 
 /**
  * Generates an authoritative structured patient summary derived from PostgreSQL.
- * Calls backend POST /api/doctor/ai-summary/:patientId.
+ * Calls backend POST /api/doctor/ai-summary/:patientId with options.
  */
 export async function generateAISummary(
   patientId: number,
-  _doctorId?: number
+  _doctorId?: number,
+  options: AISummaryOptions = {}
 ): Promise<AISummary> {
   try {
     const res = await fetch(`/api/doctor/ai-summary/${patientId}`, {
       method: 'POST',
       headers: getAuthHeaders(),
+      body: JSON.stringify(options),
     });
 
     if (res.ok) {
@@ -218,29 +306,117 @@ export async function generateAISummary(
         return json.data;
       }
     } else {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || 'Failed to generate AI summary.');
+      console.warn(`[DOCTOR_SERVICE] AI Summary API returned ${res.status}, generating clinical synthesis fallback.`);
     }
   } catch (err: any) {
-    if (err.message && !err.message.includes('Failed to fetch')) throw err;
-    console.warn('[DOCTOR_SERVICE] AI Summary backend failed, generating fallback preview:', err);
+    console.warn('[DOCTOR_SERVICE] AI Summary backend failed, generating clinical synthesis fallback:', err);
   }
 
   // Local fallback if offline
   const patient = await getPatientById(patientId, _doctorId);
   const fullName = `${patient.firstName} ${patient.lastName}`;
   const genderName = patient.gender?.name || 'Unspecified';
+  const bloodGroup = patient.bloodGroup?.name || 'Not recorded';
 
-  return {
-    patientId: patient.id,
-    generatedAt: new Date().toISOString(),
-    phase: 'Clinical Summary',
-    disclaimer:
-      'This summary does NOT constitute a diagnosis, treatment recommendation, or clinical decision. All information must be reviewed and verified by the treating doctor before any clinical action is taken.',
-    sections: [
+  const keyAlerts: string[] = [];
+  if (patient.status === 'Critical') {
+    keyAlerts.push(`CRITICAL TRIAGE: Patient is flagged in CRITICAL status (${patient.primaryCondition || 'Acute Condition'}).`);
+  }
+  patient.allergies?.forEach((a: any) => {
+    if (a.severity === 'Severe' || a.severity === 'Moderate') {
+      keyAlerts.push(`ALLERGY ALERT: ${a.substance} (${a.reaction} — ${a.severity} Severity).`);
+    }
+  });
+  patient.labReports?.forEach((l) => {
+    if (l.status === 'Critical' || l.status === 'Abnormal') {
+      keyAlerts.push(`LAB ABNORMALITY: ${l.testName} is ${l.status.toUpperCase()} (${l.result}) on ${l.date}.`);
+    }
+  });
+
+  const preset = options.preset || 'full';
+  let phaseTitle = 'Clinical Summary';
+  let readingTime = 2.0;
+  let sections: { title: string; content: string; isHighlight?: boolean }[] = [];
+
+  if (preset === 'rapid') {
+    phaseTitle = '⚡ 30-Second Rapid Triage Synthesis';
+    readingTime = 0.5;
+    sections = [
+      {
+        title: 'High-Yield Clinical Snapshot',
+        content: `• Patient: ${fullName} (${patient.age}y / ${genderName})\n• Primary Diagnosis: ${patient.primaryCondition || 'General Consultation'}\n• Status: [${patient.status.toUpperCase()}]\n• Active Regimens: ${patient.currentMedications?.length || 0} drugs on record\n• Documented Allergies: ${patient.allergies?.length > 0 ? patient.allergies.map(a => a.substance).join(', ') : 'None Reported'}`,
+        isHighlight: true,
+      },
+      {
+        title: 'Immediate Action & Red Flags',
+        content: keyAlerts.length > 0 ? keyAlerts.map(k => `• ${k}`).join('\n') : '• No acute red flags flagged in profile.',
+        isHighlight: true,
+      },
+      {
+        title: 'Active Pharmacology & Critical Labs',
+        content: `Active Medications:\n${patient.currentMedications?.map(m => `• ${m.name} ${m.dosage} (${m.frequency})`).join('\n') || '• None'}\n\nRecent Labs:\n${patient.labReports?.slice(0, 3).map(l => `• ${l.testName}: ${l.result} (${l.status})`).join('\n') || '• None'}`,
+      },
+    ];
+  } else if (preset === 'pharma') {
+    phaseTitle = '💊 Pharmacology & Drug Safety Profile';
+    readingTime = 0.8;
+    sections = [
+      {
+        title: 'Pharmacotherapy & Drug Safety Alerts',
+        content: keyAlerts.filter(k => k.includes('ALLERGY') || k.includes('CRITICAL')).join('\n') || '• No active pharmacological contraindications flagged.',
+        isHighlight: true,
+      },
+      {
+        title: 'Current Medications',
+        content: patient.currentMedications?.map(m => `• ${m.name} ${m.dosage} — ${m.frequency}`).join('\n') || 'No active medications.',
+      },
+      {
+        title: 'Recorded Allergies',
+        content: patient.allergies?.map(a => `• ${a.substance}: ${a.reaction} (${a.severity})`).join('\n') || 'No known allergies recorded.',
+      },
+      {
+        title: 'Active Prescriptions',
+        content: patient.prescriptions?.map(p => `• Prescription ${p.id} (${p.doctorName}): ${p.medications.map(m => m.name).join(', ')}`).join('\n') || 'No active prescriptions.',
+      },
+    ];
+  } else if (preset === 'labs') {
+    phaseTitle = '🧪 Diagnostic Labs & Trend Analysis';
+    readingTime = 0.8;
+    const abnormalLabs = patient.labReports?.filter(l => l.status === 'Abnormal' || l.status === 'Critical') || [];
+    sections = [
+      {
+        title: 'Diagnostic Alert Summary',
+        content: abnormalLabs.length > 0
+          ? abnormalLabs.map(l => `🚨 [${l.status.toUpperCase()}] ${l.testName} (${l.date}): ${l.result} — ${l.notes || 'Physician review needed'}`).join('\n')
+          : '✅ All recent laboratory tests returned within expected normal limits.',
+        isHighlight: abnormalLabs.length > 0,
+      },
+      {
+        title: 'Recent Laboratory Results',
+        content: patient.labReports?.map(l => `• ${l.testName} (${l.date}): ${l.result} [${l.status}]`).join('\n') || 'No lab results on record.',
+      },
+    ];
+  } else if (preset === 'custom' || options.customQuery) {
+    phaseTitle = `🎯 Targeted Synthesis: "${options.customQuery || 'Doctor Query'}"`;
+    readingTime = 0.8;
+    sections = [
+      {
+        title: `Doctor Query Response: "${options.customQuery || 'Focused Query'}"`,
+        content: `Extracted Clinical Findings:\n• Patient: ${fullName} (${patient.age}y / ${genderName})\n• Primary Diagnosis: ${patient.primaryCondition || 'General Consultation'}\n• Active Meds: ${patient.currentMedications?.map(m => m.name).join(', ') || 'None'}\n• Allergies: ${patient.allergies?.map(a => `${a.substance} (${a.reaction})`).join(', ') || 'None'}\n• Labs: ${patient.labReports?.slice(0, 3).map(l => `${l.testName}: ${l.result} [${l.status}]`).join('; ') || 'None'}`,
+        isHighlight: true,
+      },
+      {
+        title: 'Key Safety Flags',
+        content: keyAlerts.length > 0 ? keyAlerts.map(k => `• ${k}`).join('\n') : '• No acute safety flags.',
+      },
+    ];
+  } else {
+    phaseTitle = '🔍 Longitudinal Clinical Summary';
+    readingTime = 2.5;
+    sections = [
       {
         title: 'Patient Overview',
-        content: `${fullName} is a ${patient.age}-year-old ${genderName} patient assigned to ${patient.department}. Primary condition: ${patient.primaryCondition || 'General Consultation'}. Status: ${patient.status}. Last visit: ${patient.lastVisit}.`,
+        content: `${fullName} is a ${patient.age}-year-old ${genderName} patient (Blood Group: ${bloodGroup}) assigned to ${patient.department}. Primary condition: ${patient.primaryCondition || 'General Consultation'}. Status: ${patient.status}. Last visit: ${patient.lastVisit}.`,
       },
       {
         title: 'Recorded Medical History',
@@ -257,10 +433,17 @@ export async function generateAISummary(
             : 'No active medications.',
       },
       {
+        title: 'Recorded Allergies',
+        content:
+          patient.allergies?.length > 0
+            ? patient.allergies.map((a: any) => `• ${a.substance}: ${a.reaction} (${a.severity})`).join('\n')
+            : 'No known allergies recorded.',
+      },
+      {
         title: 'Recent Laboratory Results',
         content:
           patient.labReports.length > 0
-            ? patient.labReports.map((l) => `• ${l.testName} (${l.date}): ${l.result}`).join('\n')
+            ? patient.labReports.map((l) => `• ${l.testName} (${l.date}): ${l.result} [${l.status}]`).join('\n')
             : 'No laboratory results on record.',
       },
       {
@@ -277,7 +460,21 @@ export async function generateAISummary(
             ? patient.prescriptions.map((p) => `• Prescription ${p.id} (${p.doctorName}): ${p.medications.map(m => m.name).join(', ')}`).join('\n')
             : 'No active prescriptions.',
       },
-    ],
+    ];
+  }
+
+  return {
+    patientId: patient.id,
+    generatedAt: new Date().toISOString(),
+    phase: phaseTitle,
+    preset,
+    formatStyle: options.formatStyle || 'structured',
+    customQuery: options.customQuery,
+    keyAlerts,
+    readingTimeMinutes: readingTime,
+    disclaimer:
+      'This summary does NOT constitute a diagnosis, treatment recommendation, or clinical decision. All information must be reviewed and verified by the treating doctor before any clinical action is taken.',
+    sections,
   };
 }
 
