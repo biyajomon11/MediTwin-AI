@@ -861,4 +861,137 @@ export interface NurseReminderStats {
   missedOrSkipped: number;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Doctor Module — Doctor Profile, Settings & Security
+// ─────────────────────────────────────────────────────────────
 
+export interface DoctorProfile {
+  id: string;
+  doctorId: string;
+  userId: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  specialization?: string;
+  department?: string;
+  hospital?: string;
+  licenseNumber?: string;
+  yearsOfExperience?: number;
+  qualification?: string;
+  accountStatus?: string;
+  createdAt?: string;
+  joiningDate?: string;
+  role: 'DOCTOR';
+  authMethod: string;
+  profileImageUrl?: string;
+}
+
+export interface DoctorProfileUpdateInput {
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
+  yearsOfExperience?: number | null;
+}
+
+export interface DoctorNotificationPreferences {
+  appointmentAlerts: boolean;
+  criticalLabAlerts: boolean;
+  prescriptionAlerts: boolean;
+  patientRecordAlerts: boolean;
+  aiSummaryAlerts: boolean;
+  guidelineUpdates: boolean;
+}
+
+export interface DoctorReminderSummary {
+  unreadCount: number;
+  upcomingAppointments: number;
+  reportsToReview: number;
+  documentationTasks: number;
+  otherNotifications: number;
+}
+
+export interface DoctorActivityItem {
+  id: number;
+  action: string;
+  timestamp: string;
+  timeFormatted: string;
+  dateFormatted: string;
+  status: 'Completed' | 'Pending';
+}
+
+export interface OverviewAppointment {
+  id: number;
+  patientId: number;
+  patientName: string;
+  condition: string;
+  timeStatus: string;
+  status: string;
+  isOngoing?: boolean;
+  date: string;
+  age: number;
+  sex: 'M' | 'F';
+  phone?: string;
+  email?: string;
+  symptoms: string[];
+  prescription: string;
+  notes?: string;
+  vitals?: {
+    bp: string;
+    pulse: number;
+    spo2: number;
+    temp: number;
+  };
+}
+
+export interface OverviewTimelineItem {
+  id: number;
+  time: string;
+  title: string;
+  status: string;
+  patientName: string;
+}
+
+export interface OverviewRequestItem {
+  id: number;
+  name: string;
+  date: string;
+  time: string;
+  status: string;
+}
+
+export interface DoctorClinicalOverviewData {
+  doctor: {
+    id: number;
+    fullName: string;
+    specialization: string;
+    department: string;
+  };
+  stats: {
+    appointmentsCount: number;
+    activePatientsCount: number;
+    pendingRequestsCount: number;
+    prescriptionsCount: number;
+    completedCount: number;
+  };
+  todaysAppointments: OverviewAppointment[];
+  timeline: OverviewTimelineItem[];
+  appointmentRequests: OverviewRequestItem[];
+  patientDemographics: {
+    total: number;
+    femaleCount: number;
+    maleCount: number;
+    otherCount: number;
+    femalePercent: number;
+    malePercent: number;
+    otherPercent: number;
+    scheduledCount: number;
+    completedCount: number;
+  };
+  activityTrends: {
+    day: string;
+    label: string;
+    count: number;
+  }[];
+}

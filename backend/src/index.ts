@@ -9,6 +9,8 @@ import patientsRouter       from './routes/patients';
 import registerRouter       from './routes/register';
 import doctorRouter         from './routes/doctor';
 import patientRouter        from './routes/patient';
+import adminRouter          from './routes/admin';
+import nurseRouter          from './routes/nurse';
 
 dotenv.config();
 
@@ -26,6 +28,8 @@ app.use('/api/doctor',                doctorRouter);
 app.use('/api/patient',               patientRouter);
 app.use('/api/nurse/observations',    observationsRouter);
 app.use('/api/nurse/patients',        patientsRouter);
+app.use('/api/nurse',                 nurseRouter);
+app.use('/api/admin',                 adminRouter);
 
 // ── Health check ────────────────────────────────────────────────
 app.get('/api/health', async (_req: Request, res: Response) => {

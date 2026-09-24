@@ -14,6 +14,12 @@ import type {
   PatientStatus,
   ClinicalNote,
   Prescription,
+  DoctorProfile,
+  DoctorProfileUpdateInput,
+  DoctorNotificationPreferences,
+  DoctorReminderSummary,
+  DoctorActivityItem,
+  DoctorClinicalOverviewData,
 } from '../types';
 import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID } from '../data/doctorMockData';
 import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from './patientService';
@@ -647,4 +653,349 @@ export async function discontinuePrescription(
     }
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Doctor Profile & Security API Layer
+// ─────────────────────────────────────────────────────────────
+
+function isRealJwt(token: string | null): boolean {
+  return !!token && token !== 'demo-token' && token !== 'google-token' && token.split('.').length === 3;
+}
+
+/**
+ * Retrieves the authenticated physician profile from PostgreSQL.
+ */
+export async function getDoctorProfile(): Promise<DoctorProfile> {
+  const token = getAuthToken();
+
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/doctor/profile', {
+        headers: getAuthHeaders(),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          return json.data;
+        }
+      }
+
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) retrieving doctor profile`);
+    } catch (err: any) {
+      if (
+        err instanceof TypeError &&
+        (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))
+      ) {
+        console.warn('[DOCTOR_PROFILE] Network offline, using cached/mock profile:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // Fallback demo profile
+  let storedUser: any = null;
+  try {
+    const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+    if (raw) storedUser = JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+
+  return {
+    id: String(storedUser?.id || MOCK_DOCTOR_ID),
+    doctorId: `DOC-${String(storedUser?.id || 1).padStart(3, '0')}`,
+    userId: String(storedUser?.id || 2),
+    firstName: storedUser?.firstName || 'Sarah',
+    lastName: storedUser?.lastName || 'Joseph',
+    fullName: storedUser?.firstName ? `Dr. ${storedUser.firstName} ${storedUser.lastName || ''}`.trim() : 'Dr. Sarah Joseph',
+    email: storedUser?.email || 'sarah01@gmail.com',
+    phone: '+91 7558913457',
+    specialization: 'Cardiology',
+    department: 'Cardiology',
+    hospital: 'MediTwin General Hospital',
+    licenseNumber: 'MID-123D-456',
+    yearsOfExperience: 5,
+    qualification: 'MBBS, MD (Cardiology)',
+    accountStatus: 'Active',
+    createdAt: '2024-01-15',
+    joiningDate: '2024-01-15',
+    role: 'DOCTOR',
+    authMethod: 'JWT Bearer Authentication (RBAC)',
+  };
+}
+
+/**
+ * Updates permitted physician profile fields.
+ */
+export async function updateDoctorProfile(data: DoctorProfileUpdateInput): Promise<DoctorProfile> {
+  const token = getAuthToken();
+
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/doctor/profile', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          // Update cached name if modified
+          try {
+            const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+            if (raw) {
+              const u = JSON.parse(raw);
+              if (data.firstName) u.firstName = data.firstName;
+              if (data.lastName) u.lastName = data.lastName;
+              localStorage.setItem('meditwin_user', JSON.stringify(u));
+            }
+          } catch {
+            // ignore
+          }
+          return json.data;
+        }
+      }
+
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) updating doctor profile`);
+    } catch (err: any) {
+      if (
+        err instanceof TypeError &&
+        (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))
+      ) {
+        console.warn('[DOCTOR_PROFILE] Network offline, updating in mock:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  const current = await getDoctorProfile();
+  return {
+    ...current,
+    firstName: data.firstName || current.firstName,
+    lastName: data.lastName || current.lastName,
+    fullName: `Dr. ${data.firstName || current.firstName} ${data.lastName || current.lastName}`.trim(),
+    phone: data.phone ?? current.phone,
+    yearsOfExperience: data.yearsOfExperience ?? current.yearsOfExperience,
+  };
+}
+
+/**
+ * Securely changes the physician's account password.
+ */
+export async function changeDoctorPassword(data: { currentPassword: string; newPassword: string }): Promise<void> {
+  const token = getAuthToken();
+
+  if (isRealJwt(token)) {
+    const res = await fetch('/api/doctor/profile/password', {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+
+    if (res.ok) {
+      return;
+    }
+
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Failed to change password (${res.status})`);
+  }
+
+  // Demo fallback
+  await new Promise((resolve) => setTimeout(resolve, 300));
+}
+
+/**
+ * Retrieves clinical notification preferences.
+ */
+export async function getDoctorNotificationPreferences(): Promise<DoctorNotificationPreferences> {
+  const token = getAuthToken();
+
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/doctor/profile/preferences', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          return json.data;
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  return {
+    appointmentAlerts: true,
+    criticalLabAlerts: true,
+    prescriptionAlerts: true,
+    patientRecordAlerts: true,
+    aiSummaryAlerts: true,
+    guidelineUpdates: true,
+  };
+}
+
+/**
+ * Updates clinical notification preferences.
+ */
+export async function updateDoctorNotificationPreferences(
+  prefs: DoctorNotificationPreferences
+): Promise<DoctorNotificationPreferences> {
+  const token = getAuthToken();
+
+  if (isRealJwt(token)) {
+    const res = await fetch('/api/doctor/profile/preferences', {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ preferences: prefs }),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        return json.data;
+      }
+    }
+
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || 'Failed to update notification preferences');
+  }
+
+  return prefs;
+}
+
+/**
+ * Retrieves clinical reminder summary metrics.
+ */
+export async function getDoctorReminderSummary(): Promise<DoctorReminderSummary> {
+  const token = getAuthToken();
+
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/doctor/profile/reminders', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          return json.data;
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  return {
+    unreadCount: 4,
+    upcomingAppointments: 2,
+    reportsToReview: 1,
+    documentationTasks: 1,
+    otherNotifications: 0,
+  };
+}
+
+/**
+ * Retrieves sanitized recent account activity.
+ */
+export async function getDoctorActivity(): Promise<DoctorActivityItem[]> {
+  const token = getAuthToken();
+
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/doctor/profile/activity', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          return json.data;
+        }
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  return [
+    {
+      id: 1,
+      action: 'Authenticated to physician workstation',
+      timestamp: new Date().toISOString(),
+      timeFormatted: '10:30 AM',
+      dateFormatted: 'Today',
+      status: 'Completed',
+    },
+    {
+      id: 2,
+      action: 'Accessed patient clinical chart',
+      timestamp: new Date(Date.now() - 3600000).toISOString(),
+      timeFormatted: '09:15 AM',
+      dateFormatted: 'Today',
+      status: 'Completed',
+    },
+    {
+      id: 3,
+      action: 'Reviewed clinical practice guideline',
+      timestamp: new Date(Date.now() - 86400000).toISOString(),
+      timeFormatted: '04:45 PM',
+      dateFormatted: 'Yesterday',
+      status: 'Completed',
+    },
+  ];
+}
+
+/**
+ * Retrieves aggregated live clinical overview data from PostgreSQL.
+ * Calls GET /api/doctor/clinical-overview.
+ */
+export async function getDoctorClinicalOverview(): Promise<DoctorClinicalOverviewData> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    const res = await fetch('/api/doctor/clinical-overview', {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to load clinical overview (${res.status})`);
+    }
+    const json = await res.json();
+    if (json.success && json.data) {
+      return json.data;
+    }
+  }
+  throw new Error('Doctor session not authenticated or backend unavailable.');
+}
+
+/**
+ * Updates appointment status in PostgreSQL.
+ * Calls PATCH /api/doctor/appointments/:id/status.
+ */
+export async function updateDoctorAppointmentStatus(
+  appointmentId: number,
+  status: 'completed' | 'cancelled' | 'scheduled'
+): Promise<void> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    const res = await fetch(`/api/doctor/appointments/${appointmentId}/status`, {
+      method: 'PATCH',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.error || `Failed to update appointment status (${res.status})`);
+    }
+    return;
+  }
+  throw new Error('Doctor session not authenticated.');
+}
+
+
 

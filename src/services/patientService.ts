@@ -1,10 +1,13 @@
 /**
  * patientService.ts
- * Phase 1 Mock Service Layer for Patient Module
+ * Patient Module Service Layer with strict PostgreSQL database connectivity & graceful fallback
  *
- * All functions return Promises to mirror real backend integration.
- * In-memory state allows testing uploads, edits, and reminder interactions without a DB.
- * No real API calls or database connections are made.
+ * Architecture:
+ * - No JWT / demo mode -> Use mock data
+ * - Valid JWT -> Call PostgreSQL API (/api/patient/*)
+ * - 200 OK -> Use database data
+ * - Network offline / connection refused -> Warn and fall back gracefully
+ * - 401/403/422/500 -> Throw real server error (never swallow real database/API bugs)
  */
 
 import {
@@ -27,7 +30,7 @@ import type {
   PrescriptionStatus,
 } from '../types';
 
-// ── In-memory mutable state for Phase 1 ──────────────────────────────────────
+// ── In-memory mutable state for Demo Mode ────────────────────────────────────
 let _profile: PatientHealthProfile = { ...MOCK_PATIENT_PROFILE };
 let _prescriptions: PatientPrescriptionItem[] = [...MOCK_PATIENT_PRESCRIPTIONS];
 let _history: PatientMedicalHistoryRecord[] = [...MOCK_PATIENT_HISTORY];
@@ -39,8 +42,24 @@ const DELAY = 300;
 const delay = (ms = DELAY) => new Promise<void>((res) => setTimeout(res, ms));
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Authentication / Active Patient Helper
+// Authentication / Token Helpers
 // ─────────────────────────────────────────────────────────────────────────────
+export function getAuthToken(): string | null {
+  return localStorage.getItem('meditwin_token') || sessionStorage.getItem('meditwin_token');
+}
+
+export function isRealJwt(token: string | null): boolean {
+  return !!token && token !== 'demo-token' && token !== 'google-token' && token.split('.').length === 3;
+}
+
+export function getAuthHeaders(): HeadersInit {
+  const token = getAuthToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export function getCurrentPatientId(): number {
   try {
     const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
@@ -117,6 +136,30 @@ function getLoggedInPatient(): Partial<PatientHealthProfile> | null {
 // 1. Health Profile
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getPatientProfile(_patientId: number = DEMO_PATIENT_ID): Promise<PatientHealthProfile> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/profile', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          _profile = { ..._profile, ...json.data };
+          return _profile;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while fetching patient profile`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error, falling back to local cached profile:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay();
   const loggedIn = getLoggedInPatient();
   if (loggedIn) {
@@ -137,6 +180,35 @@ export async function updatePatientContactInfo(
     emergencyContact?: { name: string; relationship: string; phone: string };
   }
 ): Promise<PatientHealthProfile> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/profile', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        _profile = {
+          ..._profile,
+          phone: data.phone ?? _profile.phone,
+          email: data.email ?? _profile.email,
+          address: data.address ?? _profile.address,
+          emergencyContact: data.emergencyContact ?? _profile.emergencyContact,
+        };
+        return getPatientProfile(patientId);
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while updating patient profile`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error updating profile, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay();
   _profile = {
     ..._profile,
@@ -164,6 +236,33 @@ export async function getPrescriptions(
   patientId: number = DEMO_PATIENT_ID,
   statusFilter?: PrescriptionStatus | 'All'
 ): Promise<PatientPrescriptionItem[]> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/prescriptions', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          let items: PatientPrescriptionItem[] = json.data;
+          if (statusFilter && statusFilter !== 'All') {
+            items = items.filter((p) => p.status === statusFilter);
+          }
+          return items;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while fetching prescriptions`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error, falling back to mock prescriptions:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay();
   if (patientId !== _profile.id && patientId !== DEMO_PATIENT_ID) {
     throw new Error('Unauthorized: Cannot view prescriptions for other patients.');
@@ -182,6 +281,33 @@ export async function getMedicalHistory(
   patientId: number = DEMO_PATIENT_ID,
   categoryFilter?: string
 ): Promise<PatientMedicalHistoryRecord[]> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/medical-history', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          let items: PatientMedicalHistoryRecord[] = json.data;
+          if (categoryFilter && categoryFilter !== 'All') {
+            items = items.filter((h) => (h.category || (h as any).type || '').toLowerCase() === categoryFilter.toLowerCase());
+          }
+          return items;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while fetching medical history`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error, falling back to mock history:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay();
   if (patientId !== _profile.id && patientId !== DEMO_PATIENT_ID) {
     throw new Error('Unauthorized: Cannot view medical history for other patients.');
@@ -200,6 +326,33 @@ export async function getMedicalDocuments(
   patientId: number = DEMO_PATIENT_ID,
   categoryFilter?: string
 ): Promise<PatientUploadedDocument[]> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/documents', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          let items: PatientUploadedDocument[] = json.data;
+          if (categoryFilter && categoryFilter !== 'All') {
+            items = items.filter((d) => (d.documentType || '').toLowerCase() === categoryFilter.toLowerCase());
+          }
+          return items;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while fetching medical documents`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error, falling back to mock documents:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay();
   if (patientId !== _profile.id && patientId !== DEMO_PATIENT_ID) {
     throw new Error('Unauthorized: Cannot view documents for other patients.');
@@ -228,6 +381,32 @@ export interface DocumentUploadPayload {
 export async function uploadMedicalDocument(
   payload: DocumentUploadPayload
 ): Promise<PatientUploadedDocument> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/documents', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          _documents = [json.data, ..._documents];
+          return json.data;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while uploading document`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error during upload, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(600); // simulate upload time
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
@@ -269,6 +448,28 @@ export async function uploadMedicalDocument(
 }
 
 export async function deleteMedicalDocument(docId: string): Promise<void> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/patient/documents/${docId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        _documents = _documents.filter((d) => d.id !== docId);
+        return;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while deleting document`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error during document delete, falling back:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(250);
   _documents = _documents.filter((d) => d.id !== docId);
 }
@@ -278,6 +479,33 @@ export async function verifyMedicalDocument(
   verifiedBy: string = 'Dr. Priya Sharma, MD (Cardiology)',
   verificationSource: string = 'Clinical Attending Sign-Off & Diagnostic Reconciliation'
 ): Promise<PatientUploadedDocument> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/patient/documents/${docId}/verify`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ verifiedBy, verificationSource }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          const updated = json.data;
+          _documents = _documents.map((d) => (d.id === docId ? updated : d));
+          return updated;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while verifying document`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error during document verification, falling back:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(300);
   const idx = _documents.findIndex((d) => d.id === docId);
   if (idx === -1) throw new Error('Document not found.');
@@ -316,6 +544,29 @@ export async function verifyMedicalDocument(
 export async function getMedicineReminders(
   patientId: number = DEMO_PATIENT_ID
 ): Promise<MedicineReminder[]> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/reminders', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          return json.data;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while fetching reminders`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error, falling back to mock reminders:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay();
   if (patientId !== _profile.id && patientId !== DEMO_PATIENT_ID) {
     throw new Error('Unauthorized: Cannot view medicine reminders for other patients.');
@@ -324,6 +575,35 @@ export async function getMedicineReminders(
 }
 
 export async function markMedicineTaken(reminderId: string): Promise<MedicineReminder> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/patient/reminders/${reminderId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status: 'Taken' }),
+      });
+      if (res.ok) {
+        const now = new Date();
+        const timeStr = `${now.toISOString().split('T')[0]} ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const idx = _reminders.findIndex((r) => r.id === reminderId);
+        if (idx !== -1) {
+          _reminders[idx] = { ..._reminders[idx], status: 'Taken', takenAt: timeStr };
+          return _reminders[idx];
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error (${res.status}) while updating reminder`);
+      }
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error marking medicine taken, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(200);
   const idx = _reminders.findIndex((r) => r.id === reminderId);
   if (idx === -1) throw new Error('Reminder not found.');
@@ -344,14 +624,41 @@ export async function snoozeMedicineReminder(
   reminderId: string,
   minutes = 30
 ): Promise<MedicineReminder> {
-  await delay(200);
-  const idx = _reminders.findIndex((r) => r.id === reminderId);
-  if (idx === -1) throw new Error('Reminder not found.');
-
   const snoozedTime = new Date(Date.now() + minutes * 60000).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/patient/reminders/${reminderId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ status: 'Upcoming', snoozeUntil: snoozedTime }),
+      });
+      if (res.ok) {
+        const idx = _reminders.findIndex((r) => r.id === reminderId);
+        if (idx !== -1) {
+          _reminders[idx] = { ..._reminders[idx], status: 'Upcoming', snoozedUntil: `Snoozed until ${snoozedTime}` };
+          return _reminders[idx];
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error (${res.status}) while snoozing reminder`);
+      }
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error snoozing reminder, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  await delay(200);
+  const idx = _reminders.findIndex((r) => r.id === reminderId);
+  if (idx === -1) throw new Error('Reminder not found.');
 
   const updated: MedicineReminder = {
     ..._reminders[idx],
@@ -363,6 +670,33 @@ export async function snoozeMedicineReminder(
 }
 
 export async function dismissMedicineReminder(reminderId: string): Promise<MedicineReminder> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/patient/reminders/${reminderId}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ isActive: false, status: 'Completed' }),
+      });
+      if (res.ok) {
+        const idx = _reminders.findIndex((r) => r.id === reminderId);
+        if (idx !== -1) {
+          _reminders[idx] = { ..._reminders[idx], status: 'Completed' };
+          return _reminders[idx];
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error (${res.status}) while dismissing reminder`);
+      }
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error dismissing reminder, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(200);
   const idx = _reminders.findIndex((r) => r.id === reminderId);
   if (idx === -1) throw new Error('Reminder not found.');
@@ -381,6 +715,29 @@ export async function dismissMedicineReminder(reminderId: string): Promise<Medic
 export async function getNotifications(
   patientId: number = DEMO_PATIENT_ID
 ): Promise<PatientNotification[]> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/notifications', {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          return json.data;
+        }
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while fetching notifications`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error, falling back to mock notifications:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay();
   if (patientId !== _profile.id && patientId !== DEMO_PATIENT_ID) {
     throw new Error('Unauthorized: Cannot view notifications for other patients.');
@@ -389,6 +746,30 @@ export async function getNotifications(
 }
 
 export async function markNotificationRead(notificationId: string): Promise<void> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/patient/notifications/${notificationId}/read`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        _notifications = _notifications.map((n) =>
+          n.id === notificationId ? { ...n, isRead: true } : n
+        );
+        return;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while updating notification`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error marking notification read, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(150);
   _notifications = _notifications.map((n) =>
     n.id === notificationId ? { ...n, isRead: true } : n
@@ -396,6 +777,28 @@ export async function markNotificationRead(notificationId: string): Promise<void
 }
 
 export async function markAllNotificationsRead(patientId: number = DEMO_PATIENT_ID): Promise<void> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch('/api/patient/notifications/read-all', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        _notifications = _notifications.map((n) => ({ ...n, isRead: true }));
+        return;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) while updating notifications`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[PATIENT] Network error marking all notifications read, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(200);
   _notifications = _notifications.map((n) =>
     n.patientId === patientId || n.patientId === DEMO_PATIENT_ID ? { ...n, isRead: true } : n
@@ -476,4 +879,3 @@ export function syncDiscontinuedDoctorPrescription(rxMedicineName: string) {
       : r
   );
 }
-

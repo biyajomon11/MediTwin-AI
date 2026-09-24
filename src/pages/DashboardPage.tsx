@@ -15,6 +15,7 @@ import { PatientMedicalHistoryPage, HistoryTab } from './nurse/PatientMedicalHis
 import { PatientRecordsPage } from './doctor/PatientRecordsPage';
 import { AIPatientSummaryPage } from './doctor/AIPatientSummaryPage';
 import { ClinicalGuidelinesPage } from './doctor/ClinicalGuidelinesPage';
+import { DoctorProfilePage } from './doctor/DoctorProfilePage';
 import { getPatients as getDoctorPatients } from '../services/doctorService';
 import type { DoctorPatient, PatientStatus } from '../types';
 import { formatPatientId } from '../utils/patientUtils';
@@ -94,7 +95,7 @@ const DOCTOR_NAV: NavItem[] = [
   { id: 'ai-summaries',      label: 'AI Patient Summaries', icon: Brain            },
   { id: 'medical-history',   label: 'Medical History',      icon: HeartPulse       },
   { id: 'guidelines',        label: 'Clinical Guidelines',  icon: BookOpen         },
-  { id: 'profile',           label: 'Profile',              icon: User,       comingSoon: true },
+  { id: 'profile',           label: 'Doctor Profile',       icon: User             },
 ];
 
 // ─────────────────────────────────────────────────────────────────
@@ -636,7 +637,7 @@ export const DashboardPage: React.FC = () => {
       case 'prescriptions':
         return <PatientRecordsPage initialTab="prescriptions" />;
       case 'profile':
-        return <ComingSoonView label="Profile" />;
+        return <DoctorProfilePage embedded onNavigateTab={(tab) => setActiveView(tab)} />;
       default:
         return renderDefaultDashboard();
     }
@@ -970,7 +971,13 @@ export const DashboardPage: React.FC = () => {
               </button>
             )}
 
-            <div className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/10 border border-white/15 text-xs text-gray-300 shadow-sm">
+            <div
+              onClick={() => isDoctor && setActiveView('profile')}
+              className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/10 border border-white/15 text-xs text-gray-300 shadow-sm ${
+                isDoctor ? 'cursor-pointer hover:bg-white/15 hover:border-accent/40 transition-all' : ''
+              }`}
+              title={isDoctor ? 'View Doctor Profile' : undefined}
+            >
               <div className="flex flex-col items-center justify-center">
                 <RoleIcon className="w-4 h-4 text-accent" />
                 <span className="text-[10px] font-bold text-accent leading-none mt-1 max-w-[130px] truncate text-center">
