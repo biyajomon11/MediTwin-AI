@@ -41,7 +41,7 @@ export const LoginForm: React.FC = () => {
   };
 
   // ── Session writer helper ───────────────────────────────────────────────
-  const writeSession = (userObj: { userId: string | number; email: string; role: string; username?: string; firstName?: string; lastName?: string }) => {
+  const writeSession = (userObj: any) => {
     if (rememberMe) {
       localStorage.setItem('meditwin_token', 'demo-token');
       localStorage.setItem('meditwin_user', JSON.stringify(userObj));
@@ -94,6 +94,7 @@ export const LoginForm: React.FC = () => {
 
           // Real backend login success — role is dynamically retrieved from database
           const sessionUser = {
+            ...(matchingLocalUser || {}),
             ...data.user,
             role: targetRole,
           };
@@ -140,6 +141,7 @@ export const LoginForm: React.FC = () => {
 
       const targetRole = (matchingLocalUser.role || 'doctor').toLowerCase();
       writeSession({
+        ...matchingLocalUser,
         userId: matchingLocalUser.id || 'USR-LOCAL',
         email: matchingLocalUser.email || email.trim(),
         username: matchingLocalUser.username || email.trim(),

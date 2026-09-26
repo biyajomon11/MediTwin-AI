@@ -592,18 +592,20 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
                               </div>
                               <div className="truncate">
                                 <h4 className="text-sm font-bold text-white leading-snug truncate">{apt.patientName}</h4>
-                                <p className="text-xs text-gray-400 truncate">{apt.condition}</p>
+                                <p className="text-xs text-gray-400 truncate mt-0.5">{apt.condition}</p>
                               </div>
                             </div>
 
                             <span
-                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 ${
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize ${
                                 apt.status === 'scheduled'
                                   ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/40'
-                                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : apt.status === 'completed'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                               }`}
                             >
-                              {apt.timeStatus}
+                              {apt.status === 'scheduled' ? 'Scheduled' : apt.status === 'completed' ? 'Completed' : 'Cancelled'}
                             </span>
                           </div>
                         );
@@ -738,6 +740,13 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <Calendar className="w-3 h-3 text-gray-400" />
                               <span>{selectedAppointment.date}</span>
+                              {(selectedAppointment.time || (selectedAppointment.timeStatus !== 'Completed' && selectedAppointment.timeStatus)) && (
+                                <>
+                                  <span className="text-gray-500">·</span>
+                                  <Clock className="w-3 h-3 text-cyan-400" />
+                                  <span className="text-cyan-300 font-semibold">{selectedAppointment.time || selectedAppointment.timeStatus}</span>
+                                </>
+                              )}
                             </div>
                           </div>
 
@@ -872,7 +881,7 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
                           </span>
                         </div>
                         <div className="col-span-3 sm:col-span-3 md:col-span-3 text-gray-300 font-medium whitespace-nowrap">
-                          {req.date}
+                          {req.date || new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                         </div>
                         <div className="col-span-2 sm:col-span-2 md:col-span-2 text-gray-300 font-medium whitespace-nowrap">
                           {req.time}

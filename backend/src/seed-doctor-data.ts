@@ -189,12 +189,14 @@ async function main() {
         });
 
         if (!existingAppt) {
+          const patientTimeSlots = ['09:00:00Z', '09:45:00Z', '10:30:00Z', '11:15:00Z', '14:00:00Z'];
+          const slotTime = patientTimeSlots[i % patientTimeSlots.length];
           const appt = await prisma.appointment.create({
             data: {
               patientId: patient.id,
               doctorId: doc.id,
               appointmentDate: new Date('2026-08-10'),
-              appointmentTime: new Date('2026-08-10T10:30:00Z'),
+              appointmentTime: new Date(`2026-08-10T${slotTime}`),
               statusId: apptStatusCompleted.id,
               reason: 'Routine Medical Review & Vital Signs Monitoring',
               notes: 'Patient stable. Blood pressure within target range.',

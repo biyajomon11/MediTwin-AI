@@ -68,6 +68,7 @@ export interface PatientSummary {
   user?: { email: string };
   department?: string;
   ward?: string;
+  bedNumber?: string;
   patientCode?: string;
 }
 
@@ -927,6 +928,7 @@ export interface OverviewAppointment {
   patientName: string;
   condition: string;
   timeStatus: string;
+  time?: string;
   status: string;
   isOngoing?: boolean;
   date: string;

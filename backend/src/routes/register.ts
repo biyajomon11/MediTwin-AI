@@ -15,17 +15,22 @@ const hashPassword = (plain: string) => bcrypt.hash(plain, 12);
 // POST /api/register/patient
 // ─────────────────────────────────────────────────────────────────────────────
 const patientSchema = z.object({
-  firstName:            z.string().min(1),
-  lastName:             z.string().min(1),
-  email:                z.string().email(),
-  password:             z.string().min(8),
-  dob:                  z.string().min(1),
-  gender:               z.string().optional(),
-  phone:                z.string().optional(),
-  address:              z.string().optional(),
-  bloodGroup:           z.string().optional(),
-  emergencyContactName: z.string().optional(),
-  emergencyContactPhone:z.string().optional(),
+  firstName:             z.string().min(1),
+  lastName:              z.string().min(1),
+  email:                 z.string().email(),
+  password:              z.string().min(8),
+  dob:                   z.string().min(1),
+  gender:                z.string().optional(),
+  phone:                 z.string().optional(),
+  address:               z.string().optional(),
+  bloodGroup:            z.string().optional(),
+  emergencyContactName:  z.string().optional(),
+  emergencyRelationship: z.string().optional(),
+  emergencyContactPhone: z.string().optional(),
+  allergies:             z.string().optional(),
+  medicalConditions:     z.string().optional(),
+  medications:           z.string().optional(),
+  primaryProvider:       z.string().optional(),
 });
 
 router.post('/patient', async (req: Request, res: Response) => {
@@ -54,9 +59,28 @@ router.post('/patient', async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, error: 'An account with this email already exists.' });
     }
 
+    // Resolve assigned primary doctor
+    let doctor = null;
+    if (d.primaryProvider) {
+      const provName = d.primaryProvider.replace(/^Dr\.\s*/i, '').trim();
+      doctor = await prisma.doctor.findFirst({
+        where: {
+          OR: [
+            { firstName: { contains: provName, mode: 'insensitive' } },
+            { lastName: { contains: provName, mode: 'insensitive' } },
+          ],
+        },
+      });
+    }
+    if (!doctor) {
+      doctor = await prisma.doctor.findFirst({
+        where: { user: { isActive: true } },
+      }) || await prisma.doctor.findFirst();
+    }
+
     const password_hash = await hashPassword(d.password);
 
-    const user = await prisma.$transaction(async (tx) => {
+    const { user, patient } = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
           email: d.email,
@@ -65,7 +89,7 @@ router.post('/patient', async (req: Request, res: Response) => {
         },
       });
 
-      await tx.patient.create({
+      const newPatient = await tx.patient.create({
         data: {
           userId:               newUser.id,
           firstName:            d.firstName,
@@ -80,13 +104,120 @@ router.post('/patient', async (req: Request, res: Response) => {
         },
       });
 
-      return newUser;
+      // Record types for diagnosis & consultation
+      const diagnosisType = await tx.recordType.findFirst({ where: { name: 'diagnosis' } }) || await tx.recordType.findFirst();
+      const consultationType = await tx.recordType.findFirst({ where: { name: 'consultation' } }) || diagnosisType;
+
+      // Seed medical conditions as medical records
+      if (d.medicalConditions && doctor && diagnosisType) {
+        const conditions = d.medicalConditions.split(/[,;\n]+/).map((c) => c.trim()).filter(Boolean);
+        for (const cond of conditions) {
+          await tx.medicalRecord.create({
+            data: {
+              patientId: newPatient.id,
+              doctorId: doctor.id,
+              recordTypeId: diagnosisType.id,
+              title: cond,
+              description: `Documented medical condition reported during patient registration: ${cond}.`,
+              recordDate: new Date(),
+            },
+          });
+        }
+      }
+
+      // Seed allergies as medical records
+      if (d.allergies && doctor && consultationType) {
+        const allergiesList = d.allergies.split(/[,;\n]+/).map((a) => a.trim()).filter(Boolean);
+        for (const allergy of allergiesList) {
+          await tx.medicalRecord.create({
+            data: {
+              patientId: newPatient.id,
+              doctorId: doctor.id,
+              recordTypeId: consultationType.id,
+              title: `Allergy: ${allergy}`,
+              description: `Documented patient allergy: ${allergy} (Reported during patient registration).`,
+              recordDate: new Date(),
+            },
+          });
+        }
+      }
+
+      // Seed medications as prescriptions & prescription items
+      if (d.medications && doctor) {
+        const medsList = d.medications.split(/[,;\n]+/).map((m) => m.trim()).filter(Boolean);
+        if (medsList.length > 0) {
+          const rx = await tx.prescription.create({
+            data: {
+              patientId: newPatient.id,
+              doctorId: doctor.id,
+              prescribedDate: new Date(),
+              validUntil: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
+              diagnosis: d.medicalConditions || 'Routine Medication Regimen',
+              notes: 'Prescriptions confirmed during patient onboarding.',
+            },
+          });
+
+          for (const medStr of medsList) {
+            const dosageMatch = medStr.match(/\b\d+\s*(?:mg|mcg|ml|g|tablets?|capsules?)\b/i);
+            const dosage = dosageMatch ? dosageMatch[0] : '10 mg';
+
+            let medName = medStr
+              .replace(/\b\d+\s*(?:mg|mcg|ml|g|tablets?|capsules?)\b/gi, '')
+              .replace(/\b(?:daily|once|twice|thrice|morning|night|bedtime|every|hours?|hrs?|day|days)\b/gi, '')
+              .trim();
+            if (!medName) medName = medStr;
+
+            let med = await tx.medicine.findFirst({
+              where: { name: { contains: medName, mode: 'insensitive' } },
+            });
+            if (!med) {
+              med = await tx.medicine.create({
+                data: {
+                  name: medName,
+                  category: 'Prescribed',
+                },
+              });
+            }
+
+            const item = await tx.prescriptionItem.create({
+              data: {
+                prescriptionId: rx.id,
+                medicineId: med.id,
+                dosage,
+                frequency: /twice/i.test(medStr) ? 'Twice daily' : /thrice/i.test(medStr) ? 'Three times daily' : 'Once daily',
+                durationDays: 30,
+                instructions: 'Take orally with water after meals as directed.',
+              },
+            });
+
+            // Auto-create medicine reminder
+            const activeStatus = await tx.reminderStatus.findFirst({ where: { name: 'active' } });
+            const reminderTime = new Date();
+            reminderTime.setHours(8, 0, 0, 0);
+
+            await tx.medicineReminder.create({
+              data: {
+                patientId: newPatient.id,
+                medicineId: med.id,
+                prescriptionItemId: item.id,
+                reminderTime,
+                frequency: 'Daily',
+                startDate: new Date(),
+                statusId: activeStatus?.id || 1,
+              },
+            });
+          }
+        }
+      }
+
+      return { user: newUser, patient: newPatient };
     });
 
     return res.status(201).json({
       success: true,
       message: 'Patient account created successfully.',
       userId: user.id,
+      patientId: patient.id,
     });
   } catch (err) {
     console.error('[REGISTER] Patient error:', err);

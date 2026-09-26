@@ -245,6 +245,31 @@ export async function getPatientById(
 }
 
 /**
+ * Updates a patient's ward, bed number, or admission status in PostgreSQL.
+ * Calls backend PATCH /api/doctor/patients/:id/bed.
+ */
+export async function updatePatientBed(
+  patientId: number,
+  data: { ward?: string | null; bedNumber?: string | null; admissionStatus?: string }
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const res = await fetch(`/api/doctor/patients/${patientId}/bed`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(data),
+    });
+
+    return await res.json();
+  } catch (err: any) {
+    console.error('[DOCTOR_SERVICE] Failed to update patient bed:', err);
+    return { success: false, error: err.message || 'Failed to update patient bed.' };
+  }
+}
+
+/**
  * Appends a verified clinical progress note to the patient's record in PostgreSQL.
  * Calls backend POST /api/doctor/patients/:id/notes.
  */

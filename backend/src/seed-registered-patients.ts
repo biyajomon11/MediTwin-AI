@@ -79,8 +79,8 @@ async function main() {
         { title: 'Fasting Plasma Glucose & HbA1c', desc: 'Fasting Glucose: 92 mg/dL. HbA1c: 5.4% (Normal glycemic control).', date: '2026-05-20' },
       ],
       appointments: [
-        { reason: 'Cardiology & Blood Pressure Review', notes: 'Blood pressure well-controlled at 122/78 mmHg. Continue current medication regimen.', date: '2026-08-10', time: '10:30:00Z', status: 'completed' },
-        { reason: 'Comprehensive Annual Preventive Health Checkup', notes: 'Scheduled annual wellness check and routine screening.', date: '2026-09-15', time: '09:00:00Z', status: 'scheduled' },
+        { reason: 'Cardiology & Blood Pressure Review', notes: 'Blood pressure well-controlled at 122/78 mmHg. Continue current medication regimen.', date: '2026-08-10', time: '09:00:00Z', status: 'completed' },
+        { reason: 'Comprehensive Annual Preventive Health Checkup', notes: 'Scheduled annual wellness check and routine screening.', date: '2026-09-15', time: '14:00:00Z', status: 'scheduled' },
       ],
       prescriptions: [
         { diagnosis: 'Mild Essential Hypertension & Preventative Care', notes: 'Take once daily in the morning with a glass of water.', medName: 'Amlodipine Besylate', dosage: '5 mg', freq: 'Once daily (Morning)' },

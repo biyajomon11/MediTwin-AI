@@ -10,7 +10,7 @@ import {
 import type {
   DoctorPatient, PatientStatus, ClinicalNote, Prescription, MedicalDocument,
 } from '../../types';
-import { getPatients, addClinicalNote, discontinuePrescription, type PatientSortField } from '../../services/doctorService';
+import { getPatients, addClinicalNote, discontinuePrescription, updatePatientBed, type PatientSortField } from '../../services/doctorService';
 import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
 import { getTallManName } from '../../utils/medicationSafety';
 import { formatPatientId, isPatientInpatient } from '../../utils/patientUtils';
@@ -157,6 +157,86 @@ const PatientRecord: React.FC<{
 
   // ── Document Preview States ──
   const [selectedDoc, setSelectedDoc] = useState<MedicalDocument | null>(null);
+
+  // ── Bed & Ward Assignment States ──
+  const [currentWard, setCurrentWard] = useState(patient.ward || '');
+  const [isEditingBed, setIsEditingBed] = useState(false);
+  const [selectedWardOption, setSelectedWardOption] = useState(() => {
+    if (!patient.ward) return 'Outpatient';
+    if (patient.ward.includes('ICU')) return 'ICU';
+    const match = patient.ward.match(/Ward\s*([0-9]+)/i);
+    return match ? `Ward ${match[1]}` : 'Ward 1';
+  });
+  const [selectedBedInput, setSelectedBedInput] = useState(() => {
+    if (patient.bedNumber) return patient.bedNumber;
+    const match = (patient.ward || '').match(/Bed\s*([0-9]+)/i);
+    return match ? `Bed ${match[1]}` : 'Bed 01';
+  });
+  const [savingBed, setSavingBed] = useState(false);
+  const [bedSuccessMsg, setBedSuccessMsg] = useState('');
+
+  useEffect(() => {
+    setCurrentWard(patient.ward || '');
+    if (!patient.ward) {
+      setSelectedWardOption('Outpatient');
+      setSelectedBedInput('');
+    } else if (patient.ward.includes('ICU')) {
+      setSelectedWardOption('ICU');
+      const match = patient.ward.match(/Bed\s*([0-9]+)/i);
+      setSelectedBedInput(match ? `Bed ${match[1]}` : 'Bed 02');
+    } else {
+      const match = patient.ward.match(/Ward\s*([0-9]+)/i);
+      setSelectedWardOption(match ? `Ward ${match[1]}` : 'Ward 1');
+      const bMatch = patient.ward.match(/Bed\s*([0-9]+)/i);
+      setSelectedBedInput(bMatch ? `Bed ${bMatch[1]}` : 'Bed 01');
+    }
+  }, [patient]);
+
+  const handleSaveBed = async () => {
+    setSavingBed(true);
+    try {
+      let newWard: string | null = null;
+      let newBed: string | null = null;
+      let newStatus = patient.status;
+
+      if (selectedWardOption === 'Outpatient') {
+        newWard = null;
+        newBed = null;
+        newStatus = 'Active';
+      } else {
+        const bedNumClean = selectedBedInput.trim()
+          ? (selectedBedInput.trim().toLowerCase().startsWith('bed') ? selectedBedInput.trim() : `Bed ${selectedBedInput.trim()}`)
+          : 'Bed 01';
+        newWard = `${selectedWardOption} – ${bedNumClean}`;
+        newBed = bedNumClean;
+        if (selectedWardOption === 'ICU') {
+          newStatus = 'Critical';
+        } else if (newStatus === 'Active' || newStatus === 'Discharged') {
+          newStatus = 'Admitted';
+        }
+      }
+
+      const res = await updatePatientBed(patient.id, {
+        ward: newWard,
+        bedNumber: newBed,
+        admissionStatus: newStatus,
+      });
+
+      if (res.success) {
+        setCurrentWard(newWard || '');
+        patient.ward = newWard || undefined;
+        patient.bedNumber = newBed || undefined;
+        patient.status = newStatus;
+        setIsEditingBed(false);
+        setBedSuccessMsg(`Bed successfully updated to ${newWard || 'Outpatient'} in PostgreSQL.`);
+        setTimeout(() => setBedSuccessMsg(''), 4000);
+      }
+    } catch (e) {
+      console.error('Failed to update bed:', e);
+    } finally {
+      setSavingBed(false);
+    }
+  };
 
   useEffect(() => {
     setPrescriptions(patient.prescriptions || []);
@@ -332,8 +412,8 @@ const PatientRecord: React.FC<{
             </div>
             <div>
               <h2 className="text-xl font-extrabold text-white">{patient.firstName} {patient.lastName}</h2>
-              <p className="text-sm text-gray-400"><span className="font-mono font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">{formatPatientId(patient)}</span> • <span className={isPatientInpatient(patient.status, patient.ward) ? 'text-purple-300 font-semibold' : 'text-teal-300 font-semibold'}>{isPatientInpatient(patient.status, patient.ward) ? 'Inpatient (IPD)' : 'Outpatient (OPD)'}</span> • {patient.age} yrs • {typeof patient.gender === 'string' ? patient.gender : patient.gender?.name || 'Unspecified'}</p>
-              <p className="text-sm text-gray-400">{patient.department || 'General Medicine'} {patient.ward ? `• ${patient.ward}` : ''}</p>
+              <p className="text-sm text-gray-400"><span className="font-mono font-bold text-white bg-white/10 px-1.5 py-0.5 rounded">{formatPatientId(patient)}</span> • <span className={isPatientInpatient(patient.status, currentWard) ? 'text-purple-300 font-semibold' : 'text-teal-300 font-semibold'}>{isPatientInpatient(patient.status, currentWard) ? 'Inpatient (IPD)' : 'Outpatient (OPD)'}</span> • {patient.age} yrs • {typeof patient.gender === 'string' ? patient.gender : patient.gender?.name || 'Unspecified'}</p>
+              <p className="text-sm text-gray-400">{patient.department || 'General Medicine'} {currentWard ? `• ${currentWard}` : '• Outpatient (No Bed Assigned)'}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
@@ -505,6 +585,91 @@ const PatientRecord: React.FC<{
                   <span className="text-gray-400">Primary Condition:</span>
                   <span className="text-white font-semibold">{patient.primaryCondition || patient.medicalHistory?.[0]?.condition || 'Under Clinical Evaluation'}</span>
                 </p>
+                <div className="pt-1">
+                  <div className="text-gray-300 flex items-center justify-between">
+                    <span className="text-gray-400">Assigned Ward & Bed:</span>
+                    <div className="flex items-center gap-2">
+                      {currentWard ? (
+                        <span className="px-2.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-mono text-[11px] font-bold shadow-sm">
+                          {currentWard}
+                        </span>
+                      ) : (
+                        <span className="text-teal-300 text-xs font-semibold px-2 py-0.5 rounded bg-teal-500/10 border border-teal-500/20">
+                          Outpatient (No Bed)
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingBed(!isEditingBed)}
+                        className="text-[11px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-accent font-semibold transition-colors cursor-pointer"
+                      >
+                        {isEditingBed ? 'Cancel' : 'Change Bed'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {bedSuccessMsg && (
+                    <div className="mt-2 text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20 flex items-center gap-1.5 animate-fadeIn">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{bedSuccessMsg}</span>
+                    </div>
+                  )}
+
+                  {isEditingBed && (
+                    <div className="mt-2.5 p-3 rounded-xl bg-white/5 border border-accent/40 space-y-2.5 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white">Reassign Ward / Bed</span>
+                        <span className="text-[10px] text-gray-400">Syncs to PostgreSQL</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-gray-400 block mb-1">Ward Selection</label>
+                          <select
+                            value={selectedWardOption}
+                            onChange={(e) => setSelectedWardOption(e.target.value)}
+                            className="w-full bg-slate-900 border border-white/20 rounded-lg px-2 py-1.5 text-xs text-white focus:border-accent outline-none"
+                          >
+                            <option value="Ward 1">Ward 1 (General)</option>
+                            <option value="Ward 2">Ward 2 (Surgical / Semi-Private)</option>
+                            <option value="Ward 3">Ward 3 (Medical Inpatient)</option>
+                            <option value="Ward 4">Ward 4 (Specialty Care)</option>
+                            <option value="ICU">ICU (Critical Care)</option>
+                            <option value="Outpatient">Outpatient (Clear Bed)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-400 block mb-1">Bed Number</label>
+                          <input
+                            type="text"
+                            value={selectedBedInput}
+                            onChange={(e) => setSelectedBedInput(e.target.value)}
+                            placeholder="e.g. Bed 05"
+                            disabled={selectedWardOption === 'Outpatient'}
+                            className="w-full bg-slate-900 border border-white/20 rounded-lg px-2 py-1.5 text-xs text-white focus:border-accent outline-none disabled:opacity-40"
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingBed(false)}
+                          className="px-2.5 py-1 text-xs text-gray-400 hover:text-white"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveBed}
+                          disabled={savingBed}
+                          className="px-3 py-1 bg-accent hover:bg-accent/80 text-black text-xs font-bold rounded-lg transition-all flex items-center gap-1 shadow-md cursor-pointer disabled:opacity-50"
+                        >
+                          {savingBed && <Loader2 className="w-3 h-3 animate-spin" />}
+                          <span>{savingBed ? 'Saving...' : 'Save to Database'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <p className="text-gray-300 flex items-center justify-between">
                   <span className="text-gray-400">Assigned Doctor ID:</span>
                   <span className="text-white font-mono">DOC-#{patient.assignedDoctorId}</span>
@@ -1587,7 +1752,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_COLORS[p.status] || 'border-white/20 text-gray-300'}`}>{p.status}</span>
                   </div>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    <span className="font-mono font-bold text-gray-200">{formatPatientId(p)}</span> · <span className={`font-semibold ${isPatientInpatient(p.status, p.ward) ? 'text-purple-300' : 'text-teal-300'}`}>{isPatientInpatient(p.status, p.ward) ? 'Inpatient' : 'Outpatient'}</span> · {p.age} yrs · {typeof p.gender === 'string' ? p.gender : p.gender?.name || 'Unspecified'} · {p.department || 'General Medicine'} {p.ward ? `· ${p.ward}` : ''}
+                    <span className="font-mono font-bold text-gray-200">{formatPatientId(p)}</span> · <span className={`font-semibold ${isPatientInpatient(p.status, p.ward) ? 'text-purple-300' : 'text-teal-300'}`}>{isPatientInpatient(p.status, p.ward) ? 'Inpatient' : 'Outpatient'}</span> · {p.age} yrs · {typeof p.gender === 'string' ? p.gender : p.gender?.name || 'Unspecified'} · {p.department || 'General Medicine'} {p.ward ? `· ${p.ward}` : '· Outpatient'}
                   </p>
                   {p.primaryCondition && (
                     <p className={`text-xs mt-0.5 truncate font-medium ${isCritical ? 'text-rose-200 font-bold' : 'text-gray-300'}`}>

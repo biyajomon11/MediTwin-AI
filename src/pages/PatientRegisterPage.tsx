@@ -253,17 +253,22 @@ export const PatientRegisterPage: React.FC = () => {
         body: JSON.stringify({
           firstName,
           lastName,
-          email:                form.email.trim(),
-          password:             form.password,
-          dob:                  form.dob,
-          gender:               form.gender || undefined,
-          phone:                form.phone ? `${form.countryCode} ${form.phone}` : undefined,
-          address:              form.address || undefined,
-          bloodGroup:           form.bloodGroup || undefined,
-          emergencyContactName: form.emergencyName || undefined,
-          emergencyContactPhone:form.emergencyPhone
+          email:                 form.email.trim(),
+          password:              form.password,
+          dob:                   form.dob,
+          gender:                form.gender || undefined,
+          phone:                 form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          address:               form.address || undefined,
+          bloodGroup:            form.bloodGroup || undefined,
+          emergencyContactName:  form.emergencyName || undefined,
+          emergencyRelationship: form.emergencyRelationship || undefined,
+          emergencyContactPhone: form.emergencyPhone
             ? `${form.emergencyCountryCode} ${form.emergencyPhone}`
             : undefined,
+          allergies:             form.allergies || undefined,
+          medicalConditions:     form.medicalConditions || undefined,
+          medications:           form.medications || undefined,
+          primaryProvider:       form.primaryProvider || undefined,
         }),
       });
 
@@ -275,11 +280,12 @@ export const PatientRegisterPage: React.FC = () => {
         return;
       }
 
-      // Save registered patient in local store
+      // Save complete registered patient in local store
       try {
         const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
         const newRecord = {
           id: data.userId || 'USR-' + Math.floor(1000 + Math.random() * 9000),
+          patientId: data.patientId ? `PAT-${data.patientId}` : undefined,
           firstName,
           lastName,
           username: form.username.trim(),
@@ -287,7 +293,19 @@ export const PatientRegisterPage: React.FC = () => {
           password: form.password,
           role: 'patient',
           dob: form.dob,
+          gender: form.gender,
           phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          address: form.address,
+          bloodGroup: form.bloodGroup,
+          emergencyName: form.emergencyName,
+          emergencyRelationship: form.emergencyRelationship,
+          emergencyPhone: form.emergencyPhone
+            ? `${form.emergencyCountryCode} ${form.emergencyPhone}`
+            : undefined,
+          allergies: form.allergies,
+          medicalConditions: form.medicalConditions,
+          medications: form.medications,
+          primaryProvider: form.primaryProvider,
           status: 'Active',
           registeredAt: new Date().toISOString().split('T')[0],
         };
@@ -312,7 +330,19 @@ export const PatientRegisterPage: React.FC = () => {
           password: form.password,
           role: 'patient',
           dob: form.dob,
+          gender: form.gender,
           phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          address: form.address,
+          bloodGroup: form.bloodGroup,
+          emergencyName: form.emergencyName,
+          emergencyRelationship: form.emergencyRelationship,
+          emergencyPhone: form.emergencyPhone
+            ? `${form.emergencyCountryCode} ${form.emergencyPhone}`
+            : undefined,
+          allergies: form.allergies,
+          medicalConditions: form.medicalConditions,
+          medications: form.medications,
+          primaryProvider: form.primaryProvider,
           status: 'Active',
           registeredAt: new Date().toISOString().split('T')[0],
         };

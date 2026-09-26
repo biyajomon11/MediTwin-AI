@@ -493,42 +493,46 @@ export const HealthProfilePage: React.FC = () => {
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {profile.medicalSummary.allergies.map((a, idx) => {
-                    const isVerified = a.verificationStatus?.startsWith('Verified');
-                    return (
-                      <div
-                        key={idx}
-                        className="p-2.5 rounded-lg bg-black/20 border border-rose-500/20 space-y-1.5 text-xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <p className="font-bold text-white">{a.substance}</p>
-                            <span
-                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
-                                isVerified
-                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-                              }`}
-                            >
-                              {a.verificationStatus || 'Self-Reported (Unverified)'}
+                  {profile.medicalSummary.allergies.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic py-2">No known allergies or adverse drug reactions recorded.</p>
+                  ) : (
+                    profile.medicalSummary.allergies.map((a, idx) => {
+                      const isVerified = a.verificationStatus?.startsWith('Verified');
+                      return (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded-lg bg-black/20 border border-rose-500/20 space-y-1.5 text-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-white">{a.substance}</p>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${
+                                  isVerified
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                    : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                }`}
+                              >
+                                {a.verificationStatus || 'Self-Reported (Unverified)'}
+                              </span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/30 text-rose-200">
+                              {a.severity}
                             </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/30 text-rose-200">
-                            {a.severity}
-                          </span>
-                        </div>
-                        <p className="text-gray-300 text-[11px]">
-                          {a.reaction}
-                          {a.reactionType && <span className="text-gray-400 ml-1">· {a.reactionType}</span>}
-                        </p>
-                        {a.verifiedBy && (
-                          <p className="text-[10px] text-gray-400">
-                            Verified by: <span className="text-gray-200">{a.verifiedBy}</span>
+                          <p className="text-gray-300 text-[11px]">
+                            {a.reaction}
+                            {a.reactionType && <span className="text-gray-400 ml-1">· {a.reactionType}</span>}
                           </p>
-                        )}
-                      </div>
-                    );
-                  })}
+                          {a.verifiedBy && (
+                            <p className="text-[10px] text-gray-400">
+                              Verified by: <span className="text-gray-200">{a.verifiedBy}</span>
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -540,15 +544,19 @@ export const HealthProfilePage: React.FC = () => {
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {profile.medicalSummary.chronicConditions.map((cond, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2.5 rounded-lg bg-black/20 border border-sky-500/20 text-xs text-white font-medium flex items-center gap-2"
-                    >
-                      <CheckCircle2 className="w-4 h-4 text-sky-400 flex-shrink-0" />
-                      <span>{cond}</span>
-                    </div>
-                  ))}
+                  {profile.medicalSummary.chronicConditions.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic py-2">No chronic medical conditions recorded in your profile.</p>
+                  ) : (
+                    profile.medicalSummary.chronicConditions.map((cond, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 rounded-lg bg-black/20 border border-sky-500/20 text-xs text-white font-medium flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-sky-400 flex-shrink-0" />
+                        <span>{cond}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -571,35 +579,41 @@ export const HealthProfilePage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {profile.medicalSummary.currentMedications.map((m, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3.5 rounded-xl bg-black/30 border border-purple-500/20 hover:border-purple-500/40 transition-all flex flex-col justify-between space-y-2.5 text-xs shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="font-extrabold text-white text-sm block font-mono">{getTallManName(m.name)}</span>
-                          <span className="text-purple-300 text-xs font-medium">{m.frequency}</span>
-                        </div>
-                        <span className="px-2.5 py-1 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-200 font-bold text-xs">
-                          {m.dosage}
-                        </span>
-                      </div>
-
-                      {/* Prescribing Doctor Information Banner */}
-                      <div className="p-2 rounded-lg bg-purple-950/40 border border-purple-500/15 flex items-center justify-between text-[11px]">
-                        <div className="flex items-center gap-1.5 text-gray-300">
-                          <Stethoscope className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
-                          <span>Prescribed by: <strong className="text-white font-semibold">{m.prescribedBy}</strong></span>
-                        </div>
-                        {m.startDate && (
-                          <span className="text-gray-400 text-[10px] hidden sm:inline">
-                            Since {m.startDate}
-                          </span>
-                        )}
-                      </div>
+                  {profile.medicalSummary.currentMedications.length === 0 ? (
+                    <div className="col-span-full py-6 px-4 rounded-xl bg-black/20 border border-white/5 text-center">
+                      <p className="text-xs text-gray-400 italic">No hospital prescriptions on record yet. Prescriptions will appear here after consultation with your doctor.</p>
                     </div>
-                  ))}
+                  ) : (
+                    profile.medicalSummary.currentMedications.map((m, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-xl bg-black/30 border border-purple-500/20 hover:border-purple-500/40 transition-all flex flex-col justify-between space-y-2.5 text-xs shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-extrabold text-white text-sm block font-mono">{getTallManName(m.name)}</span>
+                            <span className="text-purple-300 text-xs font-medium">{m.frequency}</span>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-200 font-bold text-xs">
+                            {m.dosage}
+                          </span>
+                        </div>
+
+                        {/* Prescribing Doctor Information Banner */}
+                        <div className="p-2 rounded-lg bg-purple-950/40 border border-purple-500/15 flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5 text-gray-300">
+                            <Stethoscope className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
+                            <span>Prescribed by: <strong className="text-white font-semibold">{m.prescribedBy}</strong></span>
+                          </div>
+                          {m.startDate && (
+                            <span className="text-gray-400 text-[10px] hidden sm:inline">
+                              Since {m.startDate}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -616,65 +630,71 @@ export const HealthProfilePage: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      Official Health Registry
+                      {profile.medicalSummary.vaccinationStatus?.length || 0} Records
                     </span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {profile.medicalSummary.vaccinationStatus.map((v, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3.5 rounded-xl bg-black/30 border border-emerald-500/20 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2.5 text-xs shadow-sm"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-extrabold text-white text-sm">{v.vaccine}</p>
-                          <div className="flex items-center gap-1.5 text-gray-400 text-[11px] mt-0.5">
-                            <Building2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
-                            <span>Facility: <strong className="text-gray-200">{v.provider}</strong></span>
+                  {!profile.medicalSummary.vaccinationStatus || profile.medicalSummary.vaccinationStatus.length === 0 ? (
+                    <div className="col-span-full py-6 px-4 rounded-xl bg-black/20 border border-white/5 text-center">
+                      <p className="text-xs text-gray-400 italic">No immunization records on file. Records will appear once verified by your healthcare provider.</p>
+                    </div>
+                  ) : (
+                    profile.medicalSummary.vaccinationStatus.map((v, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-xl bg-black/30 border border-emerald-500/20 hover:border-emerald-500/40 transition-all flex flex-col justify-between space-y-2.5 text-xs shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="font-extrabold text-white text-sm">{v.vaccine}</p>
+                            <div className="flex items-center gap-1.5 text-gray-400 text-[11px] mt-0.5">
+                              <Building2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                              <span>Facility: <strong className="text-gray-200">{v.provider}</strong></span>
+                            </div>
                           </div>
-                        </div>
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
-                            v.status === 'Completed'
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                          }`}
-                        >
-                          {v.status === 'Completed' ? '✓ Completed' : '⏱ Booster Due'}
-                        </span>
-                      </div>
-
-                      {/* Date, Batch & Verification Details */}
-                      <div className="space-y-1.5 pt-1.5 border-t border-white/5 text-[11px] text-gray-400">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{v.status === 'Completed' ? `Administered: ${v.date}` : `Scheduled Date: ${v.date}`}</span>
-                          </div>
-                          {v.batchNumber && (
-                            <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
-                              Batch: {v.batchNumber}
-                            </span>
-                          )}
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${
+                              v.status === 'Completed'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            }`}
+                          >
+                            {v.status === 'Completed' ? '✓ Completed' : '⏱ Booster Due'}
+                          </span>
                         </div>
 
-                        {(v.verificationStatus || v.verificationSource) && (
-                          <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] pt-1 border-t border-white/5">
-                            <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                              <ShieldCheck className="w-3 h-3" /> {v.verificationStatus || 'Clinically Verified'}
-                            </span>
-                            {v.verificationSource && (
-                              <span className="text-gray-400 truncate max-w-[260px] italic">
-                                {v.verificationSource}
+                        {/* Date, Batch & Verification Details */}
+                        <div className="space-y-1.5 pt-1.5 border-t border-white/5 text-[11px] text-gray-400">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                              <span>{v.status === 'Completed' ? `Administered: ${v.date}` : `Scheduled Date: ${v.date}`}</span>
+                            </div>
+                            {v.batchNumber && (
+                              <span className="text-[10px] text-gray-400 bg-white/5 px-2 py-0.5 rounded border border-white/10">
+                                Batch: {v.batchNumber}
                               </span>
                             )}
                           </div>
-                        )}
+
+                          {(v.verificationStatus || v.verificationSource) && (
+                            <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] pt-1 border-t border-white/5">
+                              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                                <ShieldCheck className="w-3 h-3" /> {v.verificationStatus || 'Clinically Verified'}
+                              </span>
+                              {v.verificationSource && (
+                                <span className="text-gray-400 truncate max-w-[260px] italic">
+                                  {v.verificationSource}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             </div>

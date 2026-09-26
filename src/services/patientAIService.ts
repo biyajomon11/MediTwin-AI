@@ -26,12 +26,28 @@ function getAuthToken(): string | null {
   return localStorage.getItem('meditwin_token') || sessionStorage.getItem('meditwin_token');
 }
 
-/** Constructs headers with Bearer authentication */
+/** Constructs headers with Bearer authentication and patient identity */
 function getAuthHeaders(): HeadersInit {
   const token = getAuthToken();
+  let email = '';
+  let patientId = '';
+  let role = '';
+  try {
+    const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+    if (raw) {
+      const u = JSON.parse(raw);
+      email = u.email || '';
+      patientId = String(u.patientId || u.id || u.userId || '');
+      role = u.role || '';
+    }
+  } catch {}
+
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(email ? { 'x-patient-email': email, 'x-user-email': email } : {}),
+    ...(patientId ? { 'x-patient-id': patientId, 'x-user-id': patientId } : {}),
+    ...(role ? { 'x-user-role': role } : {}),
   };
 }
 

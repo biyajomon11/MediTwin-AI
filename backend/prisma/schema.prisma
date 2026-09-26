@@ -66,6 +66,9 @@ model Patient {
   state                 String?            @db.VarChar(100)
   emergencyContactName  String?            @map("emergency_contact_name") @db.VarChar(200)
   emergencyContactPhone String?            @map("emergency_contact_phone") @db.VarChar(20)
+  ward                  String?            @db.VarChar(100)
+  bedNumber             String?            @map("bed_number") @db.VarChar(50)
+  admissionStatus       String?            @default("Active") @map("admission_status") @db.VarChar(50)
   createdAt             DateTime?          @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt             DateTime?          @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
   appointments          Appointment[]

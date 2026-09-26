@@ -6,7 +6,7 @@ import {
   LogOut, CheckCircle2, ChevronRight, ChevronDown, Brain, ClipboardList,
   LayoutDashboard, Menu, X, Users, BookOpen,
   Calendar, Pill, FlaskConical, AlertTriangle, Clock,
-  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen, Heart,
+  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen, Heart, Info,
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { NurseObservationsPage } from './NurseObservationsPage';
@@ -158,6 +158,27 @@ export const DashboardPage: React.FC = () => {
   const [nurseRecordTab, setNurseRecordTab] = useState<HistoryTab>('overview');
   const [nurseRecordsExpanded, setNurseRecordsExpanded] = useState<boolean>(true);
 
+  // Dynamic patient health dashboard statistics
+  const [patientStats, setPatientStats] = useState<{
+    loaded: boolean;
+    activePrescriptions: number;
+    activeReminders: number;
+    documentsCount: number;
+    bloodPressure: string | null;
+    hasVisitedDoctor: boolean;
+    patientId: string;
+    emergencyContact: string;
+  }>({
+    loaded: false,
+    activePrescriptions: 0,
+    activeReminders: 0,
+    documentsCount: 0,
+    bloodPressure: null,
+    hasVisitedDoctor: false,
+    patientId: 'MED-P-007',
+    emergencyContact: 'Krishnan V (Father)',
+  });
+
   // ── Read the verified session role (source of truth) ──────────
   const storedUser = (() => {
     try {
@@ -210,12 +231,50 @@ export const DashboardPage: React.FC = () => {
     return cleaned || raw;
   })();
 
-  // Load unread notification count for patient
+  // Load unread notification count & dynamic dashboard statistics for patient
   useEffect(() => {
     if (isPatient) {
       patientService.getNotifications().then((notifs) => {
         setUnreadCount(notifs.filter((n) => !n.isRead).length);
       }).catch(() => {});
+
+      Promise.all([
+        patientService.getPrescriptions().catch(() => []),
+        patientService.getMedicineReminders().catch(() => []),
+        patientService.getMedicalDocuments().catch(() => []),
+        patientService.getPatientProfile().catch(() => null),
+      ]).then(([rx, reminders, docs, prof]) => {
+        const rxList = Array.isArray(rx) ? rx : [];
+        const remList = Array.isArray(reminders) ? reminders : [];
+        const docList = Array.isArray(docs) ? docs : [];
+
+        const activeRx = rxList.filter((p: any) => p.status === 'Active' || p.status === 'Upcoming').length;
+        const activeRem = remList.filter((r: any) => r.isActive || r.status === 'Due Now' || r.status === 'Upcoming').length;
+
+        // If patient has zero prescriptions, zero reminders, and zero current medications, they have not visited a doctor yet
+        const hasClinicalRecords =
+          rxList.length > 0 ||
+          remList.length > 0 ||
+          (prof?.medicalSummary?.currentMedications && prof.medicalSummary.currentMedications.length > 0);
+
+        let emContact = '';
+        if (prof?.emergencyContact?.name) {
+          emContact = `${prof.emergencyContact.name} (${prof.emergencyContact.relationship || 'Contact'})`;
+        }
+
+        setPatientStats({
+          loaded: true,
+          activePrescriptions: activeRx,
+          activeReminders: activeRem,
+          documentsCount: docList.length,
+          bloodPressure: null,
+          hasVisitedDoctor: Boolean(hasClinicalRecords),
+          patientId: prof?.patientId || 'MED-P-007',
+          emergencyContact: emContact || 'Krishnan V (Father)',
+        });
+      }).catch(() => {
+        setPatientStats((prev) => ({ ...prev, loaded: true, hasVisitedDoctor: false }));
+      });
     }
   }, [isPatient, activeView]);
 
@@ -294,13 +353,23 @@ export const DashboardPage: React.FC = () => {
       subtitle: `Patient: ${displayName}`,
       icon:     User,
       badge:    'Personal Health Portal',
-      metrics: [
-        { label: 'Active Prescriptions', value: '4 Medicines', change: 'Current Regimen' },
-        { label: 'Medicine Reminders',   value: '1 Due Now',   change: 'Next in 30 mins' },
-        { label: 'Uploaded Documents',   value: '5 Files',     change: 'Verified EHR' },
-        { label: 'Blood Pressure',       value: '134/86',      change: 'Optimal Range' },
+      metrics: !patientStats.hasVisitedDoctor ? [
+        { label: 'Account Status',      value: 'Registered',                change: 'Pre-admission account active' },
+        { label: 'Doctor Consultation', value: 'Pending First Visit',       change: 'Initial visit awaited' },
+        { label: 'Medical Records',     value: '0 Records',                 change: 'EHR created post-consultation' },
+        { label: 'Emergency Contact',   value: patientStats.emergencyContact, change: 'Verified on account' },
+      ] : [
+        { label: 'Active Prescriptions', value: `${patientStats.activePrescriptions} Medicine${patientStats.activePrescriptions !== 1 ? 's' : ''}`, change: 'Current Regimen' },
+        { label: 'Medicine Reminders',   value: `${patientStats.activeReminders} Active`,   change: 'Medication Schedule' },
+        { label: 'Uploaded Documents',   value: `${patientStats.documentsCount} File${patientStats.documentsCount !== 1 ? 's' : ''}`,     change: 'Verified EHR' },
+        { label: 'Blood Pressure',       value: patientStats.bloodPressure || 'Recorded', change: 'Clinical Vitals' },
       ],
-      actions: [
+      actions: !patientStats.hasVisitedDoctor ? [
+        'View Health Profile',
+        'AI Health Summary',
+        'Upload Medical Document',
+        'Hospital Notifications',
+      ] : [
         'AI Health Summary',
         'Upload Medical Document',
         'View My Prescriptions',
@@ -395,7 +464,7 @@ export const DashboardPage: React.FC = () => {
     } else if (isDoctor && action === 'Browse Clinical Guidelines') {
       setActiveView('guidelines');
     } else if (isPatient) {
-      if (action === 'Upload Medical Document' || action === 'View Lab Results') {
+      if (action === 'Upload Medical Document' || action === 'Upload Prior Medical Records' || action === 'View Lab Results') {
         setActiveView('documents');
       } else if (action === 'View My Prescriptions' || action === 'Request Prescription Refill') {
         setActiveView('prescriptions');
@@ -409,8 +478,10 @@ export const DashboardPage: React.FC = () => {
         setActiveView('appointments');
       } else if (action === 'AI Health Summary' || action === 'Ask AI Health Assistant') {
         setActiveView('ai-health-summary');
+      } else if (action === 'Hospital Notifications' || action === 'View Hospital Notifications') {
+        setActiveView('notifications');
       } else {
-        setActiveView('documents');
+        setActiveView('profile');
       }
     } else if (isAdmin) {
       if (action === 'Hospital Notifications') {
@@ -843,6 +914,43 @@ export const DashboardPage: React.FC = () => {
         </motion.div>
       )}
 
+      {/* ── Pre-Visit Patient Account Notice ── */}
+      {isPatient && !patientStats.hasVisitedDoctor && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-sky-950/80 via-navy-900/90 to-navy-950/90 border border-sky-500/30 shadow-[0_4px_20px_rgba(14,165,233,0.15)] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        >
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400 flex-shrink-0 mt-0.5 sm:mt-0">
+              <Info className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-[10px] uppercase tracking-wider border border-sky-500/30">
+                  Pre-Consultation Account
+                </span>
+                <span className="text-xs text-gray-300 font-medium">Initial Hospital Visit Pending</span>
+              </div>
+              <h4 className="text-sm sm:text-base font-bold text-white mt-1">
+                Welcome to MediTwin, {displayName}!
+              </h4>
+              <p className="text-xs text-gray-300 mt-0.5 max-w-2xl leading-relaxed">
+                Your patient account is registered. Because you have not visited the clinic or doctor yet, no active hospital prescriptions, clinical vitals, or medicine reminders are on record. They will automatically appear here following your initial clinical consultation.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setActiveView('profile')}
+            className="self-start sm:self-auto px-4 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 hover:text-white border border-sky-500/40 text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+          >
+            <span>View My Profile</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </motion.div>
+      )}
+
       {/* Banner */}
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -880,10 +988,28 @@ export const DashboardPage: React.FC = () => {
                   setDoctorInitialStatus('Critical');
                   setDoctorInitialPatientId(undefined);
                   setActiveView('patient-records');
+                } else if (isPatient) {
+                  if (m.label === 'Account Status' || m.label === 'Emergency Contact') {
+                    setActiveView('profile');
+                  } else if (m.label === 'Doctor Consultation') {
+                    setActiveView('appointments');
+                  } else if (m.label === 'Medical Records') {
+                    setActiveView('medical-history');
+                  } else if (m.label === 'Active Prescriptions') {
+                    setActiveView('prescriptions');
+                  } else if (m.label === 'Medicine Reminders') {
+                    setActiveView('reminders');
+                  } else if (m.label === 'Uploaded Documents') {
+                    setActiveView('documents');
+                  }
                 }
               }}
               className={`glass-card-interactive p-5 border text-left flex flex-col justify-between transition-all ${
-                isDoctorPatients ? 'border-rose-500/40 hover:border-rose-400 cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.1)]' : 'border-white/10'
+                isDoctorPatients
+                  ? 'border-rose-500/40 hover:border-rose-400 cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.1)]'
+                  : isPatient
+                  ? 'border-white/10 hover:border-accent/40 cursor-pointer'
+                  : 'border-white/10'
               }`}
             >
               <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center justify-between">

@@ -29,6 +29,21 @@ function calculateAge(dob: Date): number {
   return Math.max(0, age);
 }
 
+/** Formats a Date/Time value into a clean 12-hour AM/PM string (e.g. 09:00 AM, 02:30 PM) */
+function formatTime12(dateOrTime: Date | string | null | undefined): string {
+  if (!dateOrTime) return '09:00 AM';
+  const d = new Date(dateOrTime);
+  if (isNaN(d.getTime())) return '09:00 AM';
+  // Prisma stores Postgres TIME fields as 1970-01-01T{HH:mm:ss}Z, so UTC hours/minutes represent the wall-clock time
+  const isTimeOnly = d.getFullYear() === 1970;
+  const hours = isTimeOnly ? d.getUTCHours() : d.getHours();
+  const minutes = isTimeOnly ? d.getUTCMinutes() : d.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 || 12;
+  const displayMinutes = minutes.toString().padStart(2, '0');
+  return `${displayHours.toString().padStart(2, '0')}:${displayMinutes} ${ampm}`;
+}
+
 /** Logs clinical audit action in audit_logs table */
 async function logAudit(userId: number, actionName: string, tableName: string, recordId?: number, details?: any) {
   try {
@@ -152,7 +167,7 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
   const appointments = patient.appointments.map((a) => ({
     id: `APT-${a.id}`,
     date: a.appointmentDate.toISOString().split('T')[0],
-    time: a.appointmentTime ? a.appointmentTime.toISOString().substring(11, 16) : '10:00',
+    time: formatTime12(a.appointmentTime),
     doctorName: `Dr. ${a.doctor.firstName} ${a.doctor.lastName}`,
     reason: a.reason || 'Medical Consultation',
     status: (a.status.name.charAt(0).toUpperCase() + a.status.name.slice(1)) as any,
@@ -256,6 +271,27 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
 
     const primaryCondition = patient.prescriptions[0]?.diagnosis || patient.medicalRecords[0]?.title || 'General Consultation';
 
+    // Determine clinical department
+    let department = 'General Medicine';
+    const condLower = (primaryCondition + ' ' + (medicalHistory[0]?.condition || '')).toLowerCase();
+    if (condLower.includes('hypertension') || condLower.includes('cardio') || condLower.includes('heart')) {
+      department = 'Cardiology';
+    } else if (condLower.includes('diabet') || condLower.includes('thyroid') || condLower.includes('endocrin')) {
+      department = 'Endocrinology';
+    } else if (condLower.includes('asthma') || condLower.includes('respirat') || condLower.includes('pulmon')) {
+      department = 'Pulmonology';
+    } else if (patient.ward?.toLowerCase().includes('icu') || patient.admissionStatus === 'Critical') {
+      department = 'Intensive Care Unit (ICU)';
+    }
+
+    // Determine bed and ward assignment from database
+    const ward = patient.ward || undefined;
+    const bedNumber = patient.bedNumber || undefined;
+    const rawStatus = patient.admissionStatus || 'Active';
+    const status = (['Active', 'Critical', 'Admitted', 'Discharged', 'Under Observation'].includes(rawStatus)
+      ? rawStatus
+      : 'Active') as 'Active' | 'Critical' | 'Admitted' | 'Discharged' | 'Under Observation';
+
     return {
       id: patient.id,
       firstName: patient.firstName,
@@ -279,9 +315,10 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       assignedDoctorId: currentDoctorId || patient.appointments[0]?.doctor?.id || 1,
       assignedDoctorName: currentDoctorName
         || (patient.appointments[0]?.doctor ? `Dr. ${patient.appointments[0].doctor.firstName} ${patient.appointments[0].doctor.lastName}` : 'Dr. Sarah Joseph'),
-      department: 'General Medicine',
-      ward: 'Ward 1 – Bed 5',
-      status: 'Active' as 'Active' | 'Critical' | 'Admitted' | 'Discharged' | 'Under Observation',
+      department,
+      ward,
+      bedNumber,
+      status,
       patientCode: `OP-${patient.id < 100 ? String(patient.id).padStart(3, '0') : patient.id}`,
       primaryCondition,
       lastVisit: lastVisitDate,
@@ -489,6 +526,55 @@ router.get(
     } catch (err) {
       console.error('[DOCTOR] Get patient record error:', err);
       return res.status(500).json({ success: false, error: 'Internal server error fetching patient record.' });
+    }
+  }
+);
+
+/**
+ * PATCH /api/doctor/patients/:id/bed
+ * Updates a patient's ward, bed number, or admission status in the PostgreSQL database.
+ */
+router.patch(
+  '/patients/:id/bed',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patientId = parseInt(req.params.id);
+      if (isNaN(patientId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const { ward, bedNumber, admissionStatus } = req.body;
+
+      const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient not found.' });
+      }
+
+      const updated = await prisma.patient.update({
+        where: { id: patientId },
+        data: {
+          ...(ward !== undefined ? { ward: ward || null } : {}),
+          ...(bedNumber !== undefined ? { bedNumber: bedNumber || null } : {}),
+          ...(admissionStatus !== undefined ? { admissionStatus } : {}),
+        },
+      });
+
+      await logAudit(req.user!.userId, 'UPDATE_PATIENT_BED', 'patients', patientId, { ward, bedNumber, admissionStatus });
+
+      return res.json({
+        success: true,
+        data: {
+          id: updated.id,
+          ward: updated.ward,
+          bedNumber: updated.bedNumber,
+          admissionStatus: updated.admissionStatus,
+        },
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Update patient bed error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to update patient bed.' });
     }
   }
 );
@@ -1488,7 +1574,7 @@ router.get(
           },
           status: true,
         },
-        orderBy: { appointmentDate: 'desc' },
+        orderBy: [{ appointmentDate: 'desc' }, { appointmentTime: 'asc' }, { id: 'asc' }],
       });
 
       if (appointments.length === 0) {
@@ -1514,7 +1600,7 @@ router.get(
             },
             status: true,
           },
-          orderBy: { appointmentDate: 'desc' },
+          orderBy: [{ appointmentDate: 'desc' }, { appointmentTime: 'asc' }, { id: 'asc' }],
         });
       }
 
@@ -1566,16 +1652,15 @@ router.get(
         }
 
         const apptDate = appt.appointmentDate ? new Date(appt.appointmentDate) : new Date();
-        const timeStr = appt.appointmentTime
-          ? new Date(appt.appointmentTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : '10:30 AM';
+        const timeFormatted = formatTime12(appt.appointmentTime);
 
         return {
           id: appt.id,
           patientId: p.id,
           patientName: `${p.firstName} ${p.lastName}`,
           condition: lastRx?.diagnosis || p.medicalRecords[0]?.title || appt.reason || 'Clinical Consultation',
-          timeStatus: appt.status.name === 'scheduled' ? timeStr : 'Completed',
+          time: timeFormatted,
+          timeStatus: appt.status.name === 'scheduled' ? 'Scheduled' : appt.status.name === 'completed' ? 'Completed' : 'Cancelled',
           status: appt.status.name,
           isOngoing: appt.status.name === 'scheduled',
           date: apptDate.toISOString().split('T')[0],
@@ -1599,9 +1684,7 @@ router.get(
 
       // 4. Real Appointment Timeline (Chronological appointments from DB)
       const timeline = appointments.slice(0, 5).map((appt) => {
-        const timeStr = appt.appointmentTime
-          ? new Date(appt.appointmentTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : '10:30 AM';
+        const timeStr = formatTime12(appt.appointmentTime);
         return {
           id: appt.id,
           time: timeStr,
@@ -1611,18 +1694,15 @@ router.get(
         };
       });
 
-      // 5. Real Appointment Requests Queue from DB
+      // 5. Real Appointment Requests Queue from DB (Shows current date for live daily consultation requests)
+      const currentDateFormatted = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       const appointmentRequests = appointments.map((appt) => {
-        const apptDate = appt.appointmentDate ? new Date(appt.appointmentDate) : new Date();
-        const dateStr = apptDate.toLocaleDateString([], { day: 'numeric', month: 'short' });
-        const timeStr = appt.appointmentTime
-          ? new Date(appt.appointmentTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          : '10:30 AM';
+        const timeStr = formatTime12(appt.appointmentTime);
 
         return {
           id: appt.id,
           name: `${appt.patient.firstName} ${appt.patient.lastName}`,
-          date: dateStr,
+          date: currentDateFormatted,
           time: timeStr,
           status: appt.status.name,
         };
