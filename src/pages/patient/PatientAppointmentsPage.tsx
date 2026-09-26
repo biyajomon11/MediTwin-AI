@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, Clock, User, Stethoscope, CheckCircle2, AlertTriangle,
-  X, Video, MapPin, Search, ShieldCheck, RefreshCw, FileText, ArrowRight, Building
+  X, Video, MapPin, Search, ShieldCheck, RefreshCw, ArrowRight, Building
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import {
@@ -49,11 +49,6 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
   const [availability, setAvailability] = useState<DoctorAvailabilityInfo | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [loadingAvailability, setLoadingAvailability] = useState<boolean>(false);
-
-  // Appointment details
-  const [consultationType, setConsultationType] = useState<'in-person' | 'video'>('in-person');
-  const [reason, setReason] = useState<string>('Cardiology Follow-up & ECG Review');
-  const [notes, setNotes] = useState<string>('');
 
   // Confirmation Modal
   const [confirmedAppointment, setConfirmedAppointment] = useState<PatientBookedAppointment | null>(null);
@@ -164,11 +159,6 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
       return;
     }
 
-    if (!reason.trim()) {
-      setErrorMsg('Please provide a reason or chief complaint for your visit.');
-      return;
-    }
-
     setSubmitting(true);
     setErrorMsg(null);
 
@@ -177,9 +167,9 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
         doctorId: selectedDoctor.id,
         date: selectedDate,
         time: selectedSlot,
-        reason: reason.trim(),
-        consultationType,
-        notes: notes.trim(),
+        reason: 'General Follow-up / Consultation',
+        consultationType: 'in-person',
+        notes: '',
       });
 
       setConfirmedAppointment(newAppt);
@@ -444,101 +434,6 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
                 </div>
               )}
             </div>
-
-            {/* Step 3: Consultation Format & Reason */}
-            <div className="glass-card p-5 border border-white/10 space-y-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-accent flex items-center gap-2">
-                <FileText className="w-4 h-4 text-accent" /> 3. Consultation Format & Details
-              </span>
-
-              {/* Consultation Format Selector */}
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  id="type-in-person"
-                  onClick={() => setConsultationType('in-person')}
-                  className={`p-3.5 rounded-xl border flex items-center gap-3 transition-all ${
-                    consultationType === 'in-person'
-                      ? 'bg-accent/20 border-accent text-white'
-                      : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <MapPin className={`w-5 h-5 ${consultationType === 'in-person' ? 'text-accent' : 'text-gray-400'}`} />
-                  <div className="text-left">
-                    <p className="text-xs font-bold text-white">Hospital In-Person</p>
-                    <p className="text-[10px] text-gray-400">MediTwin Central OPD</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  id="type-video"
-                  onClick={() => setConsultationType('video')}
-                  className={`p-3.5 rounded-xl border flex items-center gap-3 transition-all ${
-                    consultationType === 'video'
-                      ? 'bg-accent/20 border-accent text-white'
-                      : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'
-                  }`}
-                >
-                  <Video className={`w-5 h-5 ${consultationType === 'video' ? 'text-accent' : 'text-gray-400'}`} />
-                  <div className="text-left">
-                    <p className="text-xs font-bold text-white">HD Virtual Twin Visit</p>
-                    <p className="text-[10px] text-gray-400">Secure telehealth room</p>
-                  </div>
-                </button>
-              </div>
-
-              {/* Reason / Chief Complaint */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1.5">
-                  Reason for Visit / Chief Complaint <span className="text-rose-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  id="input-appointment-reason"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="e.g. Cardiology Follow-up, Routine Checkup, Medication Review..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-                  required
-                />
-
-                {/* Quick Reason Chips */}
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {[
-                    'Cardiology Follow-up',
-                    'Chest Discomfort Review',
-                    'Hypertension Evaluation',
-                    'Routine Medical Checkup',
-                    'Prescription Refill',
-                  ].map((chip) => (
-                    <button
-                      key={chip}
-                      type="button"
-                      onClick={() => setReason(chip)}
-                      className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] text-gray-300 hover:text-white transition-colors"
-                    >
-                      + {chip}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Additional Notes */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-300 mb-1.5">
-                  Pre-Consultation Notes / Symptoms for Doctor (Optional)
-                </label>
-                <textarea
-                  id="input-appointment-notes"
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Share recent symptoms, vitals readings, or specific questions for the physician..."
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent resize-none"
-                />
-              </div>
-            </div>
           </div>
 
           {/* Right Column: Schedule Calendar, Real-Time Availability & Slot Booking */}
@@ -546,7 +441,7 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
             <div className="glass-card p-6 border border-white/10 space-y-5 sticky top-24">
               <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <span className="text-xs font-bold uppercase tracking-wider text-accent flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-accent" /> 4. Date & Real-Time Availability
+                  <Clock className="w-4 h-4 text-accent" /> 3. Date & Real-Time Availability
                 </span>
                 {loadingAvailability && (
                   <RefreshCw className="w-4 h-4 text-accent animate-spin" />
