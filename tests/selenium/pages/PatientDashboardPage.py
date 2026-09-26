@@ -12,12 +12,14 @@ class PatientDashboardPage(BasePage):
     DOCUMENTS_TAB = (By.XPATH, "//nav//button[contains(., 'Medical Documents')]")
     REMINDERS_TAB = (By.XPATH, "//nav//button[contains(., 'Medicine Reminders')]")
     NOTIFICATIONS_TAB = (By.XPATH, "//nav//button[contains(., 'Notifications')]")
+    APPOINTMENTS_TAB = (By.XPATH, "//nav//button[contains(., 'Appointments')]")
     AI_SUMMARY_TAB = (By.XPATH, "//nav//button[contains(., 'AI Health Summary')]")
     LOGOUT_BTN = (By.XPATH, "//button[contains(., 'Sign Out') or contains(., 'Logout')]")
 
     # Header and Dashboard Elements
     DASHBOARD_TITLE = (By.XPATH, "//h1[contains(text(), 'Health') or contains(text(), 'Patient')]")
     PRESCRIPTIONS_CONTAINER = (By.XPATH, "//*[contains(text(), 'Prescriptions') or contains(text(), 'Active Medications')]")
+    APPOINTMENTS_CONTAINER = (By.ID, "patient-appointments-module")
     ACCESS_DENIED_HEADER = (By.XPATH, "//h1[contains(text(), 'Access Denied')]")
 
     def open(self):
@@ -47,6 +49,10 @@ class PatientDashboardPage(BasePage):
 
     def click_ai_summary(self):
         self.safe_click(self.AI_SUMMARY_TAB)
+        return self
+
+    def click_appointments(self):
+        self.safe_click(self.APPOINTMENTS_TAB)
         return self
 
     def click_logout(self):

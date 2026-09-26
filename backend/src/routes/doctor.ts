@@ -1835,4 +1835,126 @@ router.patch(
   }
 );
 
+// ─────────────────────────────────────────────────────────────
+// Doctor Availability & Absence Management Endpoints
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/doctor/availability
+ * Retrieves doctor's schedule and availability overrides.
+ */
+router.get(
+  '/availability',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const doctor = await getDoctorByUserId(req.user!.userId);
+      if (!doctor) {
+        return res.status(404).json({ success: false, error: 'Doctor profile not found.' });
+      }
+
+      const records = await prisma.doctorAvailability.findMany({
+        where: { doctorId: doctor.id },
+        orderBy: { date: 'asc' },
+      });
+
+      const formatted = records.map((r) => ({
+        id: r.id,
+        date: r.date.toISOString().split('T')[0],
+        status: r.status,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        reason: r.reason,
+        nextAvailableDate: r.nextAvailableDate ? r.nextAvailableDate.toISOString().split('T')[0] : null,
+      }));
+
+      return res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error('[DOCTOR_AVAILABILITY] Fetch error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch doctor availability.' });
+    }
+  }
+);
+
+/**
+ * POST /api/doctor/availability
+ * Creates or updates an availability override (e.g. absent, on-leave, available).
+ */
+router.post(
+  '/availability',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const doctor = await getDoctorByUserId(req.user!.userId);
+      if (!doctor) {
+        return res.status(404).json({ success: false, error: 'Doctor profile not found.' });
+      }
+
+      const { date, status, startTime, endTime, reason, nextAvailableDate } = req.body;
+      if (!date || !status) {
+        return res.status(400).json({ success: false, error: 'Date and status are required.' });
+      }
+
+      const dateObj = new Date(date);
+      const dateOnly = new Date(Date.UTC(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()));
+      const nextDateObj = nextAvailableDate ? new Date(nextAvailableDate) : null;
+      const nextDateOnly = nextDateObj
+        ? new Date(Date.UTC(nextDateObj.getFullYear(), nextDateObj.getMonth(), nextDateObj.getDate()))
+        : null;
+
+      const record = await prisma.doctorAvailability.upsert({
+        where: {
+          doctorId_date: {
+            doctorId: doctor.id,
+            date: dateOnly,
+          },
+        },
+        update: {
+          status,
+          startTime: startTime || '09:00',
+          endTime: endTime || '17:00',
+          reason: reason || null,
+          nextAvailableDate: nextDateOnly,
+        },
+        create: {
+          doctorId: doctor.id,
+          date: dateOnly,
+          status,
+          startTime: startTime || '09:00',
+          endTime: endTime || '17:00',
+          reason: reason || null,
+          nextAvailableDate: nextDateOnly,
+        },
+      });
+
+      await logAudit(
+        req.user!.userId,
+        `UPDATE_DOCTOR_AVAILABILITY_${status}`,
+        'doctor_availabilities',
+        record.id,
+        { date, status, reason, nextAvailableDate }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Doctor availability updated successfully.',
+        data: {
+          id: record.id,
+          date: record.date.toISOString().split('T')[0],
+          status: record.status,
+          startTime: record.startTime,
+          endTime: record.endTime,
+          reason: record.reason,
+          nextAvailableDate: record.nextAvailableDate ? record.nextAvailableDate.toISOString().split('T')[0] : null,
+        },
+      });
+    } catch (err) {
+      console.error('[DOCTOR_AVAILABILITY] Update error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to update doctor availability.' });
+    }
+  }
+);
+
 export default router;

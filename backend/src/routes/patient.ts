@@ -1380,25 +1380,724 @@ router.put(
   }
 );
 
+// ─────────────────────────────────────────────────────────────
+// Departments, Doctors, and Doctor Availability Endpoints
+// ─────────────────────────────────────────────────────────────
+
+/** Formats a Date/Time value into 12-hour AM/PM string */
+function formatTime12h(dateOrTime: Date | string | null | undefined): string {
+  if (!dateOrTime) return '09:00 AM';
+  const d = new Date(dateOrTime);
+  if (isNaN(d.getTime())) return '09:00 AM';
+  const isTimeOnly = d.getFullYear() === 1970;
+  const hours = isTimeOnly ? d.getUTCHours() : d.getHours();
+  const minutes = isTimeOnly ? d.getUTCMinutes() : d.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 || 12;
+  const displayMinutes = minutes.toString().padStart(2, '0');
+  return `${displayHours.toString().padStart(2, '0')}:${displayMinutes} ${ampm}`;
+}
+
+/** Parses time string ('09:00', '14:30', '10:00 AM') into a UTC Date object for PostgreSQL TIME field */
+function parseTimeToUtcDate(timeStr: string): Date {
+  let hours = 9;
+  let minutes = 0;
+  const trimmed = timeStr.trim();
+  const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (match12) {
+    hours = parseInt(match12[1], 10);
+    minutes = parseInt(match12[2], 10);
+    const ampm = (match12[3] || '').toUpperCase();
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+  }
+  const d = new Date('1970-01-01T00:00:00.000Z');
+  d.setUTCHours(hours, minutes, 0, 0);
+  return d;
+}
+
 /**
- * PUT /api/patient/notifications/read-all
- * Marks all notifications for the authenticated user as read.
+ * GET /api/patient/departments
+ * Retrieves hospital departments with their specialties and doctors.
  */
-router.put(
-  '/notifications/read-all',
+router.get(
+  '/departments',
+  authenticateJWT,
+  requireRoles(['patient', 'doctor', 'nurse', 'admin']),
+  async (_req: AuthenticatedRequest, res: Response) => {
+    try {
+      const departments = await prisma.department.findMany({
+        include: {
+          hospital: { select: { id: true, name: true, city: true, phone: true } },
+          doctors: {
+            include: {
+              specialization: true,
+              user: { select: { email: true, isActive: true } },
+            },
+          },
+        },
+        orderBy: { name: 'asc' },
+      });
+
+      const formatted = departments.map((d) => ({
+        id: d.id,
+        name: d.name,
+        description: d.description || '',
+        hospitalName: d.hospital?.name || 'MediTwin Central Hospital',
+        doctorCount: d.doctors.length,
+        doctors: d.doctors.map((doc) => ({
+          id: doc.id,
+          name: `Dr. ${doc.firstName} ${doc.lastName}`,
+          firstName: doc.firstName,
+          lastName: doc.lastName,
+          specialization: doc.specialization?.name || 'General Practitioner',
+          yearsOfExperience: doc.yearsOfExperience || 10,
+          phone: doc.phone || '',
+          email: doc.user?.email || '',
+          licenseNumber: doc.licenseNumber || '',
+        })),
+      }));
+
+      return res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error('[PATIENT] Fetch departments error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch departments.' });
+    }
+  }
+);
+
+/**
+ * GET /api/patient/doctors
+ * Returns doctors list with optional department/specialization filtering and current availability.
+ */
+router.get(
+  '/doctors',
   authenticateJWT,
   requireRoles(['patient', 'doctor', 'nurse', 'admin']),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const userId = req.user!.userId;
-      await prisma.notification.updateMany({
-        where: { userId, isRead: false },
-        data: { isRead: true },
+      const { departmentId, specializationId, date } = req.query;
+
+      const whereClause: any = {};
+      if (departmentId) {
+        const dId = parseInt(departmentId as string, 10);
+        if (!isNaN(dId)) whereClause.departmentId = dId;
+      }
+      if (specializationId) {
+        const sId = parseInt(specializationId as string, 10);
+        if (!isNaN(sId)) whereClause.specializationId = sId;
+      }
+
+      const queryDate = date ? new Date(date as string) : new Date();
+      const queryDateOnly = new Date(Date.UTC(queryDate.getFullYear(), queryDate.getMonth(), queryDate.getDate()));
+
+      const doctors = await prisma.doctor.findMany({
+        where: whereClause,
+        include: {
+          specialization: true,
+          department: { include: { hospital: true } },
+          user: { select: { email: true, isActive: true } },
+          availabilities: {
+            where: {
+              date: queryDateOnly,
+            },
+          },
+        },
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       });
-      return res.json({ success: true, message: 'All notifications marked as read.' });
+
+      const formatted = doctors.map((doc) => {
+        const avail = doc.availabilities[0];
+        const status = avail ? avail.status : 'AVAILABLE';
+        const isAvailable = status === 'AVAILABLE';
+
+        return {
+          id: doc.id,
+          name: `Dr. ${doc.firstName} ${doc.lastName}`,
+          firstName: doc.firstName,
+          lastName: doc.lastName,
+          specialization: doc.specialization?.name || 'General Medicine',
+          departmentId: doc.departmentId,
+          departmentName: doc.department?.name || 'General OPD',
+          hospitalName: doc.department?.hospital?.name || 'MediTwin Central Hospital',
+          yearsOfExperience: doc.yearsOfExperience || 10,
+          licenseNumber: doc.licenseNumber || '',
+          phone: doc.phone || '',
+          email: doc.user?.email || '',
+          availability: {
+            date: queryDateOnly.toISOString().split('T')[0],
+            status,
+            isAvailable,
+            reason: avail?.reason || null,
+            nextAvailableDate: avail?.nextAvailableDate ? avail.nextAvailableDate.toISOString().split('T')[0] : null,
+            startTime: avail?.startTime || '09:00',
+            endTime: avail?.endTime || '17:00',
+          },
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
     } catch (err) {
-      console.error('[PATIENT] Mark all notifications read error:', err);
-      return res.status(500).json({ success: false, error: 'Failed to mark all notifications as read.' });
+      console.error('[PATIENT] Fetch doctors error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch doctors list.' });
+    }
+  }
+);
+
+/**
+ * GET /api/patient/doctors/:id/availability
+ * Checks specific doctor's availability on a specified date and lists slots with occupancy status.
+ */
+router.get(
+  '/doctors/:id/availability',
+  authenticateJWT,
+  requireRoles(['patient', 'doctor', 'nurse', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const doctorId = parseInt(req.params.id, 10);
+      if (isNaN(doctorId)) {
+        return res.status(400).json({ success: false, error: 'Invalid doctor ID.' });
+      }
+
+      const doctor = await prisma.doctor.findUnique({
+        where: { id: doctorId },
+        include: {
+          specialization: true,
+          department: { include: { hospital: true } },
+        },
+      });
+
+      if (!doctor) {
+        return res.status(404).json({ success: false, error: 'Doctor not found.' });
+      }
+
+      const dateStr = (req.query.date as string) || new Date().toISOString().split('T')[0];
+      const targetDate = new Date(dateStr);
+      const targetDateOnly = new Date(Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()));
+
+      // 1. Fetch Doctor Availability Override
+      const availabilityRecord = await prisma.doctorAvailability.findUnique({
+        where: {
+          doctorId_date: {
+            doctorId,
+            date: targetDateOnly,
+          },
+        },
+      });
+
+      const status = availabilityRecord ? availabilityRecord.status : 'AVAILABLE';
+      const isAvailable = status === 'AVAILABLE';
+      const startTimeStr = availabilityRecord?.startTime || '09:00';
+      const endTimeStr = availabilityRecord?.endTime || '17:00';
+      const reason = availabilityRecord?.reason || null;
+      const nextAvailableDate = availabilityRecord?.nextAvailableDate
+        ? availabilityRecord.nextAvailableDate.toISOString().split('T')[0]
+        : null;
+
+      // 2. Fetch existing appointments for doctor on this date to mark booked slots
+      const cancelledStatus = await prisma.appointmentStatus.findFirst({ where: { name: 'cancelled' } });
+      const appointments = await prisma.appointment.findMany({
+        where: {
+          doctorId,
+          appointmentDate: targetDateOnly,
+          ...(cancelledStatus ? { statusId: { not: cancelledStatus.id } } : {}),
+        },
+        select: {
+          id: true,
+          appointmentTime: true,
+        },
+      });
+
+      const bookedTimes = appointments.map((a) => formatTime12h(a.appointmentTime));
+
+      // 3. Generate Time Slots between startTime and endTime in 30-min increments
+      const [startHour, startMin] = startTimeStr.split(':').map((v) => parseInt(v, 10));
+      const [endHour, endMin] = endTimeStr.split(':').map((v) => parseInt(v, 10));
+
+      const slots: Array<{
+        time24: string;
+        time12: string;
+        isBooked: boolean;
+      }> = [];
+
+      if (isAvailable) {
+        let curHour = isNaN(startHour) ? 9 : startHour;
+        let curMin = isNaN(startMin) ? 0 : startMin;
+        const maxHour = isNaN(endHour) ? 17 : endHour;
+        const maxMin = isNaN(endMin) ? 0 : endMin;
+
+        while (curHour < maxHour || (curHour === maxHour && curMin < maxMin)) {
+          // Skip lunch break 13:00 - 14:00
+          if (!(curHour === 13 && curMin < 60)) {
+            const time24 = `${String(curHour).padStart(2, '0')}:${String(curMin).padStart(2, '0')}`;
+            const timeObj = new Date('1970-01-01T00:00:00.000Z');
+            timeObj.setUTCHours(curHour, curMin, 0, 0);
+            const time12 = formatTime12h(timeObj);
+            const isBooked = bookedTimes.includes(time12);
+
+            slots.push({
+              time24,
+              time12,
+              isBooked,
+            });
+          }
+
+          curMin += 30;
+          if (curMin >= 60) {
+            curHour += Math.floor(curMin / 60);
+            curMin %= 60;
+          }
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          doctor: {
+            id: doctor.id,
+            name: `Dr. ${doctor.firstName} ${doctor.lastName}`,
+            specialization: doctor.specialization?.name || 'General Medicine',
+            department: doctor.department?.name || 'General OPD',
+            hospital: doctor.department?.hospital?.name || 'MediTwin Central Hospital',
+          },
+          date: targetDateOnly.toISOString().split('T')[0],
+          status,
+          isAvailable,
+          reason,
+          nextAvailableDate,
+          workingHours: `${startTimeStr} - ${endTimeStr}`,
+          slots,
+        },
+      });
+    } catch (err) {
+      console.error('[PATIENT] Doctor availability query error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve doctor availability.' });
+    }
+  }
+);
+
+/**
+ * GET /api/patient/appointments
+ * Retrieves all appointments for the authenticated patient directly from PostgreSQL.
+ */
+router.get(
+  '/appointments',
+  authenticateJWT,
+  requireRoles(['patient', 'doctor', 'nurse', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patient = await getPatientFromRequest(req);
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient profile not found.' });
+      }
+
+      const appointments = await prisma.appointment.findMany({
+        where: { patientId: patient.id },
+        include: {
+          status: true,
+          doctor: {
+            include: {
+              specialization: true,
+              department: { include: { hospital: true } },
+            },
+          },
+        },
+        orderBy: [{ appointmentDate: 'desc' }, { appointmentTime: 'asc' }],
+      });
+
+      const formatted = appointments.map((a) => {
+        const dateStr = a.appointmentDate.toISOString().split('T')[0];
+        const time12 = formatTime12h(a.appointmentTime);
+        const docName = `Dr. ${a.doctor.firstName} ${a.doctor.lastName}`;
+
+        return {
+          id: a.id,
+          appointmentId: `APT-${String(a.id).padStart(4, '0')}`,
+          date: dateStr,
+          time: time12,
+          rawDate: a.appointmentDate.toISOString(),
+          status: a.status.name, // 'scheduled' | 'completed' | 'cancelled'
+          reason: a.reason || 'General Consultation',
+          notes: a.notes || '',
+          type: a.notes?.includes('Video') ? 'video' : 'in-person',
+          doctor: {
+            id: a.doctor.id,
+            name: docName,
+            firstName: a.doctor.firstName,
+            lastName: a.doctor.lastName,
+            specialization: a.doctor.specialization?.name || 'General Medicine',
+            department: a.doctor.department?.name || 'General OPD',
+            hospital: a.doctor.department?.hospital?.name || 'MediTwin Central Hospital',
+            phone: a.doctor.phone || '',
+          },
+          createdAt: a.createdAt ? a.createdAt.toISOString() : new Date().toISOString(),
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error('[PATIENT] Fetch appointments error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch appointments.' });
+    }
+  }
+);
+
+/**
+ * POST /api/patient/appointments
+ * Books an appointment for the authenticated patient with doctor availability validation.
+ */
+router.post(
+  '/appointments',
+  authenticateJWT,
+  requireRoles(['patient', 'doctor', 'nurse', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patient = await getPatientFromRequest(req);
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient profile not found.' });
+      }
+
+      const { doctorId, date, time, reason, notes, consultationType } = req.body;
+
+      if (!doctorId || !date || !time) {
+        return res.status(400).json({
+          success: false,
+          error: 'Doctor, consultation date, and time slot are required.',
+        });
+      }
+
+      const parsedDocId = parseInt(String(doctorId), 10);
+      const doctor = await prisma.doctor.findUnique({
+        where: { id: parsedDocId },
+        include: {
+          specialization: true,
+          department: { include: { hospital: true } },
+        },
+      });
+
+      if (!doctor) {
+        return res.status(404).json({ success: false, error: 'Selected doctor could not be found.' });
+      }
+
+      const appointmentDate = new Date(date);
+      if (isNaN(appointmentDate.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid appointment date format.' });
+      }
+
+      const targetDateOnly = new Date(
+        Date.UTC(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate())
+      );
+
+      // 1. Verify Doctor Availability Record
+      const availability = await prisma.doctorAvailability.findUnique({
+        where: {
+          doctorId_date: {
+            doctorId: parsedDocId,
+            date: targetDateOnly,
+          },
+        },
+      });
+
+      if (availability && (availability.status === 'ABSENT' || availability.status === 'ON_LEAVE' || availability.status === 'UNAVAILABLE')) {
+        const statusLabel = availability.status === 'ON_LEAVE' ? 'on authorized leave' : 'absent';
+        const nextDateStr = availability.nextAvailableDate
+          ? availability.nextAvailableDate.toISOString().split('T')[0]
+          : null;
+
+        return res.status(400).json({
+          success: false,
+          error: `Dr. ${doctor.firstName} ${doctor.lastName} is currently ${statusLabel} on ${date}${
+            availability.reason ? ` (${availability.reason})` : ''
+          }.${nextDateStr ? ` Next available date: ${nextDateStr}.` : ''}`,
+          status: availability.status,
+          reason: availability.reason,
+          nextAvailableDate: nextDateStr,
+        });
+      }
+
+      // 2. Check Slot Conflict
+      const appointmentTimeDate = parseTimeToUtcDate(time);
+      const scheduledStatus = await prisma.appointmentStatus.findFirst({ where: { name: 'scheduled' } });
+      const cancelledStatus = await prisma.appointmentStatus.findFirst({ where: { name: 'cancelled' } });
+
+      const existingConflict = await prisma.appointment.findFirst({
+        where: {
+          doctorId: parsedDocId,
+          appointmentDate: targetDateOnly,
+          appointmentTime: appointmentTimeDate,
+          ...(cancelledStatus ? { statusId: { not: cancelledStatus.id } } : {}),
+        },
+      });
+
+      if (existingConflict) {
+        return res.status(409).json({
+          success: false,
+          error: `The ${time} slot on ${date} is already booked for Dr. ${doctor.firstName} ${doctor.lastName}. Please select another time slot.`,
+        });
+      }
+
+      // 3. Create Appointment in Database
+      const defaultStatus = scheduledStatus || (await prisma.appointmentStatus.create({ data: { name: 'scheduled' } }));
+
+      const combinedNotes = [
+        notes || '',
+        consultationType ? `Type: ${consultationType}` : '',
+      ]
+        .filter(Boolean)
+        .join(' | ');
+
+      const newAppt = await prisma.appointment.create({
+        data: {
+          patientId: patient.id,
+          doctorId: parsedDocId,
+          appointmentDate: targetDateOnly,
+          appointmentTime: appointmentTimeDate,
+          statusId: defaultStatus.id,
+          reason: reason || 'General Follow-up / Consultation',
+          notes: combinedNotes,
+        },
+        include: {
+          status: true,
+          doctor: {
+            include: {
+              specialization: true,
+              department: { include: { hospital: true } },
+            },
+          },
+        },
+      });
+
+      // 4. Create in-app notification for patient
+      try {
+        const notifType = await prisma.notificationType.findFirst({
+          where: { name: { contains: 'appoint', mode: 'insensitive' } },
+        });
+
+        await prisma.notification.create({
+          data: {
+            userId: patient.userId,
+            notificationTypeId: notifType?.id || 1,
+            title: 'Appointment Scheduled Successfully',
+            message: `Your appointment with Dr. ${doctor.firstName} ${doctor.lastName} (${doctor.specialization?.name}) is confirmed for ${date} at ${formatTime12h(appointmentTimeDate)}.`,
+            isRead: false,
+          },
+        });
+      } catch (notifErr) {
+        console.warn('[PATIENT] Non-critical notification error:', notifErr);
+      }
+
+      // 5. Audit Logging
+      await logAudit(req.user!.userId, 'CREATE_PATIENT_APPOINTMENT', 'appointments', newAppt.id, {
+        doctorId: parsedDocId,
+        date,
+        time,
+        patientId: patient.id,
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Appointment scheduled successfully!',
+        data: {
+          id: newAppt.id,
+          appointmentId: `APT-${String(newAppt.id).padStart(4, '0')}`,
+          date,
+          time: formatTime12h(newAppt.appointmentTime),
+          status: newAppt.status.name,
+          doctor: {
+            id: doctor.id,
+            name: `Dr. ${doctor.firstName} ${doctor.lastName}`,
+            specialization: doctor.specialization?.name,
+            department: doctor.department?.name,
+            hospital: doctor.department?.hospital?.name,
+          },
+          reason: newAppt.reason,
+          notes: newAppt.notes,
+        },
+      });
+    } catch (err) {
+      console.error('[PATIENT] Create appointment error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to schedule appointment.' });
+    }
+  }
+);
+
+/**
+ * PATCH /api/patient/appointments/:id/cancel
+ * Cancels a patient appointment.
+ */
+router.patch(
+  '/appointments/:id/cancel',
+  authenticateJWT,
+  requireRoles(['patient', 'doctor', 'nurse', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patient = await getPatientFromRequest(req);
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient profile not found.' });
+      }
+
+      const apptId = parseInt(req.params.id, 10);
+      if (isNaN(apptId)) {
+        return res.status(400).json({ success: false, error: 'Invalid appointment ID.' });
+      }
+
+      const appointment = await prisma.appointment.findFirst({
+        where: { id: apptId, patientId: patient.id },
+        include: { doctor: true, status: true },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({ success: false, error: 'Appointment not found or not owned by patient.' });
+      }
+
+      let cancelledStatus = await prisma.appointmentStatus.findFirst({ where: { name: 'cancelled' } });
+      if (!cancelledStatus) {
+        cancelledStatus = await prisma.appointmentStatus.create({ data: { name: 'cancelled' } });
+      }
+
+      const updated = await prisma.appointment.update({
+        where: { id: apptId },
+        data: { statusId: cancelledStatus.id },
+        include: { status: true, doctor: true },
+      });
+
+      // Notify patient
+      try {
+        const notifType = await prisma.notificationType.findFirst({
+          where: { name: { contains: 'appoint', mode: 'insensitive' } },
+        });
+
+        await prisma.notification.create({
+          data: {
+            userId: patient.userId,
+            notificationTypeId: notifType?.id || 1,
+            title: 'Appointment Cancelled',
+            message: `Your appointment with Dr. ${updated.doctor.firstName} ${updated.doctor.lastName} on ${updated.appointmentDate.toISOString().split('T')[0]} has been cancelled.`,
+            isRead: false,
+          },
+        });
+      } catch (nErr) {
+        console.warn('[PATIENT] Non-critical notification error:', nErr);
+      }
+
+      await logAudit(req.user!.userId, 'CANCEL_PATIENT_APPOINTMENT', 'appointments', apptId, {
+        patientId: patient.id,
+      });
+
+      return res.json({
+        success: true,
+        message: 'Appointment has been cancelled successfully.',
+        data: updated,
+      });
+    } catch (err) {
+      console.error('[PATIENT] Cancel appointment error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to cancel appointment.' });
+    }
+  }
+);
+
+/**
+ * PATCH /api/patient/appointments/:id/reschedule
+ * Reschedules an appointment to a new date and time with availability validation.
+ */
+router.patch(
+  '/appointments/:id/reschedule',
+  authenticateJWT,
+  requireRoles(['patient', 'doctor', 'nurse', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patient = await getPatientFromRequest(req);
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient profile not found.' });
+      }
+
+      const apptId = parseInt(req.params.id, 10);
+      const { newDate, newTime } = req.body;
+
+      if (!newDate || !newTime) {
+        return res.status(400).json({ success: false, error: 'New date and time are required for rescheduling.' });
+      }
+
+      const appointment = await prisma.appointment.findFirst({
+        where: { id: apptId, patientId: patient.id },
+        include: { doctor: true },
+      });
+
+      if (!appointment) {
+        return res.status(404).json({ success: false, error: 'Appointment not found.' });
+      }
+
+      const newDateObj = new Date(newDate);
+      const targetDateOnly = new Date(Date.UTC(newDateObj.getFullYear(), newDateObj.getMonth(), newDateObj.getDate()));
+
+      // 1. Check availability
+      const availability = await prisma.doctorAvailability.findUnique({
+        where: {
+          doctorId_date: {
+            doctorId: appointment.doctorId,
+            date: targetDateOnly,
+          },
+        },
+      });
+
+      if (availability && (availability.status === 'ABSENT' || availability.status === 'ON_LEAVE' || availability.status === 'UNAVAILABLE')) {
+        const nextDateStr = availability.nextAvailableDate
+          ? availability.nextAvailableDate.toISOString().split('T')[0]
+          : null;
+
+        return res.status(400).json({
+          success: false,
+          error: `Dr. ${appointment.doctor.firstName} ${appointment.doctor.lastName} is ${availability.status} on ${newDate}.${
+            nextDateStr ? ` Next available: ${nextDateStr}.` : ''
+          }`,
+          status: availability.status,
+          nextAvailableDate: nextDateStr,
+        });
+      }
+
+      // 2. Check conflict
+      const newTimeUtc = parseTimeToUtcDate(newTime);
+      const cancelledStatus = await prisma.appointmentStatus.findFirst({ where: { name: 'cancelled' } });
+
+      const conflict = await prisma.appointment.findFirst({
+        where: {
+          id: { not: apptId },
+          doctorId: appointment.doctorId,
+          appointmentDate: targetDateOnly,
+          appointmentTime: newTimeUtc,
+          ...(cancelledStatus ? { statusId: { not: cancelledStatus.id } } : {}),
+        },
+      });
+
+      if (conflict) {
+        return res.status(409).json({
+          success: false,
+          error: `Slot ${newTime} on ${newDate} is already booked. Please choose another slot.`,
+        });
+      }
+
+      const updated = await prisma.appointment.update({
+        where: { id: apptId },
+        data: {
+          appointmentDate: targetDateOnly,
+          appointmentTime: newTimeUtc,
+        },
+        include: { status: true, doctor: true },
+      });
+
+      return res.json({
+        success: true,
+        message: 'Appointment successfully rescheduled.',
+        data: {
+          id: updated.id,
+          date: newDate,
+          time: formatTime12h(updated.appointmentTime),
+          status: updated.status.name,
+        },
+      });
+    } catch (err) {
+      console.error('[PATIENT] Reschedule appointment error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to reschedule appointment.' });
     }
   }
 );

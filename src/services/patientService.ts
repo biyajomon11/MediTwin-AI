@@ -28,6 +28,11 @@ import type {
   MedicineReminder,
   PatientNotification,
   PrescriptionStatus,
+  DepartmentOption,
+  DoctorOption,
+  DoctorAvailabilityInfo,
+  PatientBookedAppointment,
+  AvailableDoctorSlot,
 } from '../types';
 
 // ── In-memory mutable state for Demo Mode ────────────────────────────────────
@@ -1153,4 +1158,325 @@ export function syncDiscontinuedDoctorPrescription(rxMedicineName: string) {
       ? { ...r, status: 'Completed' }
       : r
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Doctor Availability & Appointment Booking Services
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _mockAppointments: PatientBookedAppointment[] = [
+  {
+    id: 101,
+    appointmentId: 'APT-0101',
+    date: '2026-09-30',
+    time: '11:00 AM',
+    rawDate: '2026-09-30T11:00:00.000Z',
+    status: 'scheduled',
+    reason: 'Cardiology Follow-up & ECG Review',
+    notes: 'In-person consultation',
+    type: 'in-person',
+    doctor: {
+      id: 2,
+      name: 'Dr. Sarah Joseph',
+      firstName: 'Sarah',
+      lastName: 'Joseph',
+      specialization: 'Cardiology',
+      department: 'Cardiology Department',
+      hospital: 'MediTwin Central Hospital',
+      phone: '+91 98450 11223',
+    },
+    createdAt: '2026-09-25T10:00:00.000Z',
+  },
+];
+
+export async function getHospitalDepartments(): Promise<DepartmentOption[]> {
+  try {
+    const res = await fetch('/api/patient/departments', {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[patientService] getHospitalDepartments fetch failed, using fallback:', err);
+  }
+
+  return [
+    {
+      id: 1,
+      name: 'Cardiology Department',
+      description: 'Comprehensive diagnostic and interventional cardiovascular care',
+      hospitalName: 'MediTwin Central Hospital',
+      doctorCount: 2,
+      doctors: [
+        {
+          id: 1,
+          name: 'Dr. Anil Kumar',
+          firstName: 'Anil',
+          lastName: 'Kumar',
+          specialization: 'Cardiology',
+          yearsOfExperience: 16,
+          licenseNumber: 'DOC-AK-4401',
+          phone: '+91 98450 22334',
+          email: 'anil.kumar@meditwin.org',
+        },
+        {
+          id: 2,
+          name: 'Dr. Sarah Joseph',
+          firstName: 'Sarah',
+          lastName: 'Joseph',
+          specialization: 'Cardiology',
+          yearsOfExperience: 14,
+          licenseNumber: 'MID-123D-456',
+          phone: '+91 98450 11223',
+          email: 'sarah01@gmail.com',
+        },
+      ],
+    },
+    {
+      id: 2,
+      name: 'General Medicine Department',
+      description: 'Primary care, preventive health, and internal medicine',
+      hospitalName: 'MediTwin Central Hospital',
+      doctorCount: 3,
+      doctors: [
+        {
+          id: 3,
+          name: 'Dr. Meera Joseph',
+          firstName: 'Meera',
+          lastName: 'Joseph',
+          specialization: 'General Medicine',
+          yearsOfExperience: 11,
+          licenseNumber: 'DOC-MJ-5502',
+          phone: '+91 98450 33445',
+          email: 'meera.joseph@meditwin.org',
+        },
+        {
+          id: 4,
+          name: 'Dr. Biya Jomon',
+          firstName: 'Biya',
+          lastName: 'Jomon',
+          specialization: 'General Medicine',
+          yearsOfExperience: 15,
+          licenseNumber: 'LIC-1255',
+          phone: '+91 98450 44556',
+          email: 'biyajomon966@gamil.com',
+        },
+        {
+          id: 5,
+          name: 'Dr. Bittu Jomon',
+          firstName: 'Bittu',
+          lastName: 'Jomon',
+          specialization: 'General Medicine',
+          yearsOfExperience: 8,
+          licenseNumber: 'LIC-1578',
+          phone: '+91 62724 56688',
+          email: 'bittujomon50@gmail.com',
+        },
+      ],
+    },
+  ];
+}
+
+export async function getDoctorsForBooking(filters?: {
+  departmentId?: number;
+  specializationId?: number;
+  date?: string;
+}): Promise<DoctorOption[]> {
+  try {
+    const params = new URLSearchParams();
+    if (filters?.departmentId) params.append('departmentId', String(filters.departmentId));
+    if (filters?.specializationId) params.append('specializationId', String(filters.specializationId));
+    if (filters?.date) params.append('date', filters.date);
+
+    const res = await fetch(`/api/patient/doctors?${params.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[patientService] getDoctorsForBooking fetch failed, using fallback:', err);
+  }
+
+  const depts = await getHospitalDepartments();
+  const allDocs: DoctorOption[] = [];
+  for (const d of depts) {
+    if (!filters?.departmentId || filters.departmentId === d.id) {
+      for (const doc of d.doctors) {
+        allDocs.push({
+          ...doc,
+          departmentId: d.id,
+          departmentName: d.name,
+          hospitalName: d.hospitalName,
+        });
+      }
+    }
+  }
+  return allDocs;
+}
+
+export async function getDoctorAvailability(doctorId: number, date: string): Promise<DoctorAvailabilityInfo> {
+  try {
+    const res = await fetch(`/api/patient/doctors/${doctorId}/availability?date=${encodeURIComponent(date)}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[patientService] getDoctorAvailability fetch failed, using mock schedule:', err);
+  }
+
+  // Fallback mock schedule generator
+  const defaultSlots: AvailableDoctorSlot[] = [
+    { time24: '09:00', time12: '09:00 AM', isBooked: false },
+    { time24: '09:30', time12: '09:30 AM', isBooked: false },
+    { time24: '10:00', time12: '10:00 AM', isBooked: doctorId === 1 && date === '2026-09-28' }, // Dr Anil Kumar booked test slot
+    { time24: '10:30', time12: '10:30 AM', isBooked: false },
+    { time24: '11:00', time12: '11:00 AM', isBooked: false },
+    { time24: '11:30', time12: '11:30 AM', isBooked: false },
+    { time24: '12:00', time12: '12:00 PM', isBooked: false },
+    { time24: '12:30', time12: '12:30 PM', isBooked: false },
+    { time24: '14:00', time12: '02:00 PM', isBooked: false },
+    { time24: '14:30', time12: '02:30 PM', isBooked: false },
+    { time24: '15:00', time12: '03:00 PM', isBooked: false },
+    { time24: '15:30', time12: '03:30 PM', isBooked: false },
+    { time24: '16:00', time12: '04:00 PM', isBooked: false },
+    { time24: '16:30', time12: '04:30 PM', isBooked: false },
+  ];
+
+  return {
+    date,
+    status: 'AVAILABLE',
+    isAvailable: true,
+    reason: null,
+    nextAvailableDate: null,
+    workingHours: '09:00 - 17:00',
+    slots: defaultSlots,
+  };
+}
+
+export async function getPatientAppointments(): Promise<PatientBookedAppointment[]> {
+  try {
+    const res = await fetch('/api/patient/appointments', {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[patientService] getPatientAppointments fetch failed, using fallback:', err);
+  }
+
+  return [..._mockAppointments];
+}
+
+export async function bookPatientAppointment(payload: {
+  doctorId: number;
+  date: string;
+  time: string;
+  reason: string;
+  consultationType?: 'in-person' | 'video';
+  notes?: string;
+}): Promise<PatientBookedAppointment> {
+  const res = await fetch('/api/patient/appointments', {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(payload),
+  });
+
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    const err: any = new Error(json.error || 'Failed to book appointment');
+    err.status = json.status;
+    err.reason = json.reason;
+    err.nextAvailableDate = json.nextAvailableDate;
+    throw err;
+  }
+
+  const appt: PatientBookedAppointment = {
+    id: json.data.id || Date.now(),
+    appointmentId: json.data.appointmentId || `APT-${Date.now()}`,
+    date: payload.date,
+    time: payload.time,
+    rawDate: new Date(payload.date).toISOString(),
+    status: 'scheduled',
+    reason: payload.reason,
+    notes: payload.notes || '',
+    type: payload.consultationType || 'in-person',
+    doctor: json.data.doctor,
+    createdAt: new Date().toISOString(),
+  };
+
+  _mockAppointments.unshift(appt);
+
+  _notifications.unshift({
+    id: `notif-apt-${Date.now()}`,
+    patientId: getCurrentPatientId(),
+    type: 'appointment',
+    title: 'Appointment Scheduled Successfully',
+    message: `Your consultation with ${json.data.doctor?.name || 'your doctor'} has been confirmed for ${payload.date} at ${payload.time}.`,
+    dateTime: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    isRead: false,
+    linkTab: 'appointments',
+  });
+
+  return appt;
+}
+
+export async function cancelPatientAppointment(appointmentId: number): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`/api/patient/appointments/${appointmentId}/cancel`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+  });
+
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || 'Failed to cancel appointment');
+  }
+
+  _mockAppointments = _mockAppointments.map((a) =>
+    a.id === appointmentId ? { ...a, status: 'cancelled' } : a
+  );
+
+  return json;
+}
+
+export async function reschedulePatientAppointment(
+  appointmentId: number,
+  newDate: string,
+  newTime: string
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`/api/patient/appointments/${appointmentId}/reschedule`, {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ newDate, newTime }),
+  });
+
+  const json = await res.json();
+  if (!res.ok || !json.success) {
+    const err: any = new Error(json.error || 'Failed to reschedule appointment');
+    err.status = json.status;
+    err.nextAvailableDate = json.nextAvailableDate;
+    throw err;
+  }
+
+  _mockAppointments = _mockAppointments.map((a) =>
+    a.id === appointmentId ? { ...a, date: newDate, time: newTime, status: 'scheduled' } : a
+  );
+
+  return json;
 }

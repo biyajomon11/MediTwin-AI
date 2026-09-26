@@ -26,6 +26,7 @@ import { HealthProfilePage } from './patient/HealthProfilePage';
 import { MedicineRemindersPage } from './patient/MedicineRemindersPage';
 import { NotificationsPage } from './patient/NotificationsPage';
 import { AIHealthSummaryPage } from './patient/AIHealthSummaryPage';
+import { PatientAppointmentsPage } from './patient/PatientAppointmentsPage';
 import { HospitalNotificationsPage } from './hospitalAdmin/HospitalNotificationsPage';
 import { HospitalReportsPage } from './hospitalAdmin/HospitalReportsPage';
 import { HospitalActivityPage } from './hospitalAdmin/HospitalActivityPage';
@@ -59,7 +60,7 @@ const PATIENT_NAV: NavItem[] = [
   { id: 'documents',         label: 'Medical Documents',     icon: FileText        },
   { id: 'reminders',         label: 'Medicine Reminders',    icon: Clock           },
   { id: 'notifications',     label: 'Notifications',         icon: Bell            },
-  { id: 'appointments',      label: 'Appointments',          icon: Calendar, comingSoon: true },
+  { id: 'appointments',      label: 'Appointments',          icon: Calendar        },
   { id: 'ai-health-summary', label: 'AI Health Summary',     icon: Brain },
 ];
 
@@ -680,7 +681,7 @@ export const DashboardPage: React.FC = () => {
       case 'documents':         return <MedicalDocumentsPage />;
       case 'reminders':         return <MedicineRemindersPage />;
       case 'notifications':     return <NotificationsPage onNavigateTab={(tab) => setActiveView(tab)} />;
-      case 'appointments':      return <ComingSoonView label="Appointments" />;
+      case 'appointments':      return <PatientAppointmentsPage onNavigateTab={(tab) => setActiveView(tab)} />;
       case 'ai-health-summary': return <AIHealthSummaryPage onNavigateTab={(tab) => setActiveView(tab)} />;
       default:                  return renderDefaultDashboard();
     }

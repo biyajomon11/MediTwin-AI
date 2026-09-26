@@ -63,3 +63,12 @@ class TestPatientModule:
         ai_view = dashboard.is_element_displayed((dashboard.DASHBOARD_TITLE[0], "//main//*[contains(text(), 'AI') or contains(text(), 'Twin') or contains(text(), 'Summary')]"), timeout=6)
         assert ai_view, "AI Health Summary view failed to display."
     pytest_item_metadata(test_patient_006_ai_health_summary, "PATIENT-006", "Patient", "Medium", "AI Health Summary view loads")
+
+    def test_patient_007_doctor_appointments_module(self, driver):
+        """PATIENT-007: Verify Doctor Appointments module loads with specialist scheduling and availability"""
+        dashboard = self.login_patient(driver)
+        dashboard.click_appointments()
+        appt_view = dashboard.is_element_displayed(dashboard.APPOINTMENTS_CONTAINER, timeout=8)
+        assert appt_view, "Doctor Appointments module failed to display."
+    pytest_item_metadata(test_patient_007_doctor_appointments_module, "PATIENT-007", "Patient", "High", "Doctor appointments scheduling module loads")
+

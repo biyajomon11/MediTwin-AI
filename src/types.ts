@@ -997,3 +997,79 @@ export interface DoctorClinicalOverviewData {
     count: number;
   }[];
 }
+
+// ─────────────────────────────────────────────────────────────
+// Patient Appointment Booking & Doctor Availability Types
+// ─────────────────────────────────────────────────────────────
+
+export interface AvailableDoctorSlot {
+  time24: string;
+  time12: string;
+  isBooked: boolean;
+}
+
+export interface DoctorAvailabilityInfo {
+  date: string;
+  status: 'AVAILABLE' | 'ABSENT' | 'ON_LEAVE' | 'UNAVAILABLE';
+  isAvailable: boolean;
+  reason?: string | null;
+  nextAvailableDate?: string | null;
+  workingHours: string;
+  slots: AvailableDoctorSlot[];
+}
+
+export interface DoctorOption {
+  id: number;
+  name: string;
+  firstName: string;
+  lastName: string;
+  specialization: string;
+  departmentId?: number;
+  departmentName?: string;
+  hospitalName?: string;
+  yearsOfExperience: number;
+  licenseNumber: string;
+  phone: string;
+  email: string;
+  availability?: {
+    date: string;
+    status: 'AVAILABLE' | 'ABSENT' | 'ON_LEAVE' | 'UNAVAILABLE';
+    isAvailable: boolean;
+    reason: string | null;
+    nextAvailableDate: string | null;
+    startTime: string;
+    endTime: string;
+  };
+}
+
+export interface DepartmentOption {
+  id: number;
+  name: string;
+  description: string;
+  hospitalName: string;
+  doctorCount: number;
+  doctors: DoctorOption[];
+}
+
+export interface PatientBookedAppointment {
+  id: number;
+  appointmentId: string;
+  date: string;
+  time: string;
+  rawDate: string;
+  status: 'scheduled' | 'completed' | 'cancelled';
+  reason: string;
+  notes: string;
+  type: 'in-person' | 'video';
+  doctor: {
+    id: number;
+    name: string;
+    firstName: string;
+    lastName: string;
+    specialization: string;
+    department: string;
+    hospital: string;
+    phone: string;
+  };
+  createdAt: string;
+}
