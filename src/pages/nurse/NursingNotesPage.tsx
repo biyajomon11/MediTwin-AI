@@ -600,9 +600,17 @@ export const NursingNotesPage: React.FC = () => {
 
       {/* ── Patient Selector ── */}
       <div className="glass-card p-5 border border-white/10 space-y-3 relative z-30">
-        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-          <Search className="w-4 h-4 text-sky-400" /> Select Patient
-        </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Search className="w-4 h-4 text-sky-400" /> Select Patient
+          </h3>
+          {nurseService.getCurrentNurseWard() && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold self-start sm:self-auto">
+              <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+              Ward Filter: {nurseService.getCurrentNurseWard()}
+            </span>
+          )}
+        </div>
         <div className="relative">
           <button
             type="button"
@@ -610,8 +618,16 @@ export const NursingNotesPage: React.FC = () => {
             className="w-full flex items-center justify-between px-4 py-3 text-sm bg-white/5 border border-white/15 rounded-xl hover:border-sky-400/50 transition-all text-left cursor-pointer"
           >
             {selectedPatient
-              ? <span className="text-white font-semibold">{selectedPatient.firstName} {selectedPatient.lastName} — <span className="text-sky-400 text-xs font-mono">{selectedPatient.patientId}</span></span>
-              : <span className="text-gray-400 font-medium">Choose an assigned patient…</span>}
+              ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-white font-semibold">{selectedPatient.firstName} {selectedPatient.lastName}</span>
+                  <span className="text-sky-400 text-xs font-mono">{selectedPatient.patientId}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                    {selectedPatient.ward}
+                  </span>
+                </div>
+              )
+              : <span className="text-gray-400 font-medium">Choose an assigned patient ({nurseService.getCurrentNurseWard() || 'Ward'})…</span>}
             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${patientDropdown ? 'rotate-180' : ''}`} />
           </button>
 

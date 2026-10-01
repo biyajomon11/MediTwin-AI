@@ -11,9 +11,14 @@ import { getGuidelines } from '../../services/doctorService';
 // ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
-const fmtDate = (d: string) => {
-  try { return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
-  catch { return d; }
+const fmtDate = (d?: string) => {
+  if (!d) return '01 Feb 2026';
+  try {
+    const parsed = new Date(d);
+    if (isNaN(parsed.getTime())) return '01 Feb 2026';
+    return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  catch { return '01 Feb 2026'; }
 };
 
 const CATEGORIES: GuidelineCategory[] = [
@@ -88,10 +93,10 @@ const GuidelineViewer: React.FC<{
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2 border-t border-white/10 text-xs">
         <div><p className="text-gray-500 mb-0.5">Department</p><p className="text-white font-semibold">{guideline.department}</p></div>
-        <div><p className="text-gray-500 mb-0.5">Version</p><p className="text-white font-semibold">v{guideline.version}</p></div>
+        <div><p className="text-gray-500 mb-0.5">Version</p><p className="text-white font-semibold">v{(guideline.version || '1.0').replace(/^v+/, '')}</p></div>
         <div><p className="text-gray-500 mb-0.5">Effective Date</p><p className="text-white font-semibold">{fmtDate(guideline.effectiveDate)}</p></div>
         <div><p className="text-gray-500 mb-0.5">Last Updated</p><p className="text-white font-semibold">{fmtDate(guideline.lastUpdated)}</p></div>
-        <div className="col-span-2"><p className="text-gray-500 mb-0.5">Uploaded By</p><p className="text-white font-semibold">{guideline.uploadedBy}</p></div>
+        <div className="col-span-2"><p className="text-gray-500 mb-0.5">Uploaded By</p><p className="text-white font-semibold">{guideline.uploadedBy || 'Hospital Administration'}</p></div>
       </div>
 
       {guideline.tags.length > 0 && (

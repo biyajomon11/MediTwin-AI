@@ -10,6 +10,7 @@ class NurseDashboardPage(BasePage):
     NURSING_NOTES_TAB = (By.XPATH, "//nav//button[contains(., 'Nursing Notes')]")
     TREATMENT_PLANS_TAB = (By.XPATH, "//nav//button[contains(., 'Treatment Plans')]")
     CLINICAL_RECORDS_TAB = (By.XPATH, "//nav//button[contains(., 'Patient Clinical Records')]")
+    PROFILE_TAB = (By.XPATH, "//nav//button[contains(., 'Profile')]")
     LOGOUT_BTN = (By.XPATH, "//button[contains(., 'Sign Out') or contains(., 'Logout')]")
 
     # Workstation Header
@@ -36,6 +37,10 @@ class NurseDashboardPage(BasePage):
 
     def click_clinical_records(self):
         self.safe_click(self.CLINICAL_RECORDS_TAB)
+        return self
+
+    def click_profile(self):
+        self.safe_click(self.PROFILE_TAB)
         return self
 
     def click_logout(self):

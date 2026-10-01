@@ -104,19 +104,39 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
         orderBy: { observationDate: 'desc' },
         take: 5,
       },
+      dischargeSummaries: {
+        orderBy: { dischargeDate: 'desc' },
+        take: 1,
+      },
     },
   });
 
   if (!patient) return null;
 
   const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
   const age = patient.dateOfBirth ? calculateAge(new Date(patient.dateOfBirth)) : 25;
-  const pastOrCompletedAppt = patient.appointments.find(
-    (a) => a.status.name === 'completed' || new Date(a.appointmentDate) < now
+
+  // Chronologically sorted appointments
+  const sortedAppts = [...patient.appointments].sort((a, b) =>
+    new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime()
   );
-  const upcomingAppt = patient.appointments.find(
-    (a) => new Date(a.appointmentDate) >= now && a.status.name === 'scheduled'
-  );
+
+  // Past visits: appointments with status completed, or date strictly before today (< todayStr)
+  const pastAppts = sortedAppts.filter((a) => {
+    const dStr = a.appointmentDate.toISOString().split('T')[0];
+    const s = (a.status?.name || '').toLowerCase();
+    return s === 'completed' || dStr < todayStr;
+  });
+  const pastOrCompletedAppt = pastAppts[pastAppts.length - 1];
+
+  // Upcoming appointments: MUST be TODAY or COMING DATES (>= todayStr) and active status
+  const upcomingAppts = sortedAppts.filter((a) => {
+    const dStr = a.appointmentDate.toISOString().split('T')[0];
+    const s = (a.status?.name || '').toLowerCase();
+    return dStr >= todayStr && (s === 'scheduled' || s === 'pending' || s === 'confirmed' || s === 'upcoming');
+  });
+  const upcomingAppt = upcomingAppts[0];
   const lastVisitDate = pastOrCompletedAppt
     ? pastOrCompletedAppt.appointmentDate.toISOString().split('T')[0]
     : patient.medicalRecords[0]
@@ -292,6 +312,39 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       ? rawStatus
       : 'Active') as 'Active' | 'Critical' | 'Admitted' | 'Discharged' | 'Under Observation';
 
+    const latestDischarge = (patient as any).dischargeSummaries?.[0];
+    const dischargeDate = latestDischarge
+      ? latestDischarge.dischargeDate.toISOString().split('T')[0]
+      : (status === 'Discharged'
+        ? (patient.updatedAt ? patient.updatedAt.toISOString().split('T')[0] : lastVisitDate)
+        : undefined);
+
+    let admissionDate: string | undefined = undefined;
+
+    if (latestDischarge?.admissionDate) {
+      admissionDate = latestDischarge.admissionDate.toISOString().split('T')[0];
+    } else if (status === 'Admitted' || status === 'Critical' || status === 'Under Observation' || patient.ward) {
+      if (lastVisitDate && lastVisitDate < todayStr) {
+        admissionDate = lastVisitDate;
+      } else if (patient.createdAt && patient.createdAt.toISOString().split('T')[0] < todayStr) {
+        admissionDate = patient.createdAt.toISOString().split('T')[0];
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() - 5);
+        admissionDate = d.toISOString().split('T')[0];
+      }
+    } else if (status === 'Discharged') {
+      if (lastVisitDate && lastVisitDate < todayStr) {
+        admissionDate = lastVisitDate;
+      } else {
+        const d = new Date();
+        d.setDate(d.getDate() - 5);
+        admissionDate = d.toISOString().split('T')[0];
+      }
+    } else {
+      admissionDate = lastVisitDate && lastVisitDate < todayStr ? lastVisitDate : undefined;
+    }
+
     return {
       id: patient.id,
       firstName: patient.firstName,
@@ -319,6 +372,8 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       ward,
       bedNumber,
       status,
+      dischargeDate,
+      admissionDate,
       patientCode: `OP-${patient.id < 100 ? String(patient.id).padStart(3, '0') : patient.id}`,
       primaryCondition,
       lastVisit: lastVisitDate,
@@ -1054,14 +1109,18 @@ router.get(
 
       const formatted = guidelines.map((g) => ({
         id: g.guidelineCode,
+        guidelineCode: g.guidelineCode,
+        rawId: g.id,
         title: g.title,
         category: g.category,
         department: g.department || 'General Medicine',
-        version: g.version,
+        version: g.version.replace(/^v+/, ''),
+        effectiveDate: g.createdAt ? g.createdAt.toISOString().split('T')[0] : g.lastUpdated.toISOString().split('T')[0],
         lastUpdated: g.lastUpdated.toISOString().split('T')[0],
         summary: g.summary,
         content: g.content,
         author: g.author || 'Clinical Governance Committee',
+        uploadedBy: g.author || 'Hospital Administration',
         tags: g.tags,
         isDownloadable: false,
       }));
@@ -1107,14 +1166,17 @@ router.get(
 
       const formatted = {
         id: guideline.guidelineCode,
+        rawId: guideline.id,
         title: guideline.title,
         category: guideline.category,
         department: guideline.department || 'General Medicine',
-        version: guideline.version,
+        version: guideline.version.replace(/^v+/, ''),
+        effectiveDate: guideline.createdAt ? guideline.createdAt.toISOString().split('T')[0] : guideline.lastUpdated.toISOString().split('T')[0],
         lastUpdated: guideline.lastUpdated.toISOString().split('T')[0],
         summary: guideline.summary,
         content: guideline.content,
         author: guideline.author || 'Clinical Governance Committee',
+        uploadedBy: guideline.author || 'Hospital Administration',
         tags: guideline.tags,
         isDownloadable: false,
       };
@@ -1957,4 +2019,1010 @@ router.post(
   }
 );
 
+// ─────────────────────────────────────────────────────────────────
+// DISCHARGE SUMMARY MANAGEMENT
+// ─────────────────────────────────────────────────────────────────
+
+/** Formats a DischargeSummary model into a clean client-safe DTO */
+function formatDischargeSummaryDTO(summary: any) {
+  const patient = summary.patient;
+  const doctor = summary.doctor;
+  const patientAge = patient?.dateOfBirth ? calculateAge(new Date(patient.dateOfBirth)) : undefined;
+
+  return {
+    id: summary.id,
+    patientId: summary.patientId,
+    doctorId: summary.doctorId,
+    doctorName: doctor ? `Dr. ${doctor.firstName} ${doctor.lastName}` : undefined,
+    doctorSpecialization: doctor?.specialization?.name,
+    doctorLicenseNumber: doctor?.licenseNumber,
+    hospitalName: doctor?.department?.hospital?.name || 'MediTwin Central Hospital',
+    departmentName: doctor?.department?.name || 'General Medicine',
+    patientName: patient ? `${patient.firstName} ${patient.lastName}` : undefined,
+    patientAge,
+    patientGender: patient?.gender?.name,
+    patientPhone: patient?.phone,
+    patientAddress: patient?.address ? `${patient.address}${patient.city ? ', ' + patient.city : ''}` : undefined,
+    ward: patient?.ward || undefined,
+    bedNumber: patient?.bedNumber || undefined,
+    admissionStatus: patient?.admissionStatus || undefined,
+    admissionDate: summary.admissionDate instanceof Date ? summary.admissionDate.toISOString().split('T')[0] : summary.admissionDate,
+    dischargeDate: summary.dischargeDate instanceof Date ? summary.dischargeDate.toISOString().split('T')[0] : summary.dischargeDate,
+    admissionDiagnosis: summary.admissionDiagnosis || '',
+    dischargeDiagnosis: summary.dischargeDiagnosis || '',
+    chiefComplaint: summary.chiefComplaint || '',
+    clinicalCourse: summary.clinicalCourse || '',
+    proceduresPerformed: summary.proceduresPerformed || '',
+    investigations: summary.investigations || '',
+    treatmentGiven: summary.treatmentGiven || '',
+    conditionAtDischarge: summary.conditionAtDischarge || 'Stable',
+    dischargeMedications: Array.isArray(summary.dischargeMedications) ? summary.dischargeMedications : [],
+    followUpInstructions: summary.followUpInstructions || '',
+    followUpDate: summary.followUpDate instanceof Date ? summary.followUpDate.toISOString().split('T')[0] : (summary.followUpDate ? String(summary.followUpDate).split('T')[0] : null),
+    followUpDepartment: summary.followUpDepartment || '',
+    dietaryAdvice: summary.dietaryAdvice || '',
+    activityAdvice: summary.activityAdvice || '',
+    warningSigns: summary.warningSigns || '',
+    additionalInstructions: summary.additionalInstructions || '',
+    summaryStatus: summary.summaryStatus,
+    finalizedAt: summary.finalizedAt ? summary.finalizedAt.toISOString() : null,
+    finalizedBy: summary.finalizedBy,
+    createdAt: summary.createdAt ? summary.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: summary.updatedAt ? summary.updatedAt.toISOString() : new Date().toISOString(),
+  };
+}
+
+/** Validates dates for Discharge Summary */
+function validateDischargeDates(admissionDateStr: string, dischargeDateStr: string, followUpDateStr?: string | null) {
+  if (!admissionDateStr || !dischargeDateStr) {
+    return { valid: false, error: 'Admission date and discharge date are required.' };
+  }
+
+  const adm = new Date(admissionDateStr);
+  const dis = new Date(dischargeDateStr);
+
+  if (isNaN(adm.getTime())) {
+    return { valid: false, error: 'Admission date is malformed or invalid.' };
+  }
+  if (isNaN(dis.getTime())) {
+    return { valid: false, error: 'Discharge date is malformed or invalid.' };
+  }
+
+  const admUtc = Date.UTC(adm.getFullYear(), adm.getMonth(), adm.getDate());
+  const disUtc = Date.UTC(dis.getFullYear(), dis.getMonth(), dis.getDate());
+
+  if (disUtc < admUtc) {
+    return { valid: false, error: 'Discharge date cannot be earlier than admission date.' };
+  }
+
+  let fupDate: Date | null = null;
+  if (followUpDateStr) {
+    const fup = new Date(followUpDateStr);
+    if (isNaN(fup.getTime())) {
+      return { valid: false, error: 'Follow-up date is malformed or invalid.' };
+    }
+    const fupUtc = Date.UTC(fup.getFullYear(), fup.getMonth(), fup.getDate());
+    if (fupUtc < disUtc) {
+      return { valid: false, error: 'Follow-up date cannot be earlier than discharge date.' };
+    }
+    fupDate = fup;
+  }
+
+  return { valid: true, adm, dis, fup: fupDate };
+}
+
+/**
+ * GET /api/doctor/patients/:patientId/discharge-summaries
+ * Lists all discharge summaries for an authorized patient.
+ */
+router.get(
+  '/patients/:patientId/discharge-summaries',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const userId = req.user!.userId;
+      const doctor = await getDoctorByUserId(userId);
+      if (!doctor && req.user!.role === 'doctor') {
+        return res.status(403).json({ success: false, error: 'Doctor profile not found for authenticated session.' });
+      }
+
+      const patient = await prisma.patient.findUnique({
+        where: { id: patientId },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient not found.' });
+      }
+
+      const summaries = await prisma.dischargeSummary.findMany({
+        where: { patientId },
+        include: {
+          doctor: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              licenseNumber: true,
+              specialization: { select: { name: true } },
+              department: { select: { name: true, hospital: { select: { name: true } } } },
+            },
+          },
+          patient: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              dateOfBirth: true,
+              gender: { select: { name: true } },
+              phone: true,
+              address: true,
+              city: true,
+              ward: true,
+              bedNumber: true,
+              admissionStatus: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      await logAudit(userId, 'VIEW_DISCHARGE_SUMMARIES_LIST', 'discharge_summaries', patientId, {
+        patientId,
+        count: summaries.length,
+      });
+
+      return res.json({
+        success: true,
+        data: summaries.map(formatDischargeSummaryDTO),
+      });
+    } catch (err) {
+      console.error('[DISCHARGE_SUMMARY] List error:', err);
+      return res.status(500).json({ success: false, error: 'Internal error fetching discharge summaries.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/discharge-summaries/:id
+ * Retrieves a single discharge summary by ID.
+ */
+router.get(
+  '/discharge-summaries/:id',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid discharge summary ID.' });
+      }
+
+      const userId = req.user!.userId;
+      const doctor = await getDoctorByUserId(userId);
+      if (!doctor && req.user!.role === 'doctor') {
+        return res.status(403).json({ success: false, error: 'Doctor profile not found for authenticated user.' });
+      }
+
+      const summary = await prisma.dischargeSummary.findUnique({
+        where: { id },
+        include: {
+          doctor: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              licenseNumber: true,
+              specialization: { select: { name: true } },
+              department: { select: { name: true, hospital: { select: { name: true } } } },
+            },
+          },
+          patient: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              dateOfBirth: true,
+              gender: { select: { name: true } },
+              phone: true,
+              address: true,
+              city: true,
+              ward: true,
+              bedNumber: true,
+              admissionStatus: true,
+            },
+          },
+        },
+      });
+
+      if (!summary) {
+        return res.status(404).json({ success: false, error: 'Discharge summary not found.' });
+      }
+
+      await logAudit(userId, 'VIEW_DISCHARGE_SUMMARY', 'discharge_summaries', id, {
+        summaryId: id,
+        patientId: summary.patientId,
+        status: summary.summaryStatus,
+      });
+
+      return res.json({
+        success: true,
+        data: formatDischargeSummaryDTO(summary),
+      });
+    } catch (err) {
+      console.error('[DISCHARGE_SUMMARY] Fetch error:', err);
+      return res.status(500).json({ success: false, error: 'Internal error fetching discharge summary.' });
+    }
+  }
+);
+
+/**
+ * POST /api/doctor/patients/:patientId/discharge-summaries
+ * Creates a new discharge summary (DRAFT or FINALIZED).
+ * Doctor identity is strictly derived from the authenticated JWT session.
+ */
+router.post(
+  '/patients/:patientId/discharge-summaries',
+  authenticateJWT,
+  requireRoles(['doctor']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const userId = req.user!.userId;
+      const doctor = await getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ success: false, error: 'Only registered doctors can author discharge summaries.' });
+      }
+
+      const patient = await prisma.patient.findUnique({
+        where: { id: patientId },
+        select: { id: true, firstName: true, lastName: true, admissionStatus: true },
+      });
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient not found.' });
+      }
+
+      const {
+        admissionDate,
+        dischargeDate,
+        admissionDiagnosis,
+        dischargeDiagnosis,
+        chiefComplaint,
+        clinicalCourse,
+        proceduresPerformed,
+        investigations,
+        treatmentGiven,
+        conditionAtDischarge,
+        dischargeMedications,
+        followUpInstructions,
+        followUpDate,
+        followUpDepartment,
+        dietaryAdvice,
+        activityAdvice,
+        warningSigns,
+        additionalInstructions,
+        summaryStatus = 'DRAFT',
+      } = req.body;
+
+      const isFinal = summaryStatus === 'FINALIZED';
+
+      // 1. Date Validation
+      const dateValidation = validateDischargeDates(admissionDate, dischargeDate, followUpDate);
+      if (!dateValidation.valid) {
+        return res.status(422).json({ success: false, error: dateValidation.error });
+      }
+
+      // 2. Clinical Fields Validation
+      const trimmedDischargeDiag = (dischargeDiagnosis || '').trim();
+      const trimmedClinicalCourse = (clinicalCourse || '').trim();
+      const trimmedCondition = (conditionAtDischarge || 'Stable').trim();
+
+      if (isFinal) {
+        if (!trimmedDischargeDiag || trimmedDischargeDiag.length < 3) {
+          return res.status(422).json({ success: false, error: 'Discharge diagnosis is required for finalization.' });
+        }
+        if (!trimmedClinicalCourse || trimmedClinicalCourse.length < 5) {
+          return res.status(422).json({ success: false, error: 'Clinical course summary is required for finalization.' });
+        }
+        if (!trimmedCondition) {
+          return res.status(422).json({ success: false, error: 'Condition at discharge is required for finalization.' });
+        }
+      } else {
+        if (!trimmedDischargeDiag) {
+          return res.status(422).json({ success: false, error: 'Discharge diagnosis or preliminary working diagnosis is required.' });
+        }
+      }
+
+      // 3. Duplicate Draft Prevention
+      const existingDraft = await prisma.dischargeSummary.findFirst({
+        where: { patientId, summaryStatus: 'DRAFT' },
+      });
+      if (existingDraft && !req.body.overwriteDraft) {
+        return res.status(409).json({
+          success: false,
+          error: 'An active draft discharge summary already exists for this patient. Please continue editing the existing draft.',
+          existingDraftId: existingDraft.id,
+        });
+      }
+
+      // 4. Atomic Execution: Create summary + update patient status if finalized + audit log
+      const summary = await prisma.$transaction(async (tx) => {
+        const created = await tx.dischargeSummary.create({
+          data: {
+            patientId,
+            doctorId: doctor.id, // Strictly derived from JWT session
+            admissionDate: dateValidation.adm!,
+            dischargeDate: dateValidation.dis!,
+            admissionDiagnosis: (admissionDiagnosis || '').trim() || null,
+            dischargeDiagnosis: trimmedDischargeDiag,
+            chiefComplaint: (chiefComplaint || '').trim() || null,
+            clinicalCourse: trimmedClinicalCourse || 'Hospital course documented by physician.',
+            proceduresPerformed: (proceduresPerformed || '').trim() || null,
+            investigations: (investigations || '').trim() || null,
+            treatmentGiven: (treatmentGiven || '').trim() || null,
+            conditionAtDischarge: trimmedCondition,
+            dischargeMedications: Array.isArray(dischargeMedications) ? dischargeMedications : [],
+            followUpInstructions: (followUpInstructions || '').trim() || null,
+            followUpDate: dateValidation.fup || null,
+            followUpDepartment: (followUpDepartment || '').trim() || null,
+            dietaryAdvice: (dietaryAdvice || '').trim() || null,
+            activityAdvice: (activityAdvice || '').trim() || null,
+            warningSigns: (warningSigns || '').trim() || null,
+            additionalInstructions: (additionalInstructions || '').trim() || null,
+            summaryStatus: isFinal ? 'FINALIZED' : 'DRAFT',
+            finalizedAt: isFinal ? new Date() : null,
+            finalizedBy: isFinal ? doctor.id : null,
+          },
+          include: {
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                licenseNumber: true,
+                specialization: { select: { name: true } },
+                department: { select: { name: true, hospital: { select: { name: true } } } },
+              },
+            },
+            patient: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                dateOfBirth: true,
+                gender: { select: { name: true } },
+                phone: true,
+                address: true,
+                city: true,
+                ward: true,
+                bedNumber: true,
+                admissionStatus: true,
+              },
+            },
+          },
+        });
+
+        // Automatically update patient admissionStatus to 'Discharged' if finalized
+        if (isFinal) {
+          await tx.patient.update({
+            where: { id: patientId },
+            data: { admissionStatus: 'Discharged' },
+          });
+        }
+
+        return created;
+      });
+
+      // 5. Zero-PHI Audit Log
+      await logAudit(
+        userId,
+        isFinal ? 'FINALIZE_DISCHARGE_SUMMARY' : 'CREATE_DISCHARGE_SUMMARY',
+        'discharge_summaries',
+        summary.id,
+        {
+          summaryId: summary.id,
+          patientId,
+          status: summary.summaryStatus,
+          isFinal,
+        }
+      );
+
+      return res.status(201).json({
+        success: true,
+        message: isFinal ? 'Discharge summary finalized and patient marked Discharged.' : 'Discharge summary draft saved successfully.',
+        data: formatDischargeSummaryDTO(summary),
+      });
+    } catch (err) {
+      console.error('[DISCHARGE_SUMMARY] Creation error:', err);
+      return res.status(500).json({ success: false, error: 'Internal server error creating discharge summary.' });
+    }
+  }
+);
+
+/**
+ * PUT /api/doctor/discharge-summaries/:id
+ * Updates an existing DRAFT discharge summary.
+ * Rejects if the summary is already FINALIZED.
+ */
+router.put(
+  '/discharge-summaries/:id',
+  authenticateJWT,
+  requireRoles(['doctor']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid discharge summary ID.' });
+      }
+
+      const userId = req.user!.userId;
+      const doctor = await getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ success: false, error: 'Only registered doctors can modify discharge summaries.' });
+      }
+
+      const existing = await prisma.dischargeSummary.findUnique({
+        where: { id },
+        select: { id: true, summaryStatus: true, patientId: true, doctorId: true },
+      });
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Discharge summary not found.' });
+      }
+
+      // Sealed medical record: Reject edits to FINALIZED records
+      if (existing.summaryStatus === 'FINALIZED') {
+        return res.status(409).json({
+          success: false,
+          error: 'This discharge summary has been finalized and cannot be modified. Clinical integrity requires sealed records.',
+        });
+      }
+
+      const {
+        admissionDate,
+        dischargeDate,
+        admissionDiagnosis,
+        dischargeDiagnosis,
+        chiefComplaint,
+        clinicalCourse,
+        proceduresPerformed,
+        investigations,
+        treatmentGiven,
+        conditionAtDischarge,
+        dischargeMedications,
+        followUpInstructions,
+        followUpDate,
+        followUpDepartment,
+        dietaryAdvice,
+        activityAdvice,
+        warningSigns,
+        additionalInstructions,
+        summaryStatus,
+      } = req.body;
+
+      const dateValidation = validateDischargeDates(admissionDate, dischargeDate, followUpDate);
+      if (!dateValidation.valid) {
+        return res.status(422).json({ success: false, error: dateValidation.error });
+      }
+
+      const isFinal = summaryStatus === 'FINALIZED';
+      const trimmedDischargeDiag = (dischargeDiagnosis || '').trim();
+      const trimmedClinicalCourse = (clinicalCourse || '').trim();
+      const trimmedCondition = (conditionAtDischarge || 'Stable').trim();
+
+      if (isFinal) {
+        if (!trimmedDischargeDiag || trimmedDischargeDiag.length < 3) {
+          return res.status(422).json({ success: false, error: 'Discharge diagnosis is required for finalization.' });
+        }
+        if (!trimmedClinicalCourse || trimmedClinicalCourse.length < 5) {
+          return res.status(422).json({ success: false, error: 'Clinical course summary is required for finalization.' });
+        }
+        if (!trimmedCondition) {
+          return res.status(422).json({ success: false, error: 'Condition at discharge is required for finalization.' });
+        }
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const result = await tx.dischargeSummary.update({
+          where: { id },
+          data: {
+            admissionDate: dateValidation.adm!,
+            dischargeDate: dateValidation.dis!,
+            admissionDiagnosis: admissionDiagnosis !== undefined ? (admissionDiagnosis || '').trim() || null : undefined,
+            dischargeDiagnosis: trimmedDischargeDiag || undefined,
+            chiefComplaint: chiefComplaint !== undefined ? (chiefComplaint || '').trim() || null : undefined,
+            clinicalCourse: trimmedClinicalCourse || undefined,
+            proceduresPerformed: proceduresPerformed !== undefined ? (proceduresPerformed || '').trim() || null : undefined,
+            investigations: investigations !== undefined ? (investigations || '').trim() || null : undefined,
+            treatmentGiven: treatmentGiven !== undefined ? (treatmentGiven || '').trim() || null : undefined,
+            conditionAtDischarge: trimmedCondition,
+            dischargeMedications: Array.isArray(dischargeMedications) ? dischargeMedications : undefined,
+            followUpInstructions: followUpInstructions !== undefined ? (followUpInstructions || '').trim() || null : undefined,
+            followUpDate: dateValidation.fup !== undefined ? dateValidation.fup : undefined,
+            followUpDepartment: followUpDepartment !== undefined ? (followUpDepartment || '').trim() || null : undefined,
+            dietaryAdvice: dietaryAdvice !== undefined ? (dietaryAdvice || '').trim() || null : undefined,
+            activityAdvice: activityAdvice !== undefined ? (activityAdvice || '').trim() || null : undefined,
+            warningSigns: warningSigns !== undefined ? (warningSigns || '').trim() || null : undefined,
+            additionalInstructions: additionalInstructions !== undefined ? (additionalInstructions || '').trim() || null : undefined,
+            ...(isFinal
+              ? {
+                  summaryStatus: 'FINALIZED',
+                  finalizedAt: new Date(),
+                  finalizedBy: doctor.id,
+                }
+              : {}),
+          },
+          include: {
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                licenseNumber: true,
+                specialization: { select: { name: true } },
+                department: { select: { name: true, hospital: { select: { name: true } } } },
+              },
+            },
+            patient: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                dateOfBirth: true,
+                gender: { select: { name: true } },
+                phone: true,
+                address: true,
+                city: true,
+                ward: true,
+                bedNumber: true,
+                admissionStatus: true,
+              },
+            },
+          },
+        });
+
+        if (isFinal) {
+          await tx.patient.update({
+            where: { id: existing.patientId },
+            data: { admissionStatus: 'Discharged' },
+          });
+        }
+
+        return result;
+      });
+
+      await logAudit(
+        userId,
+        isFinal ? 'FINALIZE_DISCHARGE_SUMMARY' : 'UPDATE_DISCHARGE_SUMMARY',
+        'discharge_summaries',
+        id,
+        {
+          summaryId: id,
+          patientId: existing.patientId,
+          status: updated.summaryStatus,
+          isFinal,
+        }
+      );
+
+      return res.json({
+        success: true,
+        message: isFinal ? 'Discharge summary finalized successfully.' : 'Discharge summary draft updated.',
+        data: formatDischargeSummaryDTO(updated),
+      });
+    } catch (err) {
+      console.error('[DISCHARGE_SUMMARY] Update error:', err);
+      return res.status(500).json({ success: false, error: 'Internal server error updating discharge summary.' });
+    }
+  }
+);
+
+/**
+ * POST /api/doctor/discharge-summaries/:id/finalize
+ * Explicitly transitions a DRAFT discharge summary to FINALIZED.
+ * Locks record against future modifications and marks patient Discharged.
+ */
+router.post(
+  '/discharge-summaries/:id/finalize',
+  authenticateJWT,
+  requireRoles(['doctor']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid discharge summary ID.' });
+      }
+
+      const userId = req.user!.userId;
+      const doctor = await getDoctorByUserId(userId);
+      if (!doctor) {
+        return res.status(403).json({ success: false, error: 'Only registered doctors can finalize discharge summaries.' });
+      }
+
+      const existing = await prisma.dischargeSummary.findUnique({
+        where: { id },
+      });
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Discharge summary not found.' });
+      }
+
+      if (existing.summaryStatus === 'FINALIZED') {
+        return res.status(409).json({ success: false, error: 'This discharge summary is already finalized.' });
+      }
+
+      // Validate required clinical fields
+      if (!existing.dischargeDiagnosis || existing.dischargeDiagnosis.trim().length < 3) {
+        return res.status(422).json({ success: false, error: 'Cannot finalize: Discharge diagnosis is required.' });
+      }
+      if (!existing.clinicalCourse || existing.clinicalCourse.trim().length < 5) {
+        return res.status(422).json({ success: false, error: 'Cannot finalize: Clinical course is required.' });
+      }
+      if (!existing.conditionAtDischarge || !existing.conditionAtDischarge.trim()) {
+        return res.status(422).json({ success: false, error: 'Cannot finalize: Condition at discharge is required.' });
+      }
+
+      const finalized = await prisma.$transaction(async (tx) => {
+        const record = await tx.dischargeSummary.update({
+          where: { id },
+          data: {
+            summaryStatus: 'FINALIZED',
+            finalizedAt: new Date(),
+            finalizedBy: doctor.id,
+          },
+          include: {
+            doctor: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                licenseNumber: true,
+                specialization: { select: { name: true } },
+                department: { select: { name: true, hospital: { select: { name: true } } } },
+              },
+            },
+            patient: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                dateOfBirth: true,
+                gender: { select: { name: true } },
+                phone: true,
+                address: true,
+                city: true,
+                ward: true,
+                bedNumber: true,
+                admissionStatus: true,
+              },
+            },
+          },
+        });
+
+        // Set patient admission status to 'Discharged'
+        await tx.patient.update({
+          where: { id: existing.patientId },
+          data: { admissionStatus: 'Discharged' },
+        });
+
+        return record;
+      });
+
+      await logAudit(userId, 'FINALIZE_DISCHARGE_SUMMARY', 'discharge_summaries', id, {
+        summaryId: id,
+        patientId: existing.patientId,
+        finalizedAt: finalized.finalizedAt?.toISOString(),
+      });
+
+      return res.json({
+        success: true,
+        message: 'Discharge summary finalized and officially signed. Patient status updated to Discharged.',
+        data: formatDischargeSummaryDTO(finalized),
+      });
+    } catch (err) {
+      console.error('[DISCHARGE_SUMMARY] Finalize error:', err);
+      return res.status(500).json({ success: false, error: 'Internal server error finalizing discharge summary.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/discharge-summaries/:id/print
+ * Returns an official, print-ready document payload and logs the print event in the audit trail.
+ */
+router.get(
+  '/discharge-summaries/:id/print',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid discharge summary ID.' });
+      }
+
+      const userId = req.user!.userId;
+      const summary = await prisma.dischargeSummary.findUnique({
+        where: { id },
+        include: {
+          doctor: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              licenseNumber: true,
+              specialization: { select: { name: true } },
+              department: { select: { name: true, hospital: { select: { name: true, address: true, city: true, phone: true } } } },
+            },
+          },
+          patient: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              dateOfBirth: true,
+              gender: { select: { name: true } },
+              phone: true,
+              address: true,
+              city: true,
+              ward: true,
+              bedNumber: true,
+              admissionStatus: true,
+            },
+          },
+        },
+      });
+
+      if (!summary) {
+        return res.status(404).json({ success: false, error: 'Discharge summary not found.' });
+      }
+
+      await logAudit(userId, 'PRINT_DISCHARGE_SUMMARY', 'discharge_summaries', id, {
+        summaryId: id,
+        patientId: summary.patientId,
+        printedAt: new Date().toISOString(),
+      });
+
+      return res.json({
+        success: true,
+        data: formatDischargeSummaryDTO(summary),
+      });
+    } catch (err) {
+      console.error('[DISCHARGE_SUMMARY] Print error:', err);
+      return res.status(500).json({ success: false, error: 'Internal error generating print document.' });
+    }
+  }
+);
+
+/**
+ * POST /api/doctor/patients/:patientId/discharge-summaries/ai-draft
+ * Synthesizes existing clinical records (observations, notes, prescriptions) into an initial draft.
+ * Flagged clearly as an AI Draft requiring mandatory physician review and confirmation.
+ */
+router.post(
+  '/patients/:patientId/discharge-summaries/ai-draft',
+  authenticateJWT,
+  requireRoles(['doctor']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const patient = await prisma.patient.findUnique({
+        where: { id: patientId },
+        include: {
+          observations: {
+            orderBy: { observationDate: 'desc' },
+            take: 5,
+          },
+          prescriptions: {
+            include: {
+              items: { include: { medicine: true } },
+            },
+            orderBy: { prescribedDate: 'desc' },
+            take: 3,
+          },
+          medicalRecords: {
+            include: { recordType: true },
+            orderBy: { recordDate: 'desc' },
+            take: 5,
+          },
+        },
+      });
+
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient not found.' });
+      }
+
+      // Synthesize clinical data
+      const latestObs = patient.observations[0];
+      const primaryComplaint = patient.medicalRecords.find(r => r.recordType?.name?.toLowerCase().includes('consult') || r.recordType?.name?.toLowerCase().includes('admission'))?.title || 'Evaluated for clinical symptoms upon hospital admission.';
+      const primaryDiagnosis = patient.prescriptions[0]?.diagnosis || patient.medicalRecords[0]?.title || 'Acute clinical episode managed under observation.';
+
+      const vitalsSummary = latestObs
+        ? `Latest vital signs recorded: BP ${latestObs.systolicBp}/${latestObs.diastolicBp} mmHg, HR ${latestObs.pulseRate} bpm, SpO2 ${latestObs.spo2}%, Temp ${latestObs.temperature}°F.`
+        : 'Patient monitored across inpatient stay with stable hemodynamic parameters.';
+
+      const clinicalCourseSynthesis = `Patient was admitted for clinical management. ${vitalsSummary} Received targeted medical therapy with progressive symptomatic relief and normalization of physiological metrics. Tolerating oral intake and ambulatory with stable vitals prior to planned discharge.`;
+
+      // Extract discharge medication candidates
+      const medications: Array<{ name: string; dosage: string; frequency: string; instructions: string }> = [];
+      patient.prescriptions.forEach((rx) => {
+        rx.items.forEach((item) => {
+          if (!medications.some(m => m.name.toLowerCase() === item.medicine.name.toLowerCase())) {
+            medications.push({
+              name: item.medicine.name,
+              dosage: item.dosage,
+              frequency: item.frequency || 'Daily',
+              instructions: item.instructions || 'Take after meals as directed.',
+            });
+          }
+        });
+      });
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const patientDTO = await buildPatientDTO(patientId);
+      const admissionDateStr = (patientDTO?.admissionDate && patientDTO.admissionDate < todayStr)
+        ? patientDTO.admissionDate
+        : (() => {
+            const fallback = new Date();
+            fallback.setDate(fallback.getDate() - 5);
+            return fallback.toISOString().split('T')[0];
+          })();
+
+      return res.json({
+        success: true,
+        isAiGenerated: true,
+        disclaimer: 'AI-assisted clinical draft. Must be reviewed, edited, and approved by the attending physician.',
+        draft: {
+          admissionDate: admissionDateStr,
+          dischargeDate: todayStr,
+          admissionDiagnosis: primaryDiagnosis,
+          dischargeDiagnosis: primaryDiagnosis,
+          chiefComplaint: primaryComplaint,
+          clinicalCourse: clinicalCourseSynthesis,
+          conditionAtDischarge: 'Stable',
+          treatmentGiven: 'Supportive pharmacotherapy, vital signs monitoring, and inpatient recovery protocol.',
+          proceduresPerformed: 'None documented during current admission.',
+          investigations: 'Standard metabolic panel, complete blood count, and continuous telemetry monitoring.',
+          dischargeMedications: medications,
+          followUpInstructions: 'Follow up in Outpatient Clinic in 7-10 days. Report to Emergency Department immediately if experiencing acute chest pain, shortness of breath, or high fever.',
+          followUpDepartment: 'General Medicine Outpatient Clinic',
+          dietaryAdvice: 'Balanced low-sodium, adequate hydration diet as tolerated.',
+          activityAdvice: 'Gradual resumption of light activities; avoid strenuous lifting for 1 week.',
+          warningSigns: 'Fever > 101°F, shortness of breath, sudden dizziness, or worsening pain.',
+          additionalInstructions: 'Complete all prescribed antibiotics/medications as scheduled. Keep follow-up appointment.',
+        },
+      });
+    } catch (err) {
+      console.error('[DISCHARGE_SUMMARY] AI Draft error:', err);
+      return res.status(500).json({ success: false, error: 'Internal server error generating AI draft.' });
+    }
+  }
+);
+
+// ─────────────────────────────────────────────────────────────
+// Doctor Notifications Endpoints
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/doctor/notifications
+ * Retrieves all notifications addressed to the authenticated doctor.
+ */
+router.get(
+  '/notifications',
+  authenticateJWT,
+  requireRoles(['doctor']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const doctor = await prisma.doctor.findUnique({ where: { userId } });
+
+      const notifs = await prisma.notification.findMany({
+        where: { userId },
+        include: { notificationType: true },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const formatted = notifs.map((n) => {
+        const rawType = (n.notificationType?.name || '').toLowerCase();
+        let mappedType = 'general';
+        if (rawType.includes('medicine') || rawType.includes('remind')) mappedType = 'medicine_reminder';
+        else if (rawType.includes('prescript')) mappedType = 'prescription';
+        else if (rawType.includes('lab')) mappedType = 'lab_report';
+        else if (rawType.includes('doc')) mappedType = 'document';
+        else if (rawType.includes('appoint')) mappedType = 'appointment';
+        else mappedType = 'announcement';
+
+        return {
+          id: `NOTIF-${n.id}`,
+          rawId: n.id,
+          doctorId: doctor?.id || 1,
+          title: n.title,
+          message: n.message,
+          dateTime: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
+          timestamp: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
+          isRead: n.isRead ?? false,
+          type: mappedType,
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error('[DOCTOR] Get notifications error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch doctor notifications.' });
+    }
+  }
+);
+
+/**
+ * PUT /api/doctor/notifications/:id/read
+ * Marks a specific notification as read.
+ */
+router.put(
+  '/notifications/:id/read',
+  authenticateJWT,
+  requireRoles(['doctor']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const rawId = parseInt(req.params.id.replace(/\D/g, ''), 10);
+      if (!rawId) {
+        return res.status(400).json({ success: false, error: 'Invalid notification ID.' });
+      }
+
+      const notif = await prisma.notification.findFirst({
+        where: { id: rawId, userId },
+      });
+      if (!notif) {
+        return res.status(404).json({ success: false, error: 'Notification not found.' });
+      }
+
+      await prisma.notification.update({
+        where: { id: rawId },
+        data: { isRead: true },
+      });
+
+      return res.json({ success: true, message: 'Notification marked as read.' });
+    } catch (err) {
+      console.error('[DOCTOR] Mark notification read error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to update notification.' });
+    }
+  }
+);
+
+/**
+ * PUT /api/doctor/notifications/read-all
+ * Marks all notifications for this doctor as read.
+ */
+router.put(
+  '/notifications/read-all',
+  authenticateJWT,
+  requireRoles(['doctor']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      await prisma.notification.updateMany({
+        where: { userId, isRead: false },
+        data: { isRead: true },
+      });
+
+      return res.json({ success: true, message: 'All notifications marked as read.' });
+    } catch (err) {
+      console.error('[DOCTOR] Mark all notifications read error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to mark notifications read.' });
+    }
+  }
+);
+
 export default router;
+
+

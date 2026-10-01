@@ -72,9 +72,13 @@ export const LoginForm: React.FC = () => {
     const matchingLocalUser = localUsers.find((u: any) => {
       const emailMatch = u.email && u.email.toLowerCase() === normalizedInput;
       const usernameMatch = u.username && u.username.toLowerCase() === normalizedInput;
+      const regNoMatch = (u.registrationNumber && u.registrationNumber.toLowerCase() === normalizedInput) ||
+                         (u.nursingRegNo && u.nursingRegNo.toLowerCase() === normalizedInput);
+      const licenseMatch = u.licenseNumber && u.licenseNumber.toLowerCase() === normalizedInput;
+      const idMatch = (u.nurseId && u.nurseId.toLowerCase() === normalizedInput) ||
+                      (u.id && String(u.id).toLowerCase() === normalizedInput);
       const fullNameMatch = u.firstName && u.lastName && `${u.firstName} ${u.lastName}`.toLowerCase() === normalizedInput;
-      const firstNameMatch = u.firstName && u.firstName.toLowerCase() === normalizedInput;
-      return emailMatch || usernameMatch || fullNameMatch || firstNameMatch;
+      return emailMatch || usernameMatch || regNoMatch || licenseMatch || idMatch || fullNameMatch;
     });
 
     try {
@@ -92,10 +96,19 @@ export const LoginForm: React.FC = () => {
           const dbRole = (data.user.role || 'doctor').toLowerCase();
           const targetRole = dbRole;
 
+          const nurseWard = data.user.assignedWard || matchingLocalUser?.assignedWard || matchingLocalUser?.ward ||
+            (`${data.user.firstName || ''} ${data.user.lastName || ''} ${data.user.email || ''}`.toLowerCase().includes('noyal') ||
+             `${data.user.firstName || ''} ${data.user.lastName || ''} ${data.user.email || ''}`.toLowerCase().includes('notal')
+              ? 'General Ward 2B'
+              : undefined);
+
           // Real backend login success — role is dynamically retrieved from database
           const sessionUser = {
             ...(matchingLocalUser || {}),
             ...data.user,
+            nurseId: data.user.nurseCode || data.user.nurseId || matchingLocalUser?.nurseId,
+            registrationNumber: data.user.registrationNumber || matchingLocalUser?.registrationNumber,
+            assignedWard: nurseWard || (targetRole === 'nurse' ? 'General Ward 2B' : undefined),
             role: targetRole,
           };
 
@@ -121,7 +134,7 @@ export const LoginForm: React.FC = () => {
         } else {
           // If backend returns 401/403, check local user fallback before failing
           if (!matchingLocalUser) {
-            setErrors({ general: data.error || 'Invalid email/username or password.' });
+            setErrors({ general: data.error || 'Invalid credentials or registration number.' });
             setIsLoading(false);
             return;
           }
@@ -140,9 +153,18 @@ export const LoginForm: React.FC = () => {
       }
 
       const targetRole = (matchingLocalUser.role || 'doctor').toLowerCase();
+      const localNurseWard = matchingLocalUser.assignedWard || matchingLocalUser.ward ||
+        (`${matchingLocalUser.firstName || ''} ${matchingLocalUser.lastName || ''} ${matchingLocalUser.email || ''}`.toLowerCase().includes('noyal') ||
+         `${matchingLocalUser.firstName || ''} ${matchingLocalUser.lastName || ''} ${matchingLocalUser.email || ''}`.toLowerCase().includes('notal')
+          ? 'General Ward 2B'
+          : (targetRole === 'nurse' ? 'General Ward 2B' : undefined));
+
       writeSession({
         ...matchingLocalUser,
         userId: matchingLocalUser.id || 'USR-LOCAL',
+        nurseId: matchingLocalUser.nurseId || matchingLocalUser.id || 'NUR-LOCAL',
+        registrationNumber: matchingLocalUser.registrationNumber || matchingLocalUser.nursingRegNo,
+        assignedWard: localNurseWard,
         email: matchingLocalUser.email || email.trim(),
         username: matchingLocalUser.username || email.trim(),
         role: targetRole,
@@ -163,23 +185,23 @@ export const LoginForm: React.FC = () => {
       return;
     }
 
-    // Fallback for built-in demo offline accounts if backend is disconnected
-    if (normalizedInput.includes('nurse')) {
-      writeSession({ userId: 'DEMO-NURSE', email: email.trim(), username: 'nurse_demo', role: 'nurse', firstName: 'Elena', lastName: 'Rostova' });
+    // Fallback for built-in demo offline accounts (exact match only, prevents unauthorized wildcard login)
+    if (normalizedInput === 'nurse_demo' || normalizedInput === 'demo.nurse@meditwin.local' || normalizedInput === 'test.nurse@meditwin.local') {
+      writeSession({ userId: 'DEMO-NURSE', nurseId: 'NUR-001', registrationNumber: 'NRN-2024-001', assignedWard: 'Ward 1', email: email.trim(), username: 'nurse_demo', role: 'nurse', firstName: 'Angel', lastName: 'Renoy' });
       setLoginSuccess(true);
       setTimeout(() => navigate('/dashboard/nurse'), 1000);
       return;
-    } else if (normalizedInput.includes('patient')) {
+    } else if (normalizedInput === 'patient_demo' || normalizedInput === 'demo.patient@meditwin.local' || normalizedInput === 'test.patient@meditwin.local') {
       writeSession({ userId: 'DEMO-PATIENT', email: email.trim(), username: 'patient_demo', role: 'patient', firstName: 'John', lastName: 'Doe' });
       setLoginSuccess(true);
       setTimeout(() => navigate('/dashboard/patient'), 1000);
       return;
-    } else if (normalizedInput.includes('admin')) {
+    } else if (normalizedInput === 'admin_demo' || normalizedInput === 'demo.admin@meditwin.local' || normalizedInput === 'test.admin@meditwin.local') {
       writeSession({ userId: 'DEMO-ADMIN', email: email.trim(), username: 'admin_demo', role: 'admin', firstName: 'System', lastName: 'Administrator' });
       setLoginSuccess(true);
       setTimeout(() => navigate('/dashboard/admin'), 1000);
       return;
-    } else if (normalizedInput.includes('doctor')) {
+    } else if (normalizedInput === 'doctor_demo' || normalizedInput === 'demo.doctor@meditwin.local' || normalizedInput === 'test.doctor@meditwin.local') {
       writeSession({ userId: 'DEMO-DOCTOR', email: email.trim(), username: 'doctor_demo', role: 'doctor', firstName: 'Sarah', lastName: 'Chen' });
       setLoginSuccess(true);
       setTimeout(() => navigate('/dashboard/doctor'), 1000);

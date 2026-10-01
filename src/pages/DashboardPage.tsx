@@ -6,17 +6,21 @@ import {
   LogOut, CheckCircle2, ChevronRight, ChevronDown, Brain, ClipboardList,
   LayoutDashboard, Menu, X, Users, BookOpen,
   Calendar, Pill, FlaskConical, AlertTriangle, Clock,
-  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen, Heart, Info,
+  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen, Heart, Info, FileCheck,
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { NurseObservationsPage } from './NurseObservationsPage';
 import { NursingNotesPage } from './nurse/NursingNotesPage';
 import { PatientMedicalHistoryPage, HistoryTab } from './nurse/PatientMedicalHistoryPage';
+import { NurseNursingSummaryPage } from './nurse/NurseNursingSummaryPage';
+import { NurseHospitalProceduresPage } from './nurse/NurseHospitalProceduresPage';
+import { NurseProfilePage } from './nurse/NurseProfilePage';
 import { PatientRecordsPage } from './doctor/PatientRecordsPage';
 import { AIPatientSummaryPage } from './doctor/AIPatientSummaryPage';
 import { ClinicalGuidelinesPage } from './doctor/ClinicalGuidelinesPage';
 import { DoctorProfilePage } from './doctor/DoctorProfilePage';
 import { getPatients as getDoctorPatients } from '../services/doctorService';
+import * as doctorService from '../services/doctorService';
 import type { DoctorPatient, PatientStatus } from '../types';
 import { formatPatientId } from '../utils/patientUtils';
 import { MedicalDocumentsPage } from './patient/MedicalDocumentsPage';
@@ -30,7 +34,9 @@ import { PatientAppointmentsPage } from './patient/PatientAppointmentsPage';
 import { HospitalNotificationsPage } from './hospitalAdmin/HospitalNotificationsPage';
 import { HospitalReportsPage } from './hospitalAdmin/HospitalReportsPage';
 import { HospitalActivityPage } from './hospitalAdmin/HospitalActivityPage';
+import { HospitalGuidelinesPage } from './hospitalAdmin/HospitalGuidelinesPage';
 import * as patientService from '../services/patientService';
+import * as nurseService from '../services/nurseService';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -45,6 +51,7 @@ interface NavItem {
 
 const HOSPITAL_ADMIN_NAV: NavItem[] = [
   { id: 'dashboard',      label: 'Admin Dashboard',           icon: LayoutDashboard },
+  { id: 'guidelines',     label: 'Clinical Guidelines',       icon: BookOpen        },
   { id: 'notifications',  label: 'Hospital Notifications',    icon: Bell            },
   { id: 'reports',        label: 'Hospital Reports & Stats',  icon: BarChart3       },
   { id: 'activities',     label: 'Hospital Activity Monitor', icon: Activity        },
@@ -66,23 +73,41 @@ const PATIENT_NAV: NavItem[] = [
 
 const NURSE_RECORD_SUBITEMS = [
   { id: 'overview',            label: 'Medical Overview',   icon: Heart },
+  { id: 'nursing-summary',     label: 'Nursing Summary',    icon: FileCheck },
   { id: 'medications',         label: 'Medications',        icon: Pill },
   { id: 'labs',                label: 'Lab Reports',        icon: FlaskConical },
   { id: 'appointments',        label: 'Appointments',       icon: Calendar },
+];
+
+const NURSE_PROCEDURE_SUBITEMS = [
+  { id: 'All',                  label: 'All Procedures',       icon: BookOpen },
+  { id: 'Infection Control',    label: 'Infection Control',    icon: ShieldCheck },
+  { id: 'Emergency Procedures', label: 'Emergency Procedures', icon: AlertTriangle },
+  { id: 'Medication Safety',    label: 'Medication Safety',    icon: Pill },
+  { id: 'Nursing Procedures',   label: 'Nursing Procedures',   icon: Stethoscope },
+  { id: 'Clinical Care',        label: 'Clinical Care',        icon: HeartPulse },
+  { id: 'Patient Safety',       label: 'Patient Safety',       icon: ShieldCheck },
+  { id: 'Wound Care',           label: 'Wound Care',           icon: Activity },
+  { id: 'Vital Monitoring',     label: 'Vital Monitoring',     icon: Activity },
+  { id: 'Discharge Procedures', label: 'Discharge Procedures', icon: FileCheck },
+  { id: 'Admission Procedures', label: 'Admission Procedures', icon: User },
+  { id: 'Documentation',        label: 'Documentation',        icon: FileText },
 ];
 
 const NURSE_NAV: NavItem[] = [
   { id: 'dashboard',           label: 'Nurse Dashboard',                    icon: LayoutDashboard },
   { id: 'observations',        label: 'Patient Observations & Vital Signs', icon: ClipboardList   },
   { id: 'nursing-notes',       label: 'Nursing Notes & Treatment Records',  icon: ClipboardEdit   },
+  { id: 'nursing-summary',     label: 'Nursing Patient Summary',            icon: FileCheck       },
   { id: 'treatment-plans',     label: 'Treatment Plans',                    icon: Layers          },
   { id: 'clinical-records',    label: 'Patient Clinical Records',           icon: HeartHandshake, hasSubmenu: true },
-  { id: 'hospital-procedures', label: 'Hospital Procedures',              icon: BookOpen, comingSoon: true },
-  { id: 'profile',             label: 'Profile',                            icon: User,     comingSoon: true },
+  { id: 'hospital-procedures', label: 'Hospital Procedures',              icon: BookOpen, hasSubmenu: true },
+  { id: 'profile',             label: 'Profile',                            icon: User            },
 ];
 
 const PATIENT_RECORD_SUBITEMS = [
-  { id: 'overview',      label: 'Overview',              icon: User         },
+  { id: 'overview',          label: 'Overview',              icon: User         },
+  { id: 'discharge-summary', label: 'Discharge Summary',     icon: FileCheck    },
   { id: 'labs',          label: 'Lab Reports',           icon: FlaskConical },
   { id: 'appointments',  label: 'Appointments',          icon: Calendar     },
   { id: 'prescriptions', label: 'Prescriptions',         icon: Pill         },
@@ -158,6 +183,9 @@ export const DashboardPage: React.FC = () => {
   const [patientRecordsExpanded, setPatientRecordsExpanded] = useState<boolean>(true);
   const [nurseRecordTab, setNurseRecordTab] = useState<HistoryTab>('overview');
   const [nurseRecordsExpanded, setNurseRecordsExpanded] = useState<boolean>(true);
+  const [nurseProceduresExpanded, setNurseProceduresExpanded] = useState<boolean>(true);
+  const [nurseProcedureCategory, setNurseProcedureCategory] = useState<string>('All');
+  const [nurseWardPatientCount, setNurseWardPatientCount] = useState<number | null>(null);
 
   // Dynamic patient health dashboard statistics
   const [patientStats, setPatientStats] = useState<{
@@ -232,12 +260,42 @@ export const DashboardPage: React.FC = () => {
     return cleaned || raw;
   })();
 
-  // Load unread notification count & dynamic dashboard statistics for patient
+  const nurseDisplayId = storedUser.nurseCode || storedUser.nurseId || matchingLocalUser?.nurseId || (isNurse ? 'NUR-001' : '');
+  const nurseRegNo = storedUser.registrationNumber || matchingLocalUser?.registrationNumber || matchingLocalUser?.nursingRegNo || (isNurse ? 'NRN-2024-001' : '');
+  const nurseAssignedWard = storedUser.assignedWard || matchingLocalUser?.assignedWard || matchingLocalUser?.ward ||
+    (fullName.toLowerCase().includes('noyal') || fullName.toLowerCase().includes('notal') || loggedInEmail.toLowerCase().includes('noyal')
+      ? 'General Ward 2B'
+      : (isNurse ? 'General Ward 2B' : ''));
+
+  // Load nurse ward patients count
   useEffect(() => {
-    if (isPatient) {
+    if (isNurse) {
+      nurseService.getPatients().then((pts) => {
+        setNurseWardPatientCount(pts.length);
+      }).catch(() => {});
+    }
+  }, [isNurse]);
+
+  // Load unread notification count
+  useEffect(() => {
+    if (isDoctor) {
+      doctorService.getDoctorNotifications().then((notifs) => {
+        setUnreadCount(notifs.filter((n) => !n.isRead).length);
+      }).catch(() => {
+        patientService.getNotifications().then((notifs) => {
+          setUnreadCount(notifs.filter((n) => !n.isRead).length);
+        }).catch(() => {});
+      });
+    } else if (isPatient || isNurse) {
       patientService.getNotifications().then((notifs) => {
         setUnreadCount(notifs.filter((n) => !n.isRead).length);
       }).catch(() => {});
+    }
+  }, [isPatient, isDoctor, isNurse, activeView]);
+
+  // Load dynamic dashboard statistics for patient
+  useEffect(() => {
+    if (isPatient) {
 
       Promise.all([
         patientService.getPrescriptions().catch(() => []),
@@ -327,20 +385,23 @@ export const DashboardPage: React.FC = () => {
       actions: [
         '🚨 Urgent Critical Triage',
         'Review Patient Records',
+        'Inpatient Discharge Summaries',
         'Generate AI Summary',
         'Browse Clinical Guidelines',
       ],
     },
     nurse: {
       title:    'Nurse Ward Care Portal',
-      subtitle: verifiedRole === 'nurse' ? `Head Nurse: ${displayName}` : 'Head Nurse: Staff Nurse Angel Renoy',
+      subtitle: verifiedRole === 'nurse'
+        ? `Head Nurse: ${displayName}${nurseDisplayId ? ` · ID: ${nurseDisplayId}` : ''}${nurseRegNo ? ` · Reg: ${nurseRegNo}` : ''}${nurseAssignedWard ? ` · Ward: ${nurseAssignedWard}` : ''}`
+        : `Head Nurse: Staff Nurse Angel Renoy · ID: NUR-001 · Reg: NRN-2024-001 · Ward: ${nurseAssignedWard}`,
       icon:     HeartPulse,
-      badge:    'Nursing Workstation',
+      badge:    `Ward Workstation: ${nurseAssignedWard}`,
       metrics: [
-        { label: 'Assigned Ward Beds',   value: '12',        change: 'All vitals normal' },
-        { label: 'Active Treatment Plans', value: '8',       change: 'Under active care' },
+        { label: `Assigned Ward (${nurseAssignedWard})`, value: `${nurseWardPatientCount !== null ? nurseWardPatientCount : 2} Allocated Patients`, change: 'Ward-scoped isolation active' },
+        { label: 'Active Treatment Plans', value: `${nurseWardPatientCount !== null ? nurseWardPatientCount : 2} Active`, change: 'Ward protocol on track' },
         { label: 'Shift Handover Notes', value: 'Completed', change: '100% verified'      },
-        { label: 'Vital Signs Logged',   value: '24 Today',  change: 'Routine rounds on track' },
+        { label: 'Vital Signs Logged',   value: 'All Beds Checked', change: 'Telemetry synchronized' },
       ],
       actions: [
         'Record Patient Vitals',
@@ -389,10 +450,10 @@ export const DashboardPage: React.FC = () => {
         { label: 'Completed Consultations',value: '2,740',        change: '83.5% completion'   },
       ],
       actions: [
+        'Clinical Guidelines',
         'Hospital Notifications',
         'Hospital Reports & Stats',
         'Hospital Activity Monitor',
-        'Department Analytics',
       ],
     },
     'hospital-admin': {
@@ -407,10 +468,10 @@ export const DashboardPage: React.FC = () => {
         { label: 'Completed Consultations',value: '2,740',        change: '83.5% completion'   },
       ],
       actions: [
+        'Clinical Guidelines',
         'Hospital Notifications',
         'Hospital Reports & Stats',
         'Hospital Activity Monitor',
-        'Department Analytics',
       ],
     },
     'system-admin': {
@@ -448,16 +509,24 @@ export const DashboardPage: React.FC = () => {
         setNurseRecordTab('overview');
       } else if (action === 'Treatment Plans') {
         setActiveView('treatment-plans');
+      } else if (action === 'Nursing Summary' || action === 'Nursing Patient Summary' || action === 'Discharge Summary') {
+        setActiveView('nursing-summary');
       } else {
         setActiveView('observations');
       }
-    } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records')) {
+    } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records' || action === 'Inpatient Discharge Summaries')) {
       if (action === '🚨 Urgent Critical Triage') {
         setDoctorInitialStatus('Critical');
         setDoctorInitialPatientId(undefined);
+        setDoctorRecordTab('overview');
+      } else if (action === 'Inpatient Discharge Summaries') {
+        setDoctorInitialStatus('');
+        setDoctorInitialPatientId(undefined);
+        setDoctorRecordTab('discharge-summary');
       } else {
         setDoctorInitialStatus('');
         setDoctorInitialPatientId(undefined);
+        setDoctorRecordTab('overview');
       }
       setActiveView('patient-records');
     } else if (isDoctor && action === 'Generate AI Summary') {
@@ -485,7 +554,9 @@ export const DashboardPage: React.FC = () => {
         setActiveView('profile');
       }
     } else if (isAdmin) {
-      if (action === 'Hospital Notifications') {
+      if (action === 'Clinical Guidelines' || action === 'Draft Clinical Guidelines' || action === 'Manage Clinical Guidelines') {
+        setActiveView('guidelines');
+      } else if (action === 'Hospital Notifications') {
         setActiveView('notifications');
       } else if (action === 'Hospital Reports & Stats') {
         setActiveView('reports');
@@ -601,6 +672,11 @@ export const DashboardPage: React.FC = () => {
             >
               <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-accent'}`} />
               <span className="flex-1">{label}</span>
+              {id === 'notifications' && unreadCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-navy-950 font-bold text-[10px]">
+                  {unreadCount}
+                </span>
+              )}
               {comingSoon && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400 font-medium">SOON</span>
               )}
@@ -662,6 +738,7 @@ export const DashboardPage: React.FC = () => {
   // ── Main content renderer for Admin ────────────────────────────
   const renderAdminContent = () => {
     switch (activeView) {
+      case 'guidelines':    return <HospitalGuidelinesPage />;
       case 'notifications': return <HospitalNotificationsPage />;
       case 'reports':       return <HospitalReportsPage />;
       case 'activities':    return <HospitalActivityPage />;
@@ -706,8 +783,12 @@ export const DashboardPage: React.FC = () => {
         return <ClinicalGuidelinesPage />;
       case 'appointments':
         return <PatientRecordsPage initialTab="appointments" />;
+      case 'discharge-summary':
+        return <PatientRecordsPage initialTab="discharge-summary" />;
       case 'prescriptions':
         return <PatientRecordsPage initialTab="prescriptions" />;
+      case 'notifications':
+        return <NotificationsPage onNavigateTab={(tab) => setActiveView(tab)} />;
       case 'profile':
         return <DoctorProfilePage embedded onNavigateTab={(tab) => setActiveView(tab)} />;
       default:
@@ -723,16 +804,31 @@ export const DashboardPage: React.FC = () => {
           activeView === 'clinical-records' &&
           ['overview', 'medications', 'medication-schedule', 'labs', 'appointments'].includes(nurseRecordTab);
 
-        const isActive = activeView === id || (id === 'clinical-records' && isSelectedCRSection);
+        const isSelectedHPSection = activeView === 'hospital-procedures';
+
+        const isActive =
+          activeView === id ||
+          (id === 'clinical-records' && isSelectedCRSection) ||
+          (id === 'hospital-procedures' && isSelectedHPSection);
+
+        const isExpanded =
+          id === 'clinical-records'
+            ? nurseRecordsExpanded
+            : id === 'hospital-procedures'
+            ? nurseProceduresExpanded
+            : false;
 
         return (
           <div key={id} className="space-y-1">
             <button
               onClick={() => {
-                if (hasSubmenu) {
+                if (id === 'clinical-records') {
                   setActiveView('clinical-records');
                   setNurseRecordTab('overview');
                   setNurseRecordsExpanded((prev) => (activeView === 'clinical-records' ? !prev : true));
+                } else if (id === 'hospital-procedures') {
+                  setActiveView('hospital-procedures');
+                  setNurseProceduresExpanded((prev) => (activeView === 'hospital-procedures' ? !prev : true));
                 } else if (id === 'treatment-plans') {
                   setActiveView('treatment-plans');
                   if (mobile) setMobileNavOpen(false);
@@ -749,13 +845,18 @@ export const DashboardPage: React.FC = () => {
             >
               <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-gray-500 group-hover:text-accent'}`} />
               <span className="flex-1">{label}</span>
+              {id === 'notifications' && unreadCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-navy-950 font-bold text-[10px]">
+                  {unreadCount}
+                </span>
+              )}
               {comingSoon && (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-400 font-medium">SOON</span>
               )}
               {hasSubmenu && (
                 <ChevronDown
                   className={`w-3.5 h-3.5 ml-auto transition-transform duration-200 ${
-                    nurseRecordsExpanded ? 'transform rotate-180 text-white' : 'text-gray-400'
+                    isExpanded ? 'transform rotate-180 text-white' : 'text-gray-400'
                   }`}
                 />
               )}
@@ -763,7 +864,7 @@ export const DashboardPage: React.FC = () => {
             </button>
 
             {/* Clinical Records Dropdown Submenu */}
-            {hasSubmenu && (
+            {id === 'clinical-records' && (
               <AnimatePresence>
                 {nurseRecordsExpanded && (
                   <motion.div
@@ -801,6 +902,46 @@ export const DashboardPage: React.FC = () => {
                 )}
               </AnimatePresence>
             )}
+
+            {/* Hospital Procedures Categories Dropdown Submenu */}
+            {id === 'hospital-procedures' && (
+              <AnimatePresence>
+                {nurseProceduresExpanded && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="pl-3.5 pr-1 py-1 space-y-1 border-l-2 border-sky-500/30 ml-3.5 my-1 max-h-60 overflow-y-auto"
+                  >
+                    {NURSE_PROCEDURE_SUBITEMS.map((sub) => {
+                      const SubIcon = sub.icon;
+                      const isSubActive = activeView === 'hospital-procedures' && nurseProcedureCategory === sub.id;
+
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={() => {
+                            setActiveView('hospital-procedures');
+                            setNurseProcedureCategory(sub.id);
+                            if (mobile) setMobileNavOpen(false);
+                          }}
+                          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[11px] font-medium transition-all w-full group ${
+                            isSubActive
+                              ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40 shadow-sm'
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-white/5 border border-transparent'
+                          }`}
+                        >
+                          <SubIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isSubActive ? 'text-sky-400' : 'text-gray-500 group-hover:text-gray-300'}`} />
+                          <span className="flex-1 truncate">{sub.label}</span>
+                          {isSubActive && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />}
+                        </button>
+                      );
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
           </div>
         );
       })}
@@ -814,15 +955,24 @@ export const DashboardPage: React.FC = () => {
         return <NurseObservationsPage />;
       case 'nursing-notes':
         return <NursingNotesPage />;
+      case 'nursing-summary':
+        return <NurseNursingSummaryPage />;
       case 'treatment-plans':
         return <PatientMedicalHistoryPage initialTab="treatment-plan" />;
       case 'clinical-records':
       case 'medical-history':
         return <PatientMedicalHistoryPage initialTab={nurseRecordTab} />;
       case 'hospital-procedures':
-        return <ComingSoonView label="Hospital Procedures" />;
+        return (
+          <NurseHospitalProceduresPage
+            selectedCategoryProp={nurseProcedureCategory}
+            onCategoryChangeProp={setNurseProcedureCategory}
+          />
+        );
       case 'profile':
-        return <ComingSoonView label="Profile" />;
+        return <NurseProfilePage embedded onNavigateTab={(tab) => setActiveView(tab)} />;
+      case 'notifications':
+        return <NotificationsPage onNavigateTab={(tab) => setActiveView(tab)} />;
       default:
         return renderDefaultDashboard();
     }
@@ -1065,7 +1215,11 @@ export const DashboardPage: React.FC = () => {
             <div>
               <span className="text-xl font-extrabold text-white">MediTwin <span className="text-accent">AI</span></span>
               <span className="text-[10px] text-gray-400 block -mt-1">
-                {isDoctor ? `${userCleanName} · Authenticated Workstation` : 'Authenticated Workstation'}
+                {isDoctor
+                  ? `${userCleanName} · Authenticated Workstation`
+                  : isNurse
+                  ? `${userCleanName}${nurseDisplayId ? ` (${nurseDisplayId})` : ''} · ${nurseAssignedWard}`
+                  : 'Authenticated Workstation'}
               </span>
             </div>
           </Link>
@@ -1082,8 +1236,8 @@ export const DashboardPage: React.FC = () => {
               </button>
             )}
 
-            {/* Notification Bell for Patient */}
-            {isPatient && (
+            {/* Notification Bell */}
+            {(isPatient || isDoctor || isNurse) && (
               <button
                 onClick={() => setActiveView('notifications')}
                 className="relative p-2 rounded-xl bg-white/10 border border-white/15 text-gray-300 hover:text-white hover:bg-white/15 transition-colors"
@@ -1099,11 +1253,11 @@ export const DashboardPage: React.FC = () => {
             )}
 
             <div
-              onClick={() => isDoctor && setActiveView('profile')}
+              onClick={() => (isDoctor || isNurse) && setActiveView('profile')}
               className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/10 border border-white/15 text-xs text-gray-300 shadow-sm ${
-                isDoctor ? 'cursor-pointer hover:bg-white/15 hover:border-accent/40 transition-all' : ''
+                (isDoctor || isNurse) ? 'cursor-pointer hover:bg-white/15 hover:border-accent/40 transition-all' : ''
               }`}
-              title={isDoctor ? 'View Doctor Profile' : undefined}
+              title={isDoctor ? 'View Doctor Profile' : isNurse ? 'View Nurse Profile' : undefined}
             >
               <div className="flex flex-col items-center justify-center">
                 <RoleIcon className="w-4 h-4 text-accent" />

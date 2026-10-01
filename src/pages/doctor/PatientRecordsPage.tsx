@@ -5,13 +5,16 @@ import {
   Mail, MapPin, Calendar, AlertTriangle, Pill, FileText, FlaskConical,
   CheckCircle2, XCircle, Plus, Save, Loader2, Users,
   Activity, FolderOpen, Printer, ShieldAlert, StopCircle, Stethoscope,
-  Eye, Download, X, HeartPulse, ArrowUp, ArrowDown, RotateCcw,
+  Eye, Download, X, HeartPulse, ArrowUp, ArrowDown, RotateCcw, FileCheck,
+  Clock,
 } from 'lucide-react';
 import type {
   DoctorPatient, PatientStatus, ClinicalNote, Prescription, MedicalDocument,
 } from '../../types';
 import { getPatients, addClinicalNote, discontinuePrescription, updatePatientBed, type PatientSortField } from '../../services/doctorService';
 import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
+import { DischargeSummaryTab } from '../../components/doctor/DischargeSummaryTab';
+import { DoctorNursingSummaryTab } from '../../components/doctor/DoctorNursingSummaryTab';
 import { getTallManName } from '../../utils/medicationSafety';
 import { formatPatientId, isPatientInpatient } from '../../utils/patientUtils';
 
@@ -27,6 +30,95 @@ const fmtDate = (d?: string) => {
   } catch {
     return d || 'Aug 2026';
   }
+};
+
+export interface PatientAppointmentInfo {
+  status: 'Completed' | 'Cancelled' | 'Scheduled' | 'Pending' | 'None';
+  date?: string;
+  time?: string;
+  doctorName?: string;
+  department?: string;
+  reason?: string;
+  isUpcoming: boolean;
+}
+
+export const getPatientAppointmentInfo = (p: DoctorPatient): PatientAppointmentInfo => {
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  if (Array.isArray(p.appointments) && p.appointments.length > 0) {
+    // Check if there is an upcoming / scheduled / pending appointment that is TODAY OR IN COMING DATES
+    const upcoming = p.appointments
+      .filter((a) => {
+        const s = (a.status || '').toLowerCase();
+        const isScheduled = s === 'scheduled' || s === 'upcoming' || s === 'pending' || s === 'confirmed';
+        const isTodayOrFuture = a.date ? a.date >= todayStr : false;
+        return isScheduled && isTodayOrFuture;
+      })
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
+
+    if (upcoming) {
+      const s = (upcoming.status || '').toLowerCase();
+      const normStatus: PatientAppointmentInfo['status'] =
+        s === 'pending' ? 'Pending' : 'Scheduled';
+      return {
+        status: normStatus,
+        date: upcoming.date,
+        time: upcoming.time || '10:00 AM',
+        doctorName: upcoming.doctorName,
+        department: upcoming.department,
+        reason: upcoming.reason,
+        isUpcoming: true,
+      };
+    }
+
+    // If nextAppointment is provided on the patient and is TODAY OR IN COMING DATES
+    if (p.nextAppointment && p.nextAppointment >= todayStr) {
+      return {
+        status: 'Scheduled',
+        date: p.nextAppointment,
+        time: '10:00 AM',
+        doctorName: 'Attending Physician',
+        department: p.department || 'General Medicine',
+        reason: 'Scheduled Consultation',
+        isUpcoming: true,
+      };
+    }
+
+    // Else take the latest past appointment (marked as isUpcoming: false)
+    const latest = p.appointments[0];
+    const s = (latest.status || '').toLowerCase();
+    let normStatus: PatientAppointmentInfo['status'] = 'Completed';
+    if (s.includes('cancel')) normStatus = 'Cancelled';
+    else if (s.includes('no-show')) normStatus = 'Cancelled';
+
+    return {
+      status: normStatus,
+      date: latest.date,
+      time: latest.time || '10:00 AM',
+      doctorName: latest.doctorName,
+      department: latest.department,
+      reason: latest.reason,
+      isUpcoming: false,
+    };
+  }
+
+  // Fallback to p.nextAppointment only if it's TODAY OR IN COMING DATES
+  if (p.nextAppointment && p.nextAppointment >= todayStr) {
+    return {
+      status: 'Scheduled',
+      date: p.nextAppointment,
+      time: '10:00 AM',
+      doctorName: 'Attending Physician',
+      department: p.department || 'General Medicine',
+      reason: 'Scheduled Consultation',
+      isUpcoming: true,
+    };
+  }
+
+  return {
+    status: 'None',
+    isUpcoming: false,
+  };
 };
 
 const STATUS_COLORS: Record<PatientStatus, string> = {
@@ -53,7 +145,9 @@ const NOTE_TYPE_COLORS = {
 };
 
 const TABS = [
-  { id: 'overview',      label: 'Overview',              icon: User         },
+  { id: 'overview',          label: 'Overview',              icon: User         },
+  { id: 'discharge-summary', label: 'Discharge Summary',     icon: FileCheck    },
+  { id: 'nursing-summary',   label: 'Nursing Summary',       icon: FileText     },
   { id: 'labs',          label: 'Lab Reports',           icon: FlaskConical },
   { id: 'appointments',  label: 'Appointments',          icon: Calendar     },
   { id: 'prescriptions', label: 'Prescriptions',         icon: Pill         },
@@ -420,6 +514,24 @@ const PatientRecord: React.FC<{
             <span className={`px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[patient.status] || 'border-white/20 text-gray-300'}`}>
               {patient.status}
             </span>
+            {patient.status === 'Discharged' && (
+              <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1 shadow-sm">
+                <Calendar className="w-3 h-3 text-amber-400" />
+                Discharged: {fmtDate(patient.dischargeDate || patient.lastVisit)}
+              </span>
+            )}
+            {(() => {
+              const apt = getPatientAppointmentInfo(patient);
+              if (apt.isUpcoming && apt.date) {
+                return (
+                  <span className="px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-semibold flex items-center gap-1 shadow-sm">
+                    <Clock className="w-3 h-3 text-cyan-400" />
+                    Next Appt: {fmtDate(apt.date)} · {apt.time || '10:00 AM'} ({apt.status})
+                  </span>
+                );
+              }
+              return null;
+            })()}
             {patient.primaryCondition && (
               <span className="px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-medium">
                 {patient.primaryCondition}
@@ -469,6 +581,268 @@ const PatientRecord: React.FC<{
         {/* OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 1. Appointment & Clinical Status Overview Banner (Full Width) */}
+            {(() => {
+              const aptInfo = getPatientAppointmentInfo(patient);
+              const isDischarged = patient.status === 'Discharged';
+              const dischargeDateStr = patient.dischargeDate || (isDischarged ? patient.lastVisit : undefined);
+              const aptDateFormatted = fmtDate(aptInfo.date || patient.nextAppointment || patient.lastVisit);
+              const aptTimeStr = aptInfo.time || '10:00 AM';
+
+              return (
+                <div className="md:col-span-2 glass-card p-5 border border-white/10 bg-gradient-to-r from-navy-900/90 via-navy-900/70 to-slate-900/80 rounded-2xl shadow-xl space-y-4">
+                  {/* Top row: Section title & quick status chips */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-white/10 gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-300 shadow-sm">
+                        <Calendar className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                          Appointment & Clinical Status Overview
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-md">
+                            Live Status
+                          </span>
+                        </h3>
+                        <p className="text-xs text-gray-400">
+                          Real-time clinical consultation schedule and patient admission tracking
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Status Badges */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-gray-400 font-medium mr-1">Appt:</span>
+                      {aptInfo.status === 'Pending' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          Pending
+                        </span>
+                      )}
+                      {aptInfo.status === 'Scheduled' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                          Scheduled
+                        </span>
+                      )}
+                      {aptInfo.status === 'Completed' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          Completed
+                        </span>
+                      )}
+                      {aptInfo.status === 'Cancelled' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 shadow-sm flex items-center gap-1.5">
+                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          Cancelled
+                        </span>
+                      )}
+                      {aptInfo.status === 'None' && (
+                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-white/5 text-gray-400 border border-white/10">
+                          No Appointment
+                        </span>
+                      )}
+
+                      <span className="text-xs text-gray-400 font-medium ml-2 mr-1">Care:</span>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-bold border shadow-sm ${
+                          isDischarged
+                            ? 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+                            : STATUS_COLORS[patient.status] || 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        }`}
+                      >
+                        {patient.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Grid of Key Status Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    {/* 1. Appointment Status Card */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex flex-col justify-between hover:border-cyan-500/30 transition-all">
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span className="font-semibold text-gray-300">Appointment Status</span>
+                        <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                      </div>
+                      <div className="my-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-sm font-black capitalize ${
+                              aptInfo.status === 'Pending'
+                                ? 'text-amber-300'
+                                : aptInfo.status === 'Completed'
+                                ? 'text-emerald-300'
+                                : aptInfo.status === 'Cancelled'
+                                ? 'text-rose-300'
+                                : aptInfo.status === 'Scheduled'
+                                ? 'text-cyan-300'
+                                : 'text-gray-300'
+                            }`}
+                          >
+                            {aptInfo.status === 'None' ? 'No Appointment' : aptInfo.status}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1 line-clamp-1">
+                          {aptInfo.isUpcoming
+                            ? 'Upcoming clinical consultation'
+                            : aptInfo.status === 'Completed'
+                            ? 'Consultation finished & documented'
+                            : aptInfo.status === 'Cancelled'
+                            ? 'Appointment cancelled'
+                            : 'Awaiting scheduled appointment'}
+                        </p>
+                      </div>
+                      <div className="text-[11px] font-mono text-cyan-300/80 pt-2 border-t border-white/5 truncate">
+                        {aptInfo.reason || 'General Medical Consultation'}
+                      </div>
+                    </div>
+
+                    {/* 2. Appointment Time with Date (Mandatory Requirement) */}
+                    <div className="p-3.5 rounded-xl bg-cyan-950/20 border border-cyan-500/25 flex flex-col justify-between hover:border-cyan-500/40 transition-all">
+                      <div className="flex items-center justify-between text-xs text-cyan-300/80">
+                        <span className="font-semibold text-cyan-200">
+                          {aptInfo.isUpcoming ? 'Next Appointment Date & Time' : 'Last Consultation Date & Time'}
+                        </span>
+                        <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                      </div>
+                      <div className="my-2">
+                        <div className="text-sm font-black text-white flex items-center gap-1.5 flex-wrap">
+                          <Calendar className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+                          <span>{aptDateFormatted}</span>
+                        </div>
+                        <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5 mt-1">
+                          <Clock className="w-3 h-3 text-cyan-400 flex-shrink-0" />
+                          <span>{aptTimeStr}</span>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-gray-300 pt-2 border-t border-cyan-500/20 truncate">
+                        {aptInfo.doctorName || 'Attending Physician'} · {aptInfo.department || patient.department || 'General Medicine'}
+                      </div>
+                    </div>
+
+                    {/* 3. Clinical Admission / Care Status (Active / Discharged / etc.) */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 flex flex-col justify-between hover:border-emerald-500/30 transition-all">
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span className="font-semibold text-gray-300">Care / Admission Status</span>
+                        <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <div className="my-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-sm font-black ${
+                              patient.status === 'Active'
+                                ? 'text-emerald-300'
+                                : isDischarged
+                                ? 'text-gray-300'
+                                : patient.status === 'Critical'
+                                ? 'text-rose-300'
+                                : 'text-blue-300'
+                            }`}
+                          >
+                            {patient.status}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-mono">
+                            ({isPatientInpatient(patient.status, currentWard) ? 'Inpatient' : 'Outpatient'})
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mt-1 line-clamp-1">
+                          {currentWard ? currentWard : 'Outpatient (No Bed Assigned)'}
+                        </p>
+                      </div>
+                      <div className="text-[11px] text-gray-400 pt-2 border-t border-white/5 truncate">
+                        Dept: <strong className="text-gray-200">{patient.department || 'General Medicine'}</strong>
+                      </div>
+                    </div>
+
+                    {/* 4. Discharge Status & Discharged Date (Mandatory Requirement) */}
+                    <div
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-all ${
+                        isDischarged
+                          ? 'bg-amber-950/20 border-amber-500/30 hover:border-amber-500/50'
+                          : 'bg-white/[0.03] border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className={`font-semibold ${isDischarged ? 'text-amber-300' : 'text-gray-300'}`}>
+                          Discharge Status
+                        </span>
+                        <FileCheck className={`w-3.5 h-3.5 ${isDischarged ? 'text-amber-400' : 'text-gray-400'}`} />
+                      </div>
+                      <div className="my-2">
+                        {isDischarged ? (
+                          <>
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                Discharged
+                              </span>
+                            </div>
+                            <div className="text-xs font-bold text-white mt-1.5 flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                              <span>Discharged: {fmtDate(dischargeDateStr)}</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                              <span>Active In Care</span>
+                            </div>
+                            <p className="text-[11px] text-gray-400 mt-1">
+                              Patient has not been discharged. Under active clinical management.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                        {isDischarged ? (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('discharge-summary')}
+                            className="text-amber-300 hover:text-amber-200 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>View Summary</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
+                        ) : (
+                          <span className="text-gray-500">Stay ongoing</span>
+                        )}
+                        <span className="text-gray-500 text-[10px]">
+                          {isDischarged ? 'Discharge Logged' : 'CPOE Monitored'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Discharged Notice Alert (if discharged) */}
+                  {isDischarged && (
+                    <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 flex-shrink-0">
+                          <FileCheck className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-amber-200">
+                            Patient Discharged on {fmtDate(dischargeDateStr)}
+                          </p>
+                          <p className="text-gray-300 text-[11px]">
+                            Hospital stay completed. Follow-up appointments and post-discharge regimen recorded in EHR.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('discharge-summary')}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-semibold text-xs flex items-center gap-1.5 transition-all flex-shrink-0 self-start sm:self-auto cursor-pointer"
+                      >
+                        <span>Open Discharge Summary Tab</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Contact */}
             <div className="glass-card p-5 border border-white/10 space-y-3">
               <h3 className="text-sm font-bold text-white">Contact Information</h3>
@@ -481,6 +855,7 @@ const PatientRecord: React.FC<{
                 </p>
               )}
             </div>
+
             {/* Emergency */}
             <div className="glass-card p-5 border border-white/10 space-y-3">
               <h3 className="text-sm font-bold text-white">Emergency Contact</h3>
@@ -494,9 +869,27 @@ const PatientRecord: React.FC<{
                   <Phone className="w-3.5 h-3.5 text-accent" />{patient.emergencyContactPhone || patient.emergencyContact?.phone}
                 </p>
               )}
-              <div className="pt-2 border-t border-white/10">
+              <div className="pt-2 border-t border-white/10 space-y-1.5">
                 <p className="text-xs text-gray-400">Last Visit: <span className="text-white">{fmtDate(patient.lastVisit)}</span></p>
-                {patient.nextAppointment && <p className="text-xs text-gray-400 mt-1">Next Appointment: <span className="text-accent">{fmtDate(patient.nextAppointment)}</span></p>}
+                {(() => {
+                  const apt = getPatientAppointmentInfo(patient);
+                  if (apt.isUpcoming && apt.date) {
+                    return (
+                      <p className="text-xs text-gray-400 flex items-center gap-1.5 flex-wrap">
+                        <span>Next Appointment:</span>
+                        <span className="text-cyan-300 font-bold">{fmtDate(apt.date)} at {apt.time || '10:00 AM'}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-semibold">{apt.status}</span>
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+                {patient.status === 'Discharged' && (
+                  <p className="text-xs text-amber-300/90 font-semibold flex items-center gap-1.5 pt-0.5">
+                    <Calendar className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Discharged Date: {fmtDate(patient.dischargeDate || patient.lastVisit)}</span>
+                  </p>
+                )}
               </div>
             </div>
             {/* Allergies & Verification */}
@@ -674,6 +1067,30 @@ const PatientRecord: React.FC<{
                   <span className="text-gray-400">Assigned Doctor ID:</span>
                   <span className="text-white font-mono">DOC-#{patient.assignedDoctorId}</span>
                 </p>
+                {patient.status === 'Discharged' && (
+                  <p className="text-gray-300 flex items-center justify-between">
+                    <span className="text-amber-400 font-medium flex items-center gap-1">
+                      <FileCheck className="w-3.5 h-3.5 text-amber-400" /> Discharged Date:
+                    </span>
+                    <span className="text-amber-200 font-bold">{fmtDate(patient.dischargeDate || patient.lastVisit)}</span>
+                  </p>
+                )}
+                {(() => {
+                  const apt = getPatientAppointmentInfo(patient);
+                  if (apt.isUpcoming && apt.date) {
+                    return (
+                      <p className="text-gray-300 flex items-center justify-between">
+                        <span className="text-gray-400 flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-cyan-400" /> Next Appointment:
+                        </span>
+                        <span className="text-cyan-300 font-bold">
+                          {fmtDate(apt.date)} · {apt.time || '10:00 AM'} ({apt.status})
+                        </span>
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
                 <div className="pt-2 border-t border-white/10 flex items-center justify-between">
                   <span className="text-gray-400">Active Prescriptions:</span>
                   <button
@@ -1164,6 +1581,21 @@ const PatientRecord: React.FC<{
               </div>
             ))}
           </div>
+        )}
+
+        {/* DISCHARGE SUMMARY */}
+        {activeTab === 'discharge-summary' && (
+          <DischargeSummaryTab
+            patient={patient}
+            onPatientUpdated={() => {
+              if (onNoteAdded) onNoteAdded({} as any);
+            }}
+          />
+        )}
+
+        {/* NURSING SUMMARY (READ-ONLY FOR ATTENDING PHYSICIAN) */}
+        {activeTab === 'nursing-summary' && (
+          <DoctorNursingSummaryTab patient={patient} />
         )}
 
         {/* ── Document Inspection Modal for Doctor ── */}
@@ -1759,7 +2191,25 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                       {p.primaryCondition}
                     </p>
                   )}
-                  <p className="text-[11px] text-gray-500 mt-1">Last visit: {fmtDate(p.lastVisit)}{p.nextAppointment ? ` · Next: ${fmtDate(p.nextAppointment)}` : ''}</p>
+                  <div className="text-[11px] text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
+                    <span>Last visit: <strong className="text-gray-300">{fmtDate(p.lastVisit)}</strong></span>
+                    {(() => {
+                      const apt = getPatientAppointmentInfo(p);
+                      if (apt.isUpcoming && apt.date) {
+                        return (
+                          <span>
+                            · Next Appt: <strong className="text-cyan-300">{fmtDate(apt.date)} at {apt.time || '10:00 AM'}</strong>
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                    {p.status === 'Discharged' && (
+                      <span className="text-amber-300/90 font-semibold flex items-center gap-1">
+                        · Discharged: {fmtDate(p.dischargeDate || p.lastVisit)}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Alerts & Sort Badges */}
@@ -1770,14 +2220,18 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                     </span>
                   )}
                   {/* Dynamic highlight for active sort dimensions */}
-                  {sortBy === 'nextAppointment' && (
-                    <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                      p.nextAppointment ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-white/5 text-gray-400 border-white/10'
-                    }`}>
-                      <Calendar className="w-3 h-3 text-cyan-400" />
-                      {p.nextAppointment ? `Next: ${fmtDate(p.nextAppointment)}` : 'No upcoming visit'}
-                    </span>
-                  )}
+                  {sortBy === 'nextAppointment' && (() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    const isFuture = Boolean(p.nextAppointment && p.nextAppointment >= todayStr);
+                    return (
+                      <span className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                        isFuture ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' : 'bg-white/5 text-gray-400 border-white/10'
+                      }`}>
+                        <Calendar className="w-3 h-3 text-cyan-400" />
+                        {isFuture ? `Next: ${fmtDate(p.nextAppointment!)}` : 'No upcoming visit'}
+                      </span>
+                    );
+                  })()}
                   {sortBy === 'age' && (
                     <span className="flex items-center gap-1 text-[11px] font-semibold text-indigo-300 px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/40">
                       <User className="w-3 h-3 text-indigo-400" />
@@ -1800,17 +2254,74 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                   )}
                 </div>
 
-                {/* View */}
-                <button
-                  onClick={() => setSelectedPatient(p)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 cursor-pointer ${
-                    isCritical
-                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-900/40 hover:scale-105 active:scale-95'
-                      : 'bg-primary text-white hover:bg-primary/80'
-                  }`}
-                >
-                  {isCritical ? 'Open Emergency Chart' : 'View Record'} <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                {/* Appointment Status Badge (Left of View Record) & View Action */}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {(() => {
+                    const apt = getPatientAppointmentInfo(p);
+                    if (apt.status === 'Scheduled') {
+                      return (
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm"
+                          title={`Scheduled appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
+                        >
+                          Scheduled
+                        </span>
+                      );
+                    } else if (apt.status === 'Completed') {
+                      return (
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
+                          title={`Completed appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
+                        >
+                          Completed
+                        </span>
+                      );
+                    } else if (apt.status === 'Cancelled') {
+                      return (
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-rose-500/20 text-rose-300 border border-rose-500/30 shadow-sm"
+                          title={`Cancelled appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
+                        >
+                          Cancelled
+                        </span>
+                      );
+                    } else if (apt.status === 'Pending') {
+                      return (
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-sm"
+                          title={`Pending appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
+                        >
+                          Pending
+                        </span>
+                      );
+                    } else if (p.status === 'Discharged') {
+                      return (
+                        <span
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-gray-500/20 text-gray-300 border border-gray-500/30"
+                          title={`Discharged on ${fmtDate(p.dischargeDate || p.lastVisit)}`}
+                        >
+                          Discharged
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-medium flex-shrink-0 text-gray-400 bg-white/5 border border-white/10">
+                        No Appointment
+                      </span>
+                    );
+                  })()}
+
+                  <button
+                    onClick={() => setSelectedPatient(p)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 cursor-pointer ${
+                      isCritical
+                        ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-900/40 hover:scale-105 active:scale-95'
+                        : 'bg-primary text-white hover:bg-primary/80'
+                    }`}
+                  >
+                    {isCritical ? 'Open Emergency Chart' : 'View Record'} <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </motion.div>
             );
           })}

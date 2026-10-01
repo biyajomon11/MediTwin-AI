@@ -9,6 +9,7 @@ import { PatientRegisterPage } from './pages/PatientRegisterPage';
 import { AdminRegisterPage } from './pages/AdminRegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DoctorProfilePage } from './pages/doctor/DoctorProfilePage';
+import { NurseProfilePage } from './pages/nurse/NurseProfilePage';
 
 export const App: React.FC = () => {
   return (
@@ -26,6 +27,7 @@ export const App: React.FC = () => {
         <Route path="/register/admin" element={<AdminRegisterPage />} />
         <Route path="/admin-register" element={<AdminRegisterPage />} />
         <Route path="/doctor/profile" element={<DoctorProfilePage />} />
+        <Route path="/nurse/profile" element={<NurseProfilePage />} />
         <Route path="/dashboard/:role" element={<DashboardPage />} />
         <Route path="/dashboard" element={<Navigate to="/dashboard/doctor" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

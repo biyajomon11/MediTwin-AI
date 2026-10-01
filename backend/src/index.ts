@@ -11,6 +11,7 @@ import doctorRouter         from './routes/doctor';
 import patientRouter        from './routes/patient';
 import adminRouter          from './routes/admin';
 import nurseRouter          from './routes/nurse';
+import hospitalProceduresRouter from './routes/hospitalProcedures';
 
 dotenv.config();
 
@@ -22,14 +23,16 @@ app.use(cors());
 app.use(express.json());
 
 // ── Route Mounts ────────────────────────────────────────────────
-app.use('/api/auth',                  authRouter);
-app.use('/api/register',              registerRouter);
-app.use('/api/doctor',                doctorRouter);
-app.use('/api/patient',               patientRouter);
-app.use('/api/nurse/observations',    observationsRouter);
-app.use('/api/nurse/patients',        patientsRouter);
-app.use('/api/nurse',                 nurseRouter);
-app.use('/api/admin',                 adminRouter);
+app.use('/api/auth',                     authRouter);
+app.use('/api/register',                 registerRouter);
+app.use('/api/doctor',                   doctorRouter);
+app.use('/api/patient',                  patientRouter);
+app.use('/api/nurse/observations',       observationsRouter);
+app.use('/api/nurse/hospital-procedures', hospitalProceduresRouter);
+app.use('/api/hospital-procedures',      hospitalProceduresRouter);
+app.use('/api/nurse',                    nurseRouter);
+app.use('/api/nurse/patients',           patientsRouter);
+app.use('/api/admin',                    adminRouter);
 
 // ── Health check ────────────────────────────────────────────────
 app.get('/api/health', async (_req: Request, res: Response) => {

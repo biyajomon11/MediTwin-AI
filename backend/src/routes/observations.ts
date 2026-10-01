@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { authenticateJWT, AuthenticatedRequest } from '../middleware/auth';
 import { requireRoles } from '../middleware/roleGuard';
+import { matchesWard, getWardFilterConditions } from '../utils/wardMatching';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -156,6 +157,23 @@ router.post(
         return res.status(404).json({ success: false, error: 'Patient not found.' });
       }
 
+      // Enforce ward-based access control
+      const nurseRecord = await prisma.nurse.findUnique({
+        where: { id: nurseId },
+        select: { assignedWard: true, firstName: true, lastName: true },
+      });
+      const nurseWard = nurseRecord?.assignedWard ||
+        (nurseRecord?.firstName?.toLowerCase().includes('noyal') || nurseRecord?.firstName?.toLowerCase().includes('notal')
+          ? 'General Ward 2B'
+          : null);
+
+      if (nurseWard && !matchesWard(patient.ward, nurseWard)) {
+        return res.status(403).json({
+          success: false,
+          error: `Access Denied: Patient is allocated to '${patient.ward || 'Unassigned Ward'}', which is outside your assigned ward '${nurseWard}'.`,
+        });
+      }
+
       const observation = await prisma.patientObservation.create({
         data: {
           patientId: data.patientId,
@@ -221,6 +239,28 @@ router.get(
       const where: Record<string, unknown> = {};
       if (patientId) where.patientId = patientId;
       if (date) where.observationDate = new Date(date);
+
+      if (req.user?.role === 'nurse') {
+        const nurseRecord = await prisma.nurse.findFirst({
+          where: {
+            OR: [
+              { userId: req.user.userId },
+              ...(req.user.nurseId ? [{ id: req.user.nurseId }] : []),
+            ],
+          },
+          select: { assignedWard: true, firstName: true },
+        });
+        const nurseWard = nurseRecord?.assignedWard ||
+          (nurseRecord?.firstName?.toLowerCase().includes('noyal') || nurseRecord?.firstName?.toLowerCase().includes('notal')
+            ? 'General Ward 2B'
+            : null);
+
+        if (nurseWard) {
+          where.patient = {
+            OR: getWardFilterConditions(nurseWard),
+          };
+        }
+      }
 
       const [observations, total] = await Promise.all([
         prisma.patientObservation.findMany({

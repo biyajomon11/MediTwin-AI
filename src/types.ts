@@ -201,7 +201,7 @@ export interface DoctorAppointment {
   reason: string;
   doctorName: string;
   department: string;
-  status: 'Completed' | 'Upcoming' | 'Cancelled' | 'No-show';
+  status: 'Completed' | 'Upcoming' | 'Cancelled' | 'No-show' | 'Scheduled' | 'Pending';
   notes?: string;
 }
 
@@ -233,6 +233,8 @@ export interface DoctorPatient extends PatientSummary {
   address?: string;
   lastVisit: string;
   nextAppointment?: string;
+  dischargeDate?: string;
+  admissionDate?: string;
   allergies: Allergy[];
   currentMedications: Medication[];
   medicalHistory: MedicalHistoryEntry[];
@@ -1073,3 +1075,388 @@ export interface PatientBookedAppointment {
   };
   createdAt: string;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Doctor Module — Discharge Summary Management
+// ─────────────────────────────────────────────────────────────
+
+export type DischargeSummaryStatus = 'DRAFT' | 'FINALIZED';
+
+export interface DischargeMedicationItem {
+  name: string;
+  dosage: string;
+  frequency: string;
+  duration?: string;
+  instructions?: string;
+}
+
+export interface DischargeSummary {
+  id: number;
+  patientId: number;
+  doctorId: number;
+  doctorName?: string;
+  doctorSpecialization?: string;
+  doctorLicenseNumber?: string;
+  hospitalName?: string;
+  departmentName?: string;
+  patientName?: string;
+  patientAge?: number;
+  patientGender?: string;
+  ward?: string;
+  bedNumber?: string;
+  admissionDate: string;
+  dischargeDate: string;
+  admissionDiagnosis?: string;
+  dischargeDiagnosis: string;
+  chiefComplaint?: string;
+  clinicalCourse: string;
+  proceduresPerformed?: string;
+  investigations?: string;
+  treatmentGiven?: string;
+  conditionAtDischarge: string;
+  dischargeMedications: DischargeMedicationItem[];
+  followUpInstructions?: string;
+  followUpDate?: string;
+  followUpDepartment?: string;
+  dietaryAdvice?: string;
+  activityAdvice?: string;
+  warningSigns?: string;
+  additionalInstructions?: string;
+  summaryStatus: DischargeSummaryStatus;
+  finalizedAt?: string;
+  finalizedBy?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDischargeSummaryInput {
+  patientId: number;
+  admissionDate: string;
+  dischargeDate: string;
+  admissionDiagnosis?: string;
+  dischargeDiagnosis: string;
+  chiefComplaint?: string;
+  clinicalCourse: string;
+  proceduresPerformed?: string;
+  investigations?: string;
+  treatmentGiven?: string;
+  conditionAtDischarge: string;
+  dischargeMedications?: DischargeMedicationItem[];
+  followUpInstructions?: string;
+  followUpDate?: string;
+  followUpDepartment?: string;
+  dietaryAdvice?: string;
+  activityAdvice?: string;
+  warningSigns?: string;
+  additionalInstructions?: string;
+  summaryStatus?: DischargeSummaryStatus;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Nurse Module — Nursing Patient Summary & Clinical Documentation
+// ─────────────────────────────────────────────────────────────────
+
+export type NursingSummaryStatus = 'DRAFT' | 'SUBMITTED' | 'FINALIZED' | 'CANCELLED';
+
+export type ConsciousnessLevel = 'Alert' | 'Drowsy' | 'Confused' | 'Unresponsive' | 'Not documented';
+export type MobilityStatus = 'Independent' | 'Assisted' | 'Bed-bound' | 'Wheelchair' | 'Not documented';
+export type PainStatus = 'None reported' | 'Mild' | 'Moderate' | 'Severe' | 'Not documented';
+
+export interface NursingPatientSummary {
+  id: number;
+  patientId: number;
+  nurseId: number;
+  summaryDate: string;
+  status: NursingSummaryStatus;
+  nursingAssessment?: string;
+  patientCurrentCondition: string;
+  levelOfConsciousness?: ConsciousnessLevel;
+  mobilityStatus?: MobilityStatus;
+  painStatus?: PainStatus;
+  vitalSignsSummary?: string;
+  observationsSummary?: string;
+  nursingCareProvided?: string;
+  treatmentSummary?: string;
+  medicationSummary?: string;
+  patientResponse?: string;
+  nutritionStatus?: string;
+  eliminationStatus?: string;
+  woundCareStatus?: string;
+  patientEducation?: string;
+  dischargeInstructions?: string;
+  followUpInstructions?: string;
+  warningSignsObserved?: string;
+  doctorCommunication?: string;
+  additionalNotes?: string;
+  finalizedAt?: string | null;
+  finalizedBy?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+  nurseName?: string;
+  nurseRegistrationNumber?: string;
+  nurseWard?: string;
+  patientName?: string;
+  patientWard?: string;
+  patientBed?: string;
+}
+
+export interface CreateNursingSummaryInput {
+  summaryDate: string;
+  status?: NursingSummaryStatus;
+  patientCurrentCondition: string;
+  nursingAssessment?: string;
+  levelOfConsciousness?: ConsciousnessLevel;
+  mobilityStatus?: MobilityStatus;
+  painStatus?: PainStatus;
+  vitalSignsSummary?: string;
+  observationsSummary?: string;
+  nursingCareProvided?: string;
+  treatmentSummary?: string;
+  medicationSummary?: string;
+  patientResponse?: string;
+  nutritionStatus?: string;
+  eliminationStatus?: string;
+  woundCareStatus?: string;
+  patientEducation?: string;
+  dischargeInstructions?: string;
+  followUpInstructions?: string;
+  warningSignsObserved?: string;
+  doctorCommunication?: string;
+  additionalNotes?: string;
+}
+
+export interface NurseClinicalContext {
+  patient: {
+    id: number;
+    patientId: string;
+    firstName: string;
+    lastName: string;
+    age: number;
+    gender: string;
+    bloodGroup: string;
+    ward: string;
+    bedNumber: string;
+    admissionStatus: string;
+    admissionDate: string;
+    assignedDoctor: string;
+  };
+  latestVitals: {
+    id: number;
+    recordedAt: string;
+    temperature: string;
+    pulseRate: string;
+    respiratoryRate: string;
+    bloodPressure: string;
+    systolicBp: number;
+    diastolicBp: number;
+    spo2: string;
+    bloodGlucose: string;
+    weight: string;
+    painScore: string;
+    consciousnessLevel: string;
+    recordedBy: string;
+  } | null;
+  recentObservations: Array<{
+    id: number;
+    date: string;
+    generalObservation: string;
+    additionalNotes?: string | null;
+  }>;
+  recentNursingNotes: Array<{
+    id: string;
+    date: string;
+    noteType: string;
+    observation: string;
+    careProvided: string;
+  }>;
+  recentTreatments: Array<{
+    id: string;
+    date: string;
+    treatmentName: string;
+    description: string;
+    performedBy: string;
+  }>;
+  activeMedications: Array<{
+    name: string;
+    dosage: string;
+    frequency: string;
+    instructions: string;
+  }>;
+  reminders: Array<{
+    id: number;
+    medicine: string;
+    status: string;
+    frequency?: string | null;
+  }>;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Nurse Module — Hospital Procedures & Clinical SOP Management
+// ─────────────────────────────────────────────────────────────────
+
+export type ProcedureStatus = 'PUBLISHED' | 'DRAFT' | 'UNDER_REVIEW' | 'ARCHIVED' | 'CANCELLED';
+
+export interface ProcedureStepItem {
+  step: number;
+  title: string;
+  instruction: string;
+  rationale?: string;
+  warning?: string;
+}
+
+export interface HospitalProcedureSummary {
+  id: number;
+  procedureCode: string;
+  title: string;
+  category: string;
+  description: string;
+  version: string;
+  status: ProcedureStatus;
+  effectiveDate: string;
+  reviewDate?: string | null;
+  lastUpdated: string;
+  isMandatory: boolean;
+  hospitalId: number;
+  hospitalName: string;
+  departmentId?: number | null;
+  departmentName: string;
+  scopeType: 'Departmental SOP' | 'Hospital-wide Policy';
+  downloadAvailable: boolean;
+}
+
+export interface HospitalProcedureDetail extends HospitalProcedureSummary {
+  content?: string;
+  purpose?: string | null;
+  scope?: string | null;
+  responsibilities?: string | null;
+  requiredEquipment?: string[] | null;
+  procedureSteps?: ProcedureStepItem[] | null;
+  safetyPrecautions?: string | null;
+  documentationReq?: string | null;
+  escalationSteps?: string | null;
+  references?: string | null;
+  hospitalAddress?: string;
+  hospitalPhone?: string;
+  downloadUrl?: string | null;
+}
+
+export interface HospitalProcedureCategoryItem {
+  name: string;
+  count: number;
+}
+
+export interface HospitalProcedureDepartmentItem {
+  id: number;
+  name: string;
+  description?: string | null;
+}
+
+export interface HospitalProcedureScope {
+  hospitalId: number;
+  hospitalName: string;
+  nurseDepartment: string;
+  nurseDepartmentId?: number | null;
+}
+
+export interface HospitalProcedureMetrics {
+  totalAvailable: number;
+  mandatoryCount: number;
+  departmentSpecificCount: number;
+}
+
+export interface HospitalProcedurePagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface HospitalProcedureListResponse {
+  success: boolean;
+  data: HospitalProcedureSummary[];
+  scope: HospitalProcedureScope;
+  metrics: HospitalProcedureMetrics;
+  pagination: HospitalProcedurePagination;
+}
+
+export interface HospitalProcedureFilters {
+  search?: string;
+  category?: string;
+  departmentId?: string;
+  isMandatory?: 'true' | 'false' | 'all';
+  page?: number;
+  limit?: number;
+  sortBy?: 'title' | 'category' | 'effectiveDate' | 'lastUpdated' | 'procedureCode';
+  sortOrder?: 'asc' | 'desc';
+}
+
+// ─────────────────────────────────────────────────────────────
+// Nurse Module — Nurse Profile, Settings & Security
+// ─────────────────────────────────────────────────────────────
+
+export interface NurseProfile {
+  id: number;
+  nurseId: string;
+  userId: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  phone?: string;
+  registrationNumber?: string;
+  licenseNumber?: string;
+  assignedWard?: string;
+  departmentId?: number | null;
+  departmentName?: string;
+  hospitalId?: number;
+  hospitalName?: string;
+  hospitalAddress?: string;
+  hospitalCity?: string;
+  hospitalPhone?: string;
+  accountStatus: string;
+  role: 'Nurse';
+  createdAt?: string;
+  updatedAt?: string;
+  profileImageUrl?: string;
+}
+
+export interface NurseProfileUpdateInput {
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
+}
+
+export interface NurseChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export interface NurseNotificationPreferences {
+  patientAssignmentAlerts: boolean;
+  medicineReminderAlerts: boolean;
+  doctorCommunicationAlerts: boolean;
+  procedureUpdateAlerts: boolean;
+  criticalVitalAlerts: boolean;
+  shiftHandoffAlerts: boolean;
+}
+
+export interface NurseReminderSummary {
+  unreadCount: number;
+  dueTodayCount: number;
+  urgentCount: number;
+  activeWardPatients: number;
+  pendingSummaries: number;
+}
+
+export interface NurseActivityItem {
+  id: number;
+  action: string;
+  timestamp: string;
+  timeFormatted: string;
+  dateFormatted: string;
+  status: 'Completed' | 'Pending';
+}
+
+
+

@@ -80,6 +80,8 @@ model Patient {
   gender                Gender?            @relation(fields: [genderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   prescriptions         Prescription[]
+  dischargeSummaries    DischargeSummary[]
+  nursingSummaries      NursingPatientSummary[]
 
   @@map("patients")
 }
@@ -103,23 +105,28 @@ model Doctor {
   medicalRecords    MedicalRecord[]
   prescriptions     Prescription[]
   availabilities    DoctorAvailability[]
+  dischargeSummaries DischargeSummary[]
 
   @@map("doctors")
 }
 
 model Nurse {
-  id            Int                  @id @default(autoincrement())
-  userId        Int                  @unique @map("user_id")
-  firstName     String               @map("first_name") @db.VarChar(100)
-  lastName      String               @map("last_name") @db.VarChar(100)
-  departmentId  Int?                 @map("department_id")
-  licenseNumber String?              @unique @map("license_number") @db.VarChar(100)
-  phone         String?              @db.VarChar(20)
-  createdAt     DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt     DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  department    Department?          @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  observations  PatientObservation[]
+  id                 Int                  @id @default(autoincrement())
+  nurseId            String?              @unique @map("nurse_id") @db.VarChar(50)
+  userId             Int                  @unique @map("user_id")
+  firstName          String               @map("first_name") @db.VarChar(100)
+  lastName           String               @map("last_name") @db.VarChar(100)
+  departmentId       Int?                 @map("department_id")
+  registrationNumber String?              @unique @map("registration_number") @db.VarChar(100)
+  licenseNumber      String?              @unique @map("license_number") @db.VarChar(100)
+  phone              String?              @db.VarChar(20)
+  assignedWard       String?              @map("assigned_ward") @db.VarChar(100)
+  createdAt          DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  department         Department?          @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  observations       PatientObservation[]
+  nursingSummaries   NursingPatientSummary[]
 
   @@map("nurses")
 }
@@ -149,6 +156,7 @@ model Hospital {
   createdAt   DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
   admins      Admin[]
   departments Department[]
+  procedures  HospitalProcedure[]
 
   @@map("hospitals")
 }
@@ -169,6 +177,7 @@ model Department {
   hospital    Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   doctors     Doctor[]
   nurses      Nurse[]
+  procedures  HospitalProcedure[]
 
   @@map("departments")
 }
@@ -436,3 +445,121 @@ model DoctorAvailability {
   @@index([status])
   @@map("doctor_availabilities")
 }
+
+model DischargeSummary {
+  id                     Int       @id @default(autoincrement())
+  patientId              Int       @map("patient_id")
+  doctorId               Int       @map("doctor_id")
+  admissionDate          DateTime  @map("admission_date") @db.Date
+  dischargeDate          DateTime  @map("discharge_date") @db.Date
+  admissionDiagnosis     String?   @map("admission_diagnosis")
+  dischargeDiagnosis     String    @map("discharge_diagnosis")
+  chiefComplaint         String?   @map("chief_complaint")
+  clinicalCourse         String    @map("clinical_course")
+  proceduresPerformed    String?   @map("procedures_performed")
+  investigations         String?   @map("investigations")
+  treatmentGiven         String?   @map("treatment_given")
+  conditionAtDischarge   String    @map("condition_at_discharge") @db.VarChar(100)
+  dischargeMedications   Json?     @map("discharge_medications")
+  followUpInstructions  String?   @map("follow_up_instructions")
+  followUpDate           DateTime? @map("follow_up_date") @db.Date
+  followUpDepartment     String?   @map("follow_up_department") @db.VarChar(150)
+  dietaryAdvice          String?   @map("dietary_advice")
+  activityAdvice         String?   @map("activity_advice")
+  warningSigns           String?   @map("warning_signs")
+  additionalInstructions String?   @map("additional_instructions")
+  summaryStatus          String    @default("DRAFT") @map("summary_status") @db.VarChar(50)
+  finalizedAt            DateTime? @map("finalized_at") @db.Timestamp(6)
+  finalizedBy            Int?      @map("finalized_by")
+  createdAt              DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt              DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  patient                Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  doctor                 Doctor    @relation(fields: [doctorId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([summaryStatus])
+  @@map("discharge_summaries")
+}
+
+model NursingPatientSummary {
+  id                      Int       @id @default(autoincrement())
+  patientId               Int       @map("patient_id")
+  nurseId                 Int       @map("nurse_id")
+  summaryDate             DateTime  @map("summary_date") @db.Date
+  status                  String    @default("DRAFT") @db.VarChar(50) // DRAFT, SUBMITTED, FINALIZED, CANCELLED
+  nursingAssessment       String?   @map("nursing_assessment")
+  patientCurrentCondition String    @map("patient_current_condition")
+  levelOfConsciousness    String?   @map("level_of_consciousness") @db.VarChar(50)
+  mobilityStatus          String?   @map("mobility_status") @db.VarChar(50)
+  painStatus              String?   @map("pain_status") @db.VarChar(50)
+  vitalSignsSummary       String?   @map("vital_signs_summary")
+  observationsSummary     String?   @map("observations_summary")
+  nursingCareProvided     String?   @map("nursing_care_provided")
+  treatmentSummary        String?   @map("treatment_summary")
+  medicationSummary       String?   @map("medication_summary")
+  patientResponse         String?   @map("patient_response")
+  nutritionStatus         String?   @map("nutrition_status") @db.VarChar(100)
+  eliminationStatus       String?   @map("elimination_status") @db.VarChar(100)
+  woundCareStatus         String?   @map("wound_care_status")
+  patientEducation        String?   @map("patient_education")
+  dischargeInstructions   String?   @map("discharge_instructions")
+  followUpInstructions   String?   @map("follow_up_instructions")
+  warningSignsObserved    String?   @map("warning_signs_observed")
+  doctorCommunication     String?   @map("doctor_communication")
+  additionalNotes         String?   @map("additional_notes")
+  finalizedAt             DateTime? @map("finalized_at") @db.Timestamp(6)
+  finalizedBy             Int?      @map("finalized_by")
+  createdAt               DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt               DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  patient                 Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  nurse                   Nurse     @relation(fields: [nurseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([patientId])
+  @@index([nurseId])
+  @@index([status])
+  @@map("nursing_patient_summaries")
+}
+
+model HospitalProcedure {
+  id                Int         @id @default(autoincrement())
+  hospitalId        Int         @map("hospital_id")
+  departmentId      Int?        @map("department_id")
+  title             String      @db.VarChar(255)
+  procedureCode     String      @unique @map("procedure_code") @db.VarChar(50)
+  category          String      @db.VarChar(100)
+  description       String      @db.Text
+  content           String      @db.Text
+  purpose           String?     @db.Text
+  scope             String?     @db.Text
+  responsibilities  String?     @db.Text
+  requiredEquipment String?     @map("required_equipment") @db.Text
+  procedureSteps    Json?       @map("procedure_steps")
+  safetyPrecautions String?     @map("safety_precautions") @db.Text
+  documentationReq  String?     @map("documentation_req") @db.Text
+  escalationSteps   String?     @map("escalation_steps") @db.Text
+  references        String?     @db.Text
+  version           String      @default("1.0") @db.VarChar(50)
+  status            String      @default("PUBLISHED") @db.VarChar(50) // DRAFT, UNDER_REVIEW, APPROVED, PUBLISHED, ARCHIVED, CANCELLED
+  effectiveDate     DateTime    @map("effective_date") @db.Date
+  reviewDate        DateTime?   @map("review_date") @db.Date
+  isMandatory       Boolean     @default(false) @map("is_mandatory")
+  downloadUrl       String?     @map("download_url") @db.VarChar(255)
+  createdBy         Int?        @map("created_by")
+  updatedBy         Int?        @map("updated_by")
+  createdAt         DateTime?   @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt         DateTime?   @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  hospital          Hospital    @relation(fields: [hospitalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  department        Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([hospitalId])
+  @@index([departmentId])
+  @@index([status])
+  @@index([category])
+  @@index([effectiveDate])
+  @@map("hospital_procedures")
+}
+

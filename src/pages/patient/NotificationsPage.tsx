@@ -12,9 +12,11 @@ import {
   Check,
   X,
   Loader2,
+  Megaphone,
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import * as patientService from '../../services/patientService';
+import * as doctorService from '../../services/doctorService';
 import type { PatientNotification, PatientNotificationType } from '../../types';
 
 interface NotificationsPageProps {
@@ -34,7 +36,25 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
     try {
       setLoading(true);
       setErrorMsg('');
-      const data = await patientService.getNotifications();
+      const userRaw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+      const userObj = userRaw ? JSON.parse(userRaw) : null;
+      const role = (userObj?.role || '').toLowerCase();
+
+      let data: PatientNotification[] = [];
+      if (role === 'doctor') {
+        try {
+          const docData = await doctorService.getDoctorNotifications();
+          if (Array.isArray(docData) && docData.length > 0) {
+            data = docData;
+          } else {
+            data = await patientService.getNotifications();
+          }
+        } catch {
+          data = await patientService.getNotifications();
+        }
+      } else {
+        data = await patientService.getNotifications();
+      }
       setNotifications(data);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Unable to load notifications.');
@@ -49,7 +69,15 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
 
   const handleMarkRead = async (id: string) => {
     try {
-      await patientService.markNotificationRead(id);
+      const userRaw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+      const userObj = userRaw ? JSON.parse(userRaw) : null;
+      const role = (userObj?.role || '').toLowerCase();
+
+      if (role === 'doctor') {
+        await doctorService.markDoctorNotificationRead(id);
+      }
+      await patientService.markNotificationRead(id).catch(() => {});
+
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
       );
@@ -60,7 +88,15 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
 
   const handleMarkAllRead = async () => {
     try {
-      await patientService.markAllNotificationsRead();
+      const userRaw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+      const userObj = userRaw ? JSON.parse(userRaw) : null;
+      const role = (userObj?.role || '').toLowerCase();
+
+      if (role === 'doctor') {
+        await doctorService.markAllDoctorNotificationsRead();
+      }
+      await patientService.markAllNotificationsRead().catch(() => {});
+
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setSuccessMsg('All notifications marked as read.');
     } catch (err) {
@@ -68,8 +104,11 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
     }
   };
 
-  const getNotifIcon = (type: PatientNotificationType) => {
+  const getNotifIcon = (type: PatientNotificationType | string) => {
     switch (type) {
+      case 'announcement':
+      case 'general':
+        return <Megaphone className="w-4 h-4 text-amber-400" />;
       case 'medicine_reminder':
         return <Pill className="w-4 h-4 text-amber-400" />;
       case 'lab_report':
@@ -85,8 +124,11 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
     }
   };
 
-  const getNotifBadgeClass = (type: PatientNotificationType) => {
+  const getNotifBadgeClass = (type: PatientNotificationType | string) => {
     switch (type) {
+      case 'announcement':
+      case 'general':
+        return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
       case 'medicine_reminder':
         return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
       case 'lab_report':
@@ -132,9 +174,9 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
                   </span>
                 )}
               </div>
-              <h2 className="text-xl sm:text-2xl font-extrabold text-white mt-1">Health Notifications</h2>
+              <h2 className="text-xl sm:text-2xl font-extrabold text-white mt-1">Notification Center</h2>
               <p className="text-xs sm:text-sm text-gray-300">
-                Alerts regarding medication schedules, lab results, prescriptions, and healthcare events
+                Hospital announcements, administrative notices, clinical alerts, and healthcare updates
               </p>
             </div>
           </div>
@@ -193,6 +235,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
       <div className="glass-card p-4 border border-white/10 flex flex-wrap items-center gap-2">
         {[
           { id: 'All', label: 'All Alerts' },
+          { id: 'announcement', label: 'Hospital Announcements' },
           { id: 'medicine_reminder', label: 'Medicine Reminders' },
           { id: 'lab_report', label: 'Lab Reports' },
           { id: 'prescription', label: 'Prescriptions' },

@@ -351,6 +351,41 @@ export const NurseRegisterPage: React.FC = () => {
     setIsSubmitting(true);
     setApiError(null);
 
+    const trimmedRegNo = form.nursingRegNo.trim();
+    const trimmedLicense = form.licenseNumber.trim();
+
+    // Check local registered nurses to prevent duplicate registration number
+    const storedUsers = (() => {
+      try {
+        return JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
+      } catch {
+        return [];
+      }
+    })();
+
+    const duplicateReg = storedUsers.find((u: any) =>
+      u.role === 'nurse' && (
+        (u.registrationNumber && u.registrationNumber.toLowerCase() === trimmedRegNo.toLowerCase()) ||
+        (u.nursingRegNo && u.nursingRegNo.toLowerCase() === trimmedRegNo.toLowerCase())
+      )
+    );
+    if (duplicateReg) {
+      setApiError(`Nursing registration number '${trimmedRegNo}' is already registered with another nurse.`);
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (trimmedLicense) {
+      const duplicateLicense = storedUsers.find((u: any) =>
+        u.role === 'nurse' && u.licenseNumber && u.licenseNumber.toLowerCase() === trimmedLicense.toLowerCase()
+      );
+      if (duplicateLicense) {
+        setApiError(`Nursing license number '${trimmedLicense}' is already registered with another nurse.`);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const nameParts = form.fullName.trim().split(' ');
     const firstName = nameParts[0];
     const lastName  = nameParts.slice(1).join(' ') || nameParts[0];
@@ -362,11 +397,14 @@ export const NurseRegisterPage: React.FC = () => {
         body: JSON.stringify({
           firstName,
           lastName,
-          email:         form.email.trim(),
-          password:      form.password,
-          phone:         form.phone ? `${form.countryCode} ${form.phone}` : undefined,
-          licenseNumber: form.licenseNumber || undefined,
-          department:    form.department || undefined,
+          email:              form.email.trim(),
+          password:           form.password,
+          phone:              form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          registrationNumber: trimmedRegNo,
+          nursingRegNo:       trimmedRegNo,
+          licenseNumber:      trimmedLicense || undefined,
+          department:         form.department || undefined,
+          assignedWard:       form.assignedWard?.trim() || 'General Ward 2B',
         }),
       });
 
@@ -378,11 +416,12 @@ export const NurseRegisterPage: React.FC = () => {
         return;
       }
 
-      // Save registered nurse in local store
+      // Save registered nurse in local store with unique ID, registration number, and assigned ward
       try {
         const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
         const newRecord = {
           id: data.userId || 'USR-' + Math.floor(1000 + Math.random() * 9000),
+          nurseId: data.nurseId || 'NUR-' + Math.floor(1000 + Math.random() * 9000),
           firstName,
           lastName,
           username: form.username.trim(),
@@ -390,12 +429,21 @@ export const NurseRegisterPage: React.FC = () => {
           password: form.password,
           role: 'nurse',
           department: form.department,
-          licenseNumber: form.licenseNumber,
+          assignedWard: form.assignedWard?.trim() || 'General Ward 2B',
+          ward: form.assignedWard?.trim() || 'General Ward 2B',
+          registrationNumber: trimmedRegNo,
+          nursingRegNo: trimmedRegNo,
+          licenseNumber: trimmedLicense,
           phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
           status: 'Active',
           registeredAt: new Date().toISOString().split('T')[0],
         };
-        const filtered = stored.filter((u: any) => u.email !== form.email.trim() && u.username !== form.username.trim());
+        const filtered = stored.filter((u: any) =>
+          u.email !== form.email.trim() &&
+          u.username !== form.username.trim() &&
+          u.registrationNumber !== trimmedRegNo &&
+          u.nursingRegNo !== trimmedRegNo
+        );
         localStorage.setItem('meditwin_registered_users', JSON.stringify([newRecord, ...filtered]));
       } catch (e) {
         console.error('Error saving local nurse record:', e);
@@ -404,11 +452,13 @@ export const NurseRegisterPage: React.FC = () => {
       setIsSubmittedSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
-      // Offline fallback: save locally
+      // Offline fallback: save locally with guaranteed unique nurseId
       try {
         const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
+        const uniqueNurseId = 'NUR-' + Math.floor(1000 + Math.random() * 9000);
         const newRecord = {
           id: 'USR-' + Math.floor(1000 + Math.random() * 9000),
+          nurseId: uniqueNurseId,
           firstName,
           lastName,
           username: form.username.trim(),
@@ -416,12 +466,19 @@ export const NurseRegisterPage: React.FC = () => {
           password: form.password,
           role: 'nurse',
           department: form.department,
-          licenseNumber: form.licenseNumber,
+          registrationNumber: trimmedRegNo,
+          nursingRegNo: trimmedRegNo,
+          licenseNumber: trimmedLicense,
           phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
           status: 'Active',
           registeredAt: new Date().toISOString().split('T')[0],
         };
-        const filtered = stored.filter((u: any) => u.email !== form.email.trim() && u.username !== form.username.trim());
+        const filtered = stored.filter((u: any) =>
+          u.email !== form.email.trim() &&
+          u.username !== form.username.trim() &&
+          u.registrationNumber !== trimmedRegNo &&
+          u.nursingRegNo !== trimmedRegNo
+        );
         localStorage.setItem('meditwin_registered_users', JSON.stringify([newRecord, ...filtered]));
         setIsSubmittedSuccess(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -993,10 +1050,10 @@ export const NurseRegisterPage: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  {/* Nursing License / Registration Number */}
+                  {/* Nursing License Number */}
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
-                      Nursing License / Registration Number *
+                      Nursing License Number *
                     </label>
                     <div className="relative">
                       <input

@@ -1307,8 +1307,12 @@ router.get(
   requireRoles(['patient', 'doctor', 'nurse', 'admin']),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const patient = await getPatientFromRequest(req);
-      const userId = patient?.userId || req.user?.userId || 0;
+      // Prioritize authenticated user's ID so doctors, nurses, admins receive their targeted notifications
+      const userId = req.user?.userId || (await getPatientFromRequest(req))?.userId || 0;
+      let patient = null;
+      if (req.user?.role === 'patient') {
+        patient = await getPatientFromRequest(req);
+      }
 
       const notifs = await prisma.notification.findMany({
         where: { userId },
@@ -1324,13 +1328,25 @@ router.get(
         else if (rawType.includes('lab')) mappedType = 'lab_report';
         else if (rawType.includes('doc')) mappedType = 'document';
         else if (rawType.includes('appoint')) mappedType = 'appointment';
+        else mappedType = 'announcement';
+
+        const dt = n.createdAt ? new Date(n.createdAt) : new Date();
+        const formattedDate = !isNaN(dt.getTime())
+          ? dt.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : new Date().toISOString();
 
         return {
           id: `NOTIF-${n.id}`,
           patientId: patient?.id || 1,
           title: n.title,
           message: n.message,
-          dateTime: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
+          dateTime: formattedDate,
           timestamp: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
           isRead: n.isRead ?? false,
           type: mappedType as any,
@@ -1376,6 +1392,30 @@ router.put(
     } catch (err) {
       console.error('[PATIENT] Mark notification read error:', err);
       return res.status(500).json({ success: false, error: 'Failed to update notification.' });
+    }
+  }
+);
+
+/**
+ * PUT /api/patient/notifications/read-all
+ * Marks all notifications as read for the authenticated user.
+ */
+router.put(
+  '/notifications/read-all',
+  authenticateJWT,
+  requireRoles(['patient', 'doctor', 'nurse', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      await prisma.notification.updateMany({
+        where: { userId, isRead: false },
+        data: { isRead: true },
+      });
+
+      return res.json({ success: true, message: 'All notifications marked as read.' });
+    } catch (err) {
+      console.error('[PATIENT] Mark all notifications read error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to mark all notifications read.' });
     }
   }
 );
@@ -2098,6 +2138,70 @@ router.patch(
     } catch (err) {
       console.error('[PATIENT] Reschedule appointment error:', err);
       return res.status(500).json({ success: false, error: 'Failed to reschedule appointment.' });
+    }
+  }
+);
+
+/**
+ * GET /api/patient/discharge-summaries
+ * Allows the authenticated patient to view their own finalized discharge summaries.
+ */
+router.get(
+  '/discharge-summaries',
+  authenticateJWT,
+  requireRoles(['patient']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patient = await getPatientFromRequest(req);
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient profile not found.' });
+      }
+
+      const summaries = await prisma.dischargeSummary.findMany({
+        where: {
+          patientId: patient.id,
+          summaryStatus: 'FINALIZED',
+        },
+        include: {
+          doctor: {
+            select: {
+              firstName: true,
+              lastName: true,
+              licenseNumber: true,
+              specialization: { select: { name: true } },
+              department: { select: { name: true, hospital: { select: { name: true } } } },
+            },
+          },
+        },
+        orderBy: { dischargeDate: 'desc' },
+      });
+
+      return res.json({
+        success: true,
+        data: summaries.map((s) => ({
+          id: s.id,
+          admissionDate: s.admissionDate instanceof Date ? s.admissionDate.toISOString().split('T')[0] : s.admissionDate,
+          dischargeDate: s.dischargeDate instanceof Date ? s.dischargeDate.toISOString().split('T')[0] : s.dischargeDate,
+          dischargeDiagnosis: s.dischargeDiagnosis,
+          conditionAtDischarge: s.conditionAtDischarge,
+          clinicalCourse: s.clinicalCourse,
+          dischargeMedications: Array.isArray(s.dischargeMedications) ? s.dischargeMedications : [],
+          followUpInstructions: s.followUpInstructions,
+          followUpDate: s.followUpDate instanceof Date ? s.followUpDate.toISOString().split('T')[0] : (s.followUpDate || null),
+          followUpDepartment: s.followUpDepartment,
+          dietaryAdvice: s.dietaryAdvice,
+          activityAdvice: s.activityAdvice,
+          warningSigns: s.warningSigns,
+          additionalInstructions: s.additionalInstructions,
+          doctorName: s.doctor ? `Dr. ${s.doctor.firstName} ${s.doctor.lastName}` : 'Attending Physician',
+          doctorSpecialization: s.doctor?.specialization?.name,
+          hospitalName: s.doctor?.department?.hospital?.name || 'MediTwin Central Hospital',
+          finalizedAt: s.finalizedAt?.toISOString(),
+        })),
+      });
+    } catch (err) {
+      console.error('[PATIENT] Discharge summaries error:', err);
+      return res.status(500).json({ success: false, error: 'Internal error fetching discharge summaries.' });
     }
   }
 );

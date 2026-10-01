@@ -91,7 +91,6 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editExperience, setEditExperience] = useState<number>(0);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -163,7 +162,6 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
       setEditFirstName(profData.firstName || '');
       setEditLastName(profData.lastName || '');
       setEditPhone(profData.phone === 'Not provided' ? '' : profData.phone || '');
-      setEditExperience(profData.yearsOfExperience || 0);
 
       setPreferences(prefsData);
       setReminders(remData);
@@ -214,7 +212,6 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
     setEditFirstName(profile.firstName || '');
     setEditLastName(profile.lastName || '');
     setEditPhone(profile.phone === 'Not provided' ? '' : profile.phone || '');
-    setEditExperience(profile.yearsOfExperience || 0);
     setEditErrors({});
     setIsEditOpen(true);
   };
@@ -233,10 +230,6 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
       }
     }
 
-    if (editExperience < 0 || editExperience > 70) {
-      errors.experience = 'Experience must be between 0 and 70 years.';
-    }
-
     if (Object.keys(errors).length > 0) {
       setEditErrors(errors);
       return;
@@ -248,7 +241,6 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
         firstName: editFirstName.trim(),
         lastName: editLastName.trim(),
         phone: editPhone.trim() || null,
-        yearsOfExperience: Number(editExperience),
       });
 
       setProfile(updated);
@@ -474,7 +466,8 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
                 </button>
                 <button
                   type="button"
-                  className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 hover:text-white transition-colors relative"
+                  onClick={() => onNavigateTab ? onNavigateTab('notifications') : undefined}
+                  className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 hover:text-white transition-colors relative cursor-pointer"
                   title="Notifications"
                 >
                   <Bell className="w-4 h-4" />
@@ -1554,14 +1547,12 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-gray-300">Years of Experience</label>
                   <input
-                    type="number"
-                    value={editExperience}
-                    onChange={(e) => setEditExperience(Number(e.target.value))}
-                    min={0}
-                    max={70}
-                    className="w-full py-2 px-3 text-sm rounded-xl bg-white/5 border border-white/15 focus:outline-none focus:border-accent text-white"
+                    type="text"
+                    value={profile?.yearsOfExperience ?? 8}
+                    readOnly
+                    disabled
+                    className="w-full py-2 px-3 text-sm rounded-xl bg-white/5 border border-white/10 text-gray-400 cursor-not-allowed select-none"
                   />
-                  {editErrors.experience && <p className="text-[11px] text-rose-400">{editErrors.experience}</p>}
                 </div>
 
                 {/* Read-Only Sensitive Fields Notice */}
@@ -1573,6 +1564,7 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
                     <div>Specialization: <span className="text-white">{profile?.specialization}</span></div>
                     <div>Department: <span className="text-white">{profile?.department}</span></div>
                     <div>License No: <span className="text-white font-mono">{profile?.licenseNumber}</span></div>
+                    <div>Experience: <span className="text-white">{profile?.yearsOfExperience ?? 8} Years</span></div>
                     <div>Hospital: <span className="text-white">{profile?.hospital}</span></div>
                   </div>
                 </div>

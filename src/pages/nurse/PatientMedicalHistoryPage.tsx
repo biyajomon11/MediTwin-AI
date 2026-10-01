@@ -4,9 +4,10 @@ import {
   Search, X, Loader2, AlertCircle, ShieldAlert, ChevronDown,
   Heart, Pill, FlaskConical, Calendar, Target,
   BookOpen, Clock, CheckCircle2, AlertTriangle, Info,
-  ClipboardList, UserCheck, Activity,
+  ClipboardList, UserCheck, Activity, FileCheck,
 } from 'lucide-react';
 import * as nurseService from '../../services/nurseService';
+import { NurseNursingSummaryPage } from './NurseNursingSummaryPage';
 import type {
   NursePatient, NurseMedicalHistory, NurseTreatmentPlan,
 } from '../../types';
@@ -15,14 +16,15 @@ import { getTallManName } from '../../utils/medicationSafety';
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab type
 // ─────────────────────────────────────────────────────────────────────────────
-export type HistoryTab = 'overview' | 'medications' | 'labs' | 'appointments' | 'treatment-plan';
+export type HistoryTab = 'overview' | 'nursing-summary' | 'medications' | 'labs' | 'appointments' | 'treatment-plan';
 
 const TABS: { id: HistoryTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'overview',       label: 'Medical Overview', icon: Heart        },
-  { id: 'medications',    label: 'Medications',      icon: Pill         },
-  { id: 'labs',           label: 'Lab Reports',      icon: FlaskConical },
-  { id: 'appointments',   label: 'Appointments',     icon: Calendar     },
-  { id: 'treatment-plan', label: 'Treatment Plan',   icon: Target       },
+  { id: 'overview',        label: 'Medical Overview', icon: Heart        },
+  { id: 'nursing-summary', label: 'Nursing Summary',  icon: FileCheck    },
+  { id: 'medications',     label: 'Medications',      icon: Pill         },
+  { id: 'labs',            label: 'Lab Reports',      icon: FlaskConical },
+  { id: 'appointments',    label: 'Appointments',     icon: Calendar     },
+  { id: 'treatment-plan',  label: 'Treatment Plan',   icon: Target       },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -490,7 +492,9 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
           </div>
           <div>
             <h2 className="text-xl font-extrabold text-white">Patient Medical History &amp; Treatment Plans</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Clinical Reference — Longitudinal medical history, prior hospitalizations, surgeries, and treatment plans</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Clinical Reference — Longitudinal medical history, hospitalizations, and treatment plans · Assigned Ward: <span className="text-violet-300 font-semibold">{nurseService.getCurrentNurseWard()}</span>
+            </p>
           </div>
         </div>
       </motion.div>
@@ -512,8 +516,11 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
 
       {/* ── Patient Selector ── */}
       <div className="glass-card p-5 border border-white/10 space-y-3 relative z-30">
-        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-          <Search className="w-4 h-4 text-violet-400" /> Select Patient
+        <h3 className="text-sm font-bold text-white flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2"><Search className="w-4 h-4 text-violet-400" /> Select Patient</span>
+          <span className="text-[11px] font-medium text-gray-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+            Ward Filter: <strong className="text-violet-300">{nurseService.getCurrentNurseWard()}</strong>
+          </span>
         </h3>
         <div className="relative">
           <button
@@ -522,8 +529,8 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
             className="w-full flex items-center justify-between px-4 py-3 text-sm bg-white/5 border border-white/15 rounded-xl hover:border-violet-400/50 transition-all text-left cursor-pointer"
           >
             {selectedPatient
-              ? <span className="text-white font-semibold">{selectedPatient.firstName} {selectedPatient.lastName} — <span className="text-violet-400 text-xs font-mono">{selectedPatient.patientId}</span></span>
-              : <span className="text-gray-400 font-medium">Choose an assigned patient…</span>}
+              ? <span className="text-white font-semibold">{selectedPatient.firstName} {selectedPatient.lastName} — <span className="text-violet-400 text-xs font-mono">{selectedPatient.patientId}</span> <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold">{selectedPatient.ward}</span></span>
+              : <span className="text-gray-400 font-medium">Choose a patient in {nurseService.getCurrentNurseWard()}…</span>}
             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${patientDropdown ? 'rotate-180' : ''}`} />
           </button>
 
@@ -545,7 +552,7 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
                       type="text"
                       value={patientSearch}
                       onChange={(e) => setPatientSearch(e.target.value)}
-                      placeholder="Search patient by name, ID, or ward…"
+                      placeholder={`Search patients in ${nurseService.getCurrentNurseWard()}…`}
                       autoFocus
                       className="w-full py-2 px-3 text-sm text-white bg-black/40 border border-white/15 rounded-lg focus:outline-none focus:border-violet-400/60 placeholder:text-gray-500"
                     />
@@ -641,8 +648,9 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
           {/* Tab content */}
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-              {activeTab === 'overview'       && renderOverview()}
-              {activeTab === 'medications'    && renderMedications()}
+              {activeTab === 'overview'        && renderOverview()}
+              {activeTab === 'nursing-summary' && <NurseNursingSummaryPage />}
+              {activeTab === 'medications'     && renderMedications()}
               {activeTab === 'labs'           && renderLabs()}
               {activeTab === 'appointments'   && renderAppointments()}
               {activeTab === 'treatment-plan' && renderTreatmentPlan()}

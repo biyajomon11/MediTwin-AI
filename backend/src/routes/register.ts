@@ -229,13 +229,17 @@ router.post('/patient', async (req: Request, res: Response) => {
 // POST /api/register/nurse
 // ─────────────────────────────────────────────────────────────────────────────
 const nurseSchema = z.object({
-  firstName:     z.string().min(1),
-  lastName:      z.string().min(1),
-  email:         z.string().email(),
-  password:      z.string().min(8),
-  phone:         z.string().optional(),
-  licenseNumber: z.string().optional(),
-  department:    z.string().optional(),
+  firstName:          z.string().min(1, 'First name is required.'),
+  lastName:           z.string().min(1, 'Last name is required.'),
+  email:              z.string().email('Invalid email address.'),
+  password:           z.string().min(8, 'Password must be at least 8 characters.'),
+  phone:              z.string().optional(),
+  registrationNumber: z.string().optional(),
+  nursingRegNo:       z.string().optional(),
+  nurseId:            z.string().optional(),
+  licenseNumber:      z.string().optional(),
+  department:         z.string().optional(),
+  assignedWard:       z.string().optional(),
 });
 
 router.post('/nurse', async (req: Request, res: Response) => {
@@ -246,6 +250,15 @@ router.post('/nurse', async (req: Request, res: Response) => {
     }
 
     const d = parsed.data;
+    const regNo = (d.registrationNumber || d.nursingRegNo || '').trim();
+
+    if (!regNo) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nursing registration number is required.',
+        errors: { registrationNumber: ['Nursing registration number is required.'] },
+      });
+    }
 
     const [nurseRole, departmentRow] = await Promise.all([
       prisma.role.findFirst({ where: { name: 'nurse' } }),
@@ -256,22 +269,77 @@ router.post('/nurse', async (req: Request, res: Response) => {
       return res.status(500).json({ success: false, error: 'Nurse role not found in database.' });
     }
 
+    // 1. Check unique email
     const existing = await prisma.user.findUnique({ where: { email: d.email } });
     if (existing) {
       return res.status(409).json({ success: false, error: 'An account with this email already exists.' });
     }
 
-    // Check unique license number
-    if (d.licenseNumber) {
-      const existingLicense = await prisma.nurse.findUnique({ where: { licenseNumber: d.licenseNumber } });
+    // 2. Check unique registration number
+    const existingReg = await prisma.nurse.findFirst({
+      where: {
+        OR: [
+          { registrationNumber: { equals: regNo, mode: 'insensitive' } },
+          { licenseNumber: { equals: regNo, mode: 'insensitive' } },
+        ],
+      },
+    });
+    if (existingReg) {
+      return res.status(409).json({
+        success: false,
+        error: `A nurse with registration number '${regNo}' already exists.`,
+      });
+    }
+
+    // 3. Check unique license number (if provided)
+    if (d.licenseNumber && d.licenseNumber.trim()) {
+      const cleanLicense = d.licenseNumber.trim();
+      const existingLicense = await prisma.nurse.findFirst({
+        where: {
+          OR: [
+            { licenseNumber: { equals: cleanLicense, mode: 'insensitive' } },
+            { registrationNumber: { equals: cleanLicense, mode: 'insensitive' } },
+          ],
+        },
+      });
       if (existingLicense) {
-        return res.status(409).json({ success: false, error: 'A nurse with this license number already exists.' });
+        return res.status(409).json({
+          success: false,
+          error: `A nurse with license number '${cleanLicense}' already exists.`,
+        });
+      }
+    }
+
+    // 4. Generate or validate unique nurse ID
+    let assignedNurseId = d.nurseId?.trim();
+    if (assignedNurseId) {
+      const existingId = await prisma.nurse.findFirst({
+        where: { nurseId: { equals: assignedNurseId, mode: 'insensitive' } },
+      });
+      if (existingId) {
+        return res.status(409).json({
+          success: false,
+          error: `Nurse ID '${assignedNurseId}' already exists.`,
+        });
+      }
+    } else {
+      // Auto-generate guaranteed unique institutional Nurse ID (e.g. NUR-1003)
+      let candidate = '';
+      let isUnique = false;
+      while (!isUnique) {
+        const rand = Math.floor(1000 + Math.random() * 9000);
+        candidate = `NUR-${rand}`;
+        const found = await prisma.nurse.findFirst({ where: { nurseId: candidate } });
+        if (!found) {
+          isUnique = true;
+          assignedNurseId = candidate;
+        }
       }
     }
 
     const password_hash = await hashPassword(d.password);
 
-    const user = await prisma.$transaction(async (tx) => {
+    const { user, nurse } = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
           email: d.email,
@@ -280,24 +348,30 @@ router.post('/nurse', async (req: Request, res: Response) => {
         },
       });
 
-      await tx.nurse.create({
+      const newNurse = await tx.nurse.create({
         data: {
-          userId:        newUser.id,
-          firstName:     d.firstName,
-          lastName:      d.lastName,
-          phone:         d.phone ?? null,
-          licenseNumber: d.licenseNumber ?? null,
-          departmentId:  departmentRow?.id ?? null,
+          nurseId:            assignedNurseId,
+          userId:             newUser.id,
+          firstName:          d.firstName,
+          lastName:           d.lastName,
+          phone:              d.phone ?? null,
+          registrationNumber: regNo,
+          licenseNumber:      d.licenseNumber?.trim() ?? null,
+          departmentId:       departmentRow?.id ?? null,
+          assignedWard:       d.assignedWard?.trim() ?? null,
         },
       });
 
-      return newUser;
+      return { user: newUser, nurse: newNurse };
     });
 
     return res.status(201).json({
       success: true,
       message: 'Nurse account created successfully. Pending admin verification.',
       userId: user.id,
+      nurseId: nurse.nurseId,
+      registrationNumber: nurse.registrationNumber,
+      assignedWard: nurse.assignedWard,
     });
   } catch (err) {
     console.error('[REGISTER] Nurse error:', err);

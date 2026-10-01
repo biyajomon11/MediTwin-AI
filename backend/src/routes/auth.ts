@@ -33,12 +33,18 @@ router.post('/login', async (req: Request, res: Response) => {
     const identifier = email.trim();
     const nameParts = identifier.split(/\s+/);
 
-    // Find user in DB by email, email prefix (username), first name, last name, or full name
+    // Find user in DB by email, email prefix (username), nurse registration number, nurse ID, license number, or name
     const user = await prisma.user.findFirst({
       where: {
         OR: [
           { email: { equals: identifier, mode: 'insensitive' } },
           { email: { startsWith: `${identifier}@`, mode: 'insensitive' } },
+          // Unique nurse credentials
+          { nurse:   { registrationNumber: { equals: identifier, mode: 'insensitive' } } },
+          { nurse:   { nurseId: { equals: identifier, mode: 'insensitive' } } },
+          { nurse:   { licenseNumber: { equals: identifier, mode: 'insensitive' } } },
+          // Unique doctor credentials
+          { doctor:  { licenseNumber: { equals: identifier, mode: 'insensitive' } } },
           // First name matches
           { doctor:  { firstName: { equals: identifier, mode: 'insensitive' } } },
           { nurse:   { firstName: { equals: identifier, mode: 'insensitive' } } },
@@ -86,13 +92,16 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       {
-        userId:  user.id,
-        email:   user.email,
-        role:    user.role.name,
-        nurseId: user.nurse?.id,
-        patientId: user.patient?.id,
-        doctorId: user.doctor?.id,
-        adminId: user.admin?.id,
+        userId:             user.id,
+        email:              user.email,
+        role:               user.role.name,
+        nurseId:            user.nurse?.id,
+        nurseCode:          user.nurse?.nurseId,
+        registrationNumber: user.nurse?.registrationNumber,
+        assignedWard:       user.nurse?.assignedWard ?? null,
+        patientId:          user.patient?.id,
+        doctorId:           user.doctor?.id,
+        adminId:            user.admin?.id,
       },
       secret,
       { expiresIn: '12h' }
@@ -102,15 +111,19 @@ router.post('/login', async (req: Request, res: Response) => {
       success: true,
       token,
       user: {
-        userId:    user.id,
-        email:     user.email,
-        role:      user.role.name,
-        firstName: user.patient?.firstName || user.doctor?.firstName || user.nurse?.firstName || user.admin?.firstName || '',
-        lastName:  user.patient?.lastName || user.doctor?.lastName || user.nurse?.lastName || user.admin?.lastName || '',
-        nurseId:   user.nurse?.id ?? null,
-        patientId: user.patient?.id ?? null,
-        doctorId:  user.doctor?.id ?? null,
-        adminId:   user.admin?.id ?? null,
+        userId:             user.id,
+        email:              user.email,
+        role:               user.role.name,
+        firstName:          user.patient?.firstName || user.doctor?.firstName || user.nurse?.firstName || user.admin?.firstName || '',
+        lastName:           user.patient?.lastName || user.doctor?.lastName || user.nurse?.lastName || user.admin?.lastName || '',
+        nurseId:            user.nurse?.id ?? null,
+        nurseCode:          user.nurse?.nurseId ?? null,
+        registrationNumber: user.nurse?.registrationNumber ?? null,
+        licenseNumber:      user.nurse?.licenseNumber ?? null,
+        assignedWard:       user.nurse?.assignedWard ?? null,
+        patientId:          user.patient?.id ?? null,
+        doctorId:           user.doctor?.id ?? null,
+        adminId:            user.admin?.id ?? null,
       },
     });
   } catch (err) {
@@ -271,10 +284,12 @@ router.post('/google', async (req: Request, res: Response) => {
         role:      user.role.name,
         firstName: user.patient?.firstName || user.doctor?.firstName || user.nurse?.firstName || user.admin?.firstName || (cleanEmail.split('@')[0]),
         lastName:  user.patient?.lastName || user.doctor?.lastName || user.nurse?.lastName || user.admin?.lastName || '',
-        nurseId:   user.nurse?.id ?? null,
-        patientId: user.patient?.id ?? null,
-        doctorId:  user.doctor?.id ?? null,
-        adminId:   user.admin?.id ?? null,
+        nurseId:      user.nurse?.id ?? null,
+        nurseCode:    user.nurse?.nurseId ?? null,
+        assignedWard: user.nurse?.assignedWard ?? null,
+        patientId:    user.patient?.id ?? null,
+        doctorId:     user.doctor?.id ?? null,
+        adminId:      user.admin?.id ?? null,
       },
     });
   } catch (err) {

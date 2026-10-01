@@ -200,7 +200,14 @@ export async function createNotification(
         body: JSON.stringify({
           title: data.title,
           message: data.message,
-          type: data.notificationType,
+          notificationType: data.notificationType,
+          targetAudience: data.targetAudience,
+          priority: data.priority,
+          status: data.status,
+          department: data.department,
+          publishDate: data.publishDate,
+          expiryDate: data.expiryDate,
+          createdBy: data.createdBy,
         }),
       });
       if (res.ok) {
@@ -210,10 +217,10 @@ export async function createNotification(
           ...data,
           id: created.id,
           createdDate: created.createdDate || new Date().toISOString().split('T')[0],
-          publishDate: created.createdDate || new Date().toISOString().split('T')[0],
-          acknowledgedCount: 0,
+          publishDate: created.publishDate || created.createdDate || new Date().toISOString().split('T')[0],
+          acknowledgedCount: created.acknowledgedCount || 0,
         };
-        _notifications = [formatted, ..._notifications];
+        _notifications = [formatted, ..._notifications.filter((n) => n.id !== formatted.id)];
         return formatted;
       }
       const errData = await res.json().catch(() => ({}));
@@ -260,6 +267,31 @@ export async function updateNotification(
   id: string,
   data: Partial<HospitalNotification>
 ): Promise<HospitalNotification> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/admin/notifications/${id}`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const updated = json.data;
+        _notifications = _notifications.map((n) => (n.id === id ? { ...n, ...updated } : n));
+        return updated;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) updating notification`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[ADMIN] Network error updating notification, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(250);
 
   const idx = _notifications.findIndex((n) => n.id === id);
@@ -275,11 +307,57 @@ export async function updateNotification(
 }
 
 export async function deleteNotification(id: string): Promise<void> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/admin/notifications/${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        _notifications = _notifications.filter((n) => n.id !== id);
+        return;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) deleting notification`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[ADMIN] Network error deleting notification, removing locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(200);
   _notifications = _notifications.filter((n) => n.id !== id);
 }
 
 export async function publishNotification(id: string): Promise<HospitalNotification> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/admin/notifications/${id}/publish`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const updated = json.data;
+        _notifications = _notifications.map((n) => (n.id === id ? { ...n, ...updated } : n));
+        return updated;
+      }
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Server error (${res.status}) publishing notification`);
+    } catch (err: any) {
+      if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
+        console.warn('[ADMIN] Network error publishing notification, saving locally:', err.message);
+      } else {
+        throw err;
+      }
+    }
+  }
+
   await delay(200);
   const idx = _notifications.findIndex((n) => n.id === id);
   if (idx === -1) throw new Error('Notification record not found.');
@@ -545,4 +623,268 @@ export async function getDepartments(): Promise<any[]> {
     { id: 3, name: 'Pediatrics', doctorCount: 5, nurseCount: 8 },
     { id: 4, name: 'General Internal Medicine', doctorCount: 6, nurseCount: 10 },
   ];
+}
+
+// ─────────────────────────────────────────────────────────────
+// 5. Clinical Guidelines Authoring & Management
+// ─────────────────────────────────────────────────────────────
+
+export interface AdminClinicalGuideline {
+  id: number;
+  guidelineCode: string;
+  title: string;
+  category: string;
+  department: string;
+  version: string;
+  summary: string;
+  content: string;
+  author: string;
+  tags: string[];
+  status: 'DRAFT' | 'PUBLISHED' | 'UNDER_REVIEW' | 'ARCHIVED';
+  effectiveDate: string;
+  lastUpdated: string;
+  createdAt?: string;
+}
+
+export interface CreateAdminGuidelineInput {
+  guidelineCode?: string;
+  title: string;
+  category: string;
+  department?: string;
+  version?: string;
+  summary: string;
+  content: string;
+  author?: string;
+  tags?: string[] | string;
+  status?: 'DRAFT' | 'PUBLISHED' | 'UNDER_REVIEW' | 'ARCHIVED';
+}
+
+const FALLBACK_ADMIN_GUIDELINES: AdminClinicalGuideline[] = [
+  {
+    id: 1,
+    guidelineCode: 'CG-CARD-001',
+    title: 'Management of Acute Coronary Syndrome (ACS)',
+    category: 'Emergency Care',
+    department: 'Cardiology',
+    version: '3.2',
+    summary: 'Protocol for immediate triage, STEMI alert activation, anticoagulant loading, and catheterization lab escalation.',
+    content: '1. Immediate Assessment (0-10 mins):\n- 12-lead ECG within 10 minutes.\n- Aspirin 325 mg non-enteric chewed.\n- P2Y12 inhibitor loading.\n2. Reperfusion Strategy:\n- Primary PCI target FMC-to-device < 90 mins.',
+    author: 'Hospital Governance Committee',
+    tags: ['Cardiology', 'STEMI', 'Emergency', 'ACS'],
+    status: 'PUBLISHED',
+    effectiveDate: '2026-01-15',
+    lastUpdated: '2026-02-01',
+  },
+  {
+    id: 2,
+    guidelineCode: 'CG-EMERG-002',
+    title: 'Adult Sepsis & Septic Shock Resuscitation Protocol',
+    category: 'Emergency Care',
+    department: 'Emergency Medicine',
+    version: '4.0',
+    summary: 'Hour-1 Sepsis Bundle including serum lactate, blood cultures prior to broad-spectrum antibiotics, and crystalloid boluses.',
+    content: '1. Measure lactate level.\n2. Obtain blood cultures before administering antibiotics.\n3. Administer broad-spectrum antibiotics.\n4. Begin rapid administration of 30ml/kg crystalloid for hypotension or lactate >= 4mmol/L.',
+    author: 'Critical Care Directorate',
+    tags: ['Sepsis', 'ICU', 'Emergency', 'Critical Care'],
+    status: 'PUBLISHED',
+    effectiveDate: '2026-01-20',
+    lastUpdated: '2026-02-10',
+  },
+  {
+    id: 3,
+    guidelineCode: 'CG-GEN-003',
+    title: 'Inpatient Glycemic Control & Insulin Titration',
+    category: 'General Medicine',
+    department: 'Internal Medicine',
+    version: '2.1',
+    summary: 'Standardized basal-bolus-correction insulin orders for non-critically ill hospitalized patients.',
+    content: 'Target blood glucose: 140-180 mg/dL for non-critically ill patients.\nDiscontinue oral hypoglycemics on admission.\nInitiate basal-bolus protocol with basal (glargine/degludec) + nutritional (aspart/lispro).',
+    author: 'Endocrinology Quality Team',
+    tags: ['Diabetes', 'Endocrinology', 'Insulin', 'Inpatient'],
+    status: 'PUBLISHED',
+    effectiveDate: '2026-02-01',
+    lastUpdated: '2026-02-15',
+  },
+  {
+    id: 4,
+    guidelineCode: 'CG-INF-004',
+    title: 'Hospital-Acquired Infection Prevention & Hand Hygiene',
+    category: 'Infection Control',
+    department: 'Infection Control',
+    version: '5.0',
+    summary: 'Strict guidelines for WHO 5 moments of hand hygiene, contact precautions, catheter-associated UTI prevention, and surgical site infection bundles.',
+    content: '1. WHO 5 Moments for Hand Hygiene\n- Before touching a patient.\n- Before clean/aseptic procedures.\n- After body fluid exposure risk.\n- After touching a patient.\n- After touching patient surroundings.\n2. PPE & Contact Precautions\n- Don gloves and gown upon entering room of patients with MRSA, VRE, or C. difficile.',
+    author: 'Hospital Administration',
+    tags: ['Infection Control', 'Hygiene', 'Safety', 'WHO'],
+    status: 'PUBLISHED',
+    effectiveDate: '2026-01-01',
+    lastUpdated: '2026-02-01',
+  },
+  {
+    id: 5,
+    guidelineCode: 'CG-PED-005',
+    title: 'Pediatric Status Epilepticus Management Algorithm',
+    category: 'Emergency Care',
+    department: 'Pediatrics',
+    version: '1.4',
+    summary: 'Stepwise medical management algorithm for continuous convulsive seizures in infants and children.',
+    content: '0-5 min: Airway, Breathing, Circulation, high-flow O2, check blood glucose.\n5-10 min: Midazolam 0.2 mg/kg buccal/IM or Lorazepam 0.1 mg/kg IV.\n10-15 min: Second dose of benzodiazepine if ongoing.\n15-20 min: Levetiracetam 60 mg/kg IV or Fosphenytoin 20 mg PE/kg IV.',
+    author: 'Pediatric Neurology Board',
+    tags: ['Pediatrics', 'Neurology', 'Seizure', 'Emergency'],
+    status: 'PUBLISHED',
+    effectiveDate: '2026-02-05',
+    lastUpdated: '2026-02-20',
+  },
+];
+
+let _localAdminGuidelines = [...FALLBACK_ADMIN_GUIDELINES];
+
+export async function getAdminGuidelines(filters?: {
+  search?: string;
+  category?: string;
+  status?: string;
+  department?: string;
+}): Promise<AdminClinicalGuideline[]> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const params = new URLSearchParams();
+      if (filters?.search) params.append('search', filters.search);
+      if (filters?.category) params.append('category', filters.category);
+      if (filters?.status) params.append('status', filters.status);
+      if (filters?.department) params.append('department', filters.department);
+
+      const res = await fetch(`/api/admin/guidelines?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          return json.data;
+        }
+      }
+    } catch (err) {
+      console.warn('[ADMIN_SERVICE] Network error fetching guidelines, using fallback:', err);
+    }
+  }
+
+  await delay(150);
+  let list = [..._localAdminGuidelines];
+
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    list = list.filter(
+      (g) =>
+        g.title.toLowerCase().includes(q) ||
+        g.guidelineCode.toLowerCase().includes(q) ||
+        g.summary.toLowerCase().includes(q) ||
+        g.department.toLowerCase().includes(q)
+    );
+  }
+  if (filters?.category && filters.category !== 'All') {
+    list = list.filter((g) => g.category === filters.category);
+  }
+  if (filters?.status && filters.status !== 'All') {
+    list = list.filter((g) => g.status === filters.status);
+  }
+  if (filters?.department && filters.department !== 'All' && filters.department !== 'All Departments') {
+    list = list.filter((g) => g.department === filters.department);
+  }
+
+  return list;
+}
+
+export async function createAdminGuideline(
+  input: CreateAdminGuidelineInput
+): Promise<AdminClinicalGuideline> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    const res = await fetch('/api/admin/guidelines', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(input),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || `Failed to create clinical guideline (${res.status})`);
+    }
+    return json.data;
+  }
+
+  await delay(200);
+  const newId = _localAdminGuidelines.length + 1;
+  const newCode = input.guidelineCode || `CG-${(input.category || 'GEN').slice(0, 3).toUpperCase()}-${String(newId).padStart(3, '0')}`;
+  const created: AdminClinicalGuideline = {
+    id: newId,
+    guidelineCode: newCode,
+    title: input.title,
+    category: input.category,
+    department: input.department || 'General Medicine',
+    version: input.version || '1.0',
+    summary: input.summary,
+    content: input.content,
+    author: input.author || 'Hospital Administration',
+    tags: Array.isArray(input.tags) ? input.tags : (input.tags ? input.tags.split(',').map((t) => t.trim()) : []),
+    status: input.status || 'DRAFT',
+    effectiveDate: new Date().toISOString().split('T')[0],
+    lastUpdated: new Date().toISOString().split('T')[0],
+  };
+
+  _localAdminGuidelines = [created, ..._localAdminGuidelines];
+  return created;
+}
+
+export async function updateAdminGuideline(
+  id: number | string,
+  input: Partial<CreateAdminGuidelineInput>
+): Promise<AdminClinicalGuideline> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    const res = await fetch(`/api/admin/guidelines/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(input),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || `Failed to update clinical guideline (${res.status})`);
+    }
+    return json.data;
+  }
+
+  await delay(200);
+  const idx = _localAdminGuidelines.findIndex((g) => g.id === Number(id) || g.guidelineCode === String(id));
+  if (idx === -1) throw new Error('Clinical guideline not found.');
+
+  const updated: AdminClinicalGuideline = {
+    ..._localAdminGuidelines[idx],
+    ...input,
+    version: input.version || _localAdminGuidelines[idx].version,
+    tags: input.tags !== undefined
+      ? (Array.isArray(input.tags) ? input.tags : input.tags.split(',').map((t) => t.trim()))
+      : _localAdminGuidelines[idx].tags,
+    status: (input.status || _localAdminGuidelines[idx].status) as any,
+    lastUpdated: new Date().toISOString().split('T')[0],
+  };
+
+  _localAdminGuidelines[idx] = updated;
+  return updated;
+}
+
+export async function deleteAdminGuideline(id: number | string): Promise<void> {
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    const res = await fetch(`/api/admin/guidelines/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || `Failed to delete clinical guideline (${res.status})`);
+    }
+    return;
+  }
+
+  await delay(150);
+  _localAdminGuidelines = _localAdminGuidelines.filter((g) => g.id !== Number(id) && g.guidelineCode !== String(id));
 }

@@ -473,7 +473,9 @@ export const NurseObservationsPage: React.FC = () => {
             </div>
             <div>
               <h2 className="text-xl font-extrabold text-white">Patient Observations & Vital Signs</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Record and manage nursing observations securely</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Record and manage nursing observations securely · Assigned Ward: <span className="text-accent font-semibold">{nurseService.getCurrentNurseWard()}</span>
+              </p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -517,8 +519,11 @@ export const NurseObservationsPage: React.FC = () => {
 
           {/* ── Patient Search Card ── */}
           <div className="glass-card p-5 border border-white/10 space-y-4">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Search className="w-4 h-4 text-accent" /> Select Patient
+            <h3 className="text-sm font-bold text-white flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2"><Search className="w-4 h-4 text-accent" /> Select Patient</span>
+              <span className="text-[11px] font-medium text-gray-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+                Ward Filter: <strong className="text-accent">{nurseService.getCurrentNurseWard()}</strong>
+              </span>
             </h3>
 
             <div className="relative">
@@ -526,7 +531,7 @@ export const NurseObservationsPage: React.FC = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by patient name or email…"
+                placeholder={`Search patients in ${nurseService.getCurrentNurseWard()}…`}
                 className="w-full py-2.5 pl-10 pr-4 text-sm text-white bg-white/5 border border-white/15 rounded-xl focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30 placeholder:text-gray-600"
               />
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -538,14 +543,19 @@ export const NurseObservationsPage: React.FC = () => {
               <div className="border border-white/15 rounded-xl overflow-hidden bg-navy-900/95 shadow-xl">
                 {searchResults.map((p) => (
                   <button key={p.id} onClick={() => selectPatient(p)}
-                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-white/10 transition-colors border-b border-white/5 last:border-0 flex items-center gap-3">
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                      {p.firstName[0]}{p.lastName[0]}
+                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-white/10 transition-colors border-b border-white/5 last:border-0 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        {p.firstName[0]}{p.lastName[0]}
+                      </div>
+                      <div>
+                        <p className="text-white font-medium">{p.firstName} {p.lastName}</p>
+                        <p className="text-gray-400 text-xs">{(p as any).ward || 'Ward Allocated'} · {p.gender?.name ?? '—'}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-white font-medium">{p.firstName} {p.lastName}</p>
-                      <p className="text-gray-400 text-xs">{p.user?.email} · {p.gender?.name ?? '—'}</p>
-                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-accent/15 border border-accent/30 text-accent font-semibold">
+                      {(p as any).ward ? (p as any).ward : nurseService.getCurrentNurseWard()}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -564,7 +574,12 @@ export const NurseObservationsPage: React.FC = () => {
                     {selectedPatient.firstName[0]}{selectedPatient.lastName[0]}
                   </div>
                   <div>
-                    <p className="font-bold text-white">{selectedPatient.firstName} {selectedPatient.lastName}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-white">{selectedPatient.firstName} {selectedPatient.lastName}</p>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/20 border border-accent/40 text-accent font-bold">
+                        {(selectedPatient as any).ward || nurseService.getCurrentNurseWard()}
+                      </span>
+                    </div>
                     <p className="text-xs text-accent font-medium">Patient ID: #{selectedPatient.id}</p>
                   </div>
                 </div>

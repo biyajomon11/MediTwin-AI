@@ -103,6 +103,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     // Try backend registration
     let backendUserId: number | string | null = null;
+    const uniqueNurseReg = role === 'nurse' ? `NRN-${Math.floor(10000 + Math.random() * 90000)}` : undefined;
+    const uniqueNurseId = role === 'nurse' ? `NUR-${Math.floor(1000 + Math.random() * 9000)}` : undefined;
+
     try {
       let endpoint = `/api/register/${role}`;
       let bodyData: any = {
@@ -129,6 +132,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         bodyData = {
           ...bodyData,
           department,
+          registrationNumber: uniqueNurseReg,
+          nursingRegNo: uniqueNurseReg,
         };
       } else if (role === 'admin') {
         bodyData = {
@@ -154,6 +159,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     // Persist registered user to local database storage
     const newUserRecord = {
       id: backendUserId || 'USR-' + Math.floor(1000 + Math.random() * 9000),
+      nurseId: uniqueNurseId,
+      registrationNumber: uniqueNurseReg,
+      nursingRegNo: uniqueNurseReg,
       firstName,
       lastName,
       username,
@@ -170,7 +178,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       const existing = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
-      const filtered = existing.filter((u: any) => u.email !== email.trim() && u.username !== username);
+      const filtered = existing.filter((u: any) =>
+        u.email !== email.trim() &&
+        u.username !== username &&
+        (!uniqueNurseReg || u.registrationNumber !== uniqueNurseReg)
+      );
       localStorage.setItem('meditwin_registered_users', JSON.stringify([newUserRecord, ...filtered]));
     } catch (err) {
       console.error('Error saving user to database storage:', err);

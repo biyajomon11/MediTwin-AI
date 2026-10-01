@@ -20,6 +20,8 @@ import type {
   DoctorReminderSummary,
   DoctorActivityItem,
   DoctorClinicalOverviewData,
+  DischargeSummary,
+  CreateDischargeSummaryInput,
 } from '../types';
 import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID } from '../data/doctorMockData';
 import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from './patientService';
@@ -1021,6 +1023,234 @@ export async function updateDoctorAppointmentStatus(
   }
   throw new Error('Doctor session not authenticated.');
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Discharge Summary Management Services
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Fetches all discharge summaries for an authorized patient.
+ * Calls GET /api/doctor/patients/:patientId/discharge-summaries
+ */
+export async function getPatientDischargeSummaries(patientId: number): Promise<DischargeSummary[]> {
+  const res = await fetch(`/api/doctor/patients/${patientId}/discharge-summaries`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to fetch discharge summaries (${res.status})`);
+  }
+
+  const json = await res.json();
+  return json.data || [];
+}
+
+/**
+ * Fetches a single discharge summary by ID.
+ * Calls GET /api/doctor/discharge-summaries/:id
+ */
+export async function getDischargeSummaryById(id: number): Promise<DischargeSummary> {
+  const res = await fetch(`/api/doctor/discharge-summaries/${id}`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to fetch discharge summary (${res.status})`);
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+/**
+ * Creates a new discharge summary (DRAFT or FINALIZED).
+ * Calls POST /api/doctor/patients/:patientId/discharge-summaries
+ */
+export async function createDischargeSummary(
+  patientId: number,
+  input: CreateDischargeSummaryInput
+): Promise<DischargeSummary> {
+  const res = await fetch(`/api/doctor/patients/${patientId}/discharge-summaries`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(input),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const error: any = new Error(err.error || `Failed to create discharge summary (${res.status})`);
+    error.status = res.status;
+    error.existingDraftId = err.existingDraftId;
+    throw error;
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+/**
+ * Updates an existing DRAFT discharge summary.
+ * Calls PUT /api/doctor/discharge-summaries/:id
+ */
+export async function updateDischargeSummary(
+  id: number,
+  input: Partial<CreateDischargeSummaryInput>
+): Promise<DischargeSummary> {
+  const res = await fetch(`/api/doctor/discharge-summaries/${id}`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(input),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const error: any = new Error(err.error || `Failed to update discharge summary (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+/**
+ * Finalizes an existing DRAFT discharge summary.
+ * Calls POST /api/doctor/discharge-summaries/:id/finalize
+ */
+export async function finalizeDischargeSummary(id: number): Promise<DischargeSummary> {
+  const res = await fetch(`/api/doctor/discharge-summaries/${id}/finalize`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const error: any = new Error(err.error || `Failed to finalize discharge summary (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+/**
+ * Fetches print-ready payload and logs the print event in audit log.
+ * Calls GET /api/doctor/discharge-summaries/:id/print
+ */
+export async function getDischargeSummaryPrintData(id: number): Promise<DischargeSummary> {
+  const res = await fetch(`/api/doctor/discharge-summaries/${id}/print`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to load print document (${res.status})`);
+  }
+
+  const json = await res.json();
+  return json.data;
+}
+
+/**
+ * Generates an AI-assisted draft synthesis for physician review.
+ * Calls POST /api/doctor/patients/:patientId/discharge-summaries/ai-draft
+ */
+export async function generateAIDischargeDraft(
+  patientId: number
+): Promise<{ draft: CreateDischargeSummaryInput; disclaimer: string }> {
+  const res = await fetch(`/api/doctor/patients/${patientId}/discharge-summaries/ai-draft`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to generate AI draft (${res.status})`);
+  }
+
+  const json = await res.json();
+  return {
+    draft: json.draft,
+    disclaimer: json.disclaimer,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Doctor Notifications
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Retrieves notifications delivered to the authenticated physician.
+ */
+export async function getDoctorNotifications(): Promise<any[]> {
+  try {
+    const res = await fetch('/api/doctor/notifications', {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+    const fallbackRes = await fetch('/api/patient/notifications', {
+      headers: getAuthHeaders(),
+    });
+    if (fallbackRes.ok) {
+      const fallbackJson = await fallbackRes.json();
+      if (fallbackJson.success && Array.isArray(fallbackJson.data)) {
+        return fallbackJson.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[DOCTOR_SERVICE] Network error fetching notifications:', err);
+  }
+  return [];
+}
+
+/**
+ * Marks a physician notification as read.
+ */
+export async function markDoctorNotificationRead(id: string): Promise<void> {
+  try {
+    const res = await fetch(`/api/doctor/notifications/${id}/read`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      await fetch(`/api/patient/notifications/${id}/read`, {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      });
+    }
+  } catch (err) {
+    console.warn('[DOCTOR_SERVICE] Network error marking notification read:', err);
+  }
+}
+
+/**
+ * Marks all physician notifications as read.
+ */
+export async function markAllDoctorNotificationsRead(): Promise<void> {
+  try {
+    const res = await fetch('/api/doctor/notifications/read-all', {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      await fetch('/api/patient/notifications/read-all', {
+        method: 'PUT',
+        headers: getAuthHeaders(),
+      });
+    }
+  } catch (err) {
+    console.warn('[DOCTOR_SERVICE] Network error marking all read:', err);
+  }
+}
+
 
 
 
