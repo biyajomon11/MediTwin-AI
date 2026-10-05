@@ -57,7 +57,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const isMedicalRole = role === 'doctor' || role === 'nurse' || role === 'admin';
 
-  const handleGoogleSuccess = (user: any, targetRole: string) => {
+  const handleGoogleSuccess = (user: any, targetRole: string, token?: string) => {
     setIsGoogleModalOpen(false);
     onClose();
     const finalRole = (targetRole || user.role || 'patient').toLowerCase();
@@ -68,13 +68,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       finalRole === 'patient' ? 'patient' :
       finalRole;
 
-    localStorage.setItem('meditwin_token', 'google-token');
+    const authToken = token || user.token || 'demo-token';
+    localStorage.setItem('meditwin_token', authToken);
+    sessionStorage.setItem('meditwin_token', authToken);
     localStorage.setItem('meditwin_user', JSON.stringify({
       userId: user.userId || user.id || 'GOOGLE-USR',
       email: user.email,
       role: finalRole,
       firstName: user.firstName,
       lastName: user.lastName,
+      avatar: user.avatar,
     }));
 
     navigate(`/dashboard/${dashboardPath}`);

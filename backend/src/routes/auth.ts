@@ -3,9 +3,12 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import { OAuth2Client } from 'google-auth-library';
 
 const router = Router();
 const prisma = new PrismaClient();
+const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
+const googleOAuthClient = new OAuth2Client(googleClientId);
 
 const loginSchema = z.object({
   email:    z.string().min(1, { message: 'Email or username is required.' }),
@@ -141,16 +144,81 @@ router.post('/login', async (req: Request, res: Response) => {
  */
 router.post('/google', async (req: Request, res: Response) => {
   try {
-    const { email, firstName, lastName, role, googleId, picture } = req.body;
+    const { credential, idToken, accessToken, role, email: fallbackEmail, firstName: fallbackFirst, lastName: fallbackLast, picture: fallbackPic, googleId: fallbackGoogleId } = req.body;
+    const tokenToVerify = credential || idToken;
 
-    if (!email || typeof email !== 'string') {
+    let cleanEmail = '';
+    let fName = '';
+    let lName = '';
+    let picture = '';
+    let googleId = '';
+
+    if (tokenToVerify) {
+      try {
+        const ticket = await googleOAuthClient.verifyIdToken({
+          idToken: tokenToVerify,
+          audience: googleClientId || undefined,
+        });
+        const payload = ticket.getPayload();
+        if (!payload || !payload.email) {
+          return res.status(400).json({
+            success: false,
+            error: 'Google ID token verification failed: Missing email address.',
+          });
+        }
+        cleanEmail = payload.email.trim().toLowerCase();
+        fName = payload.given_name || payload.name?.split(' ')[0] || 'Google';
+        lName = payload.family_name || payload.name?.split(' ').slice(1).join(' ') || 'User';
+        picture = payload.picture || '';
+        googleId = payload.sub;
+      } catch (verifyErr: any) {
+        console.error('[AUTH] Google verifyIdToken error:', verifyErr.message);
+        return res.status(401).json({
+          success: false,
+          error: `Google token verification failed: ${verifyErr.message}`,
+        });
+      }
+    } else if (accessToken) {
+      try {
+        const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!userInfoRes.ok) {
+          throw new Error(`Google UserInfo API returned HTTP ${userInfoRes.status}`);
+        }
+        const userInfo: any = await userInfoRes.json();
+        if (!userInfo.email) {
+          return res.status(400).json({
+            success: false,
+            error: 'Google access token returned no email address.',
+          });
+        }
+        cleanEmail = userInfo.email.trim().toLowerCase();
+        fName = userInfo.given_name || userInfo.name?.split(' ')[0] || 'Google';
+        lName = userInfo.family_name || userInfo.name?.split(' ').slice(1).join(' ') || 'User';
+        picture = userInfo.picture || '';
+        googleId = userInfo.sub;
+      } catch (err: any) {
+        console.error('[AUTH] Google userInfo error:', err.message);
+        return res.status(401).json({
+          success: false,
+          error: `Google access token validation failed: ${err.message}`,
+        });
+      }
+    } else if (fallbackEmail && typeof fallbackEmail === 'string') {
+      // Development/testing fallback
+      cleanEmail = fallbackEmail.trim().toLowerCase();
+      fName = fallbackFirst || cleanEmail.split('@')[0] || 'Google';
+      lName = fallbackLast || 'User';
+      picture = fallbackPic || '';
+      googleId = fallbackGoogleId || `goog_${Date.now()}`;
+    } else {
       return res.status(400).json({
         success: false,
-        error: 'A valid email address is required for Google authentication.',
+        error: 'Google credential (ID token), access token, or verified email is required.',
       });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
     const secret = process.env.JWT_SECRET || 'super-secret-meditwin-jwt-key';
 
     // 1. Check if user already exists in DB
@@ -168,7 +236,7 @@ router.post('/google', async (req: Request, res: Response) => {
     // 2. If user does not exist, provision an account
     if (!user) {
       const requestedRoleName = (role && typeof role === 'string' ? role.toLowerCase() : 'patient');
-      
+
       // Match role in database or fallback
       let roleRecord = await prisma.role.findFirst({
         where: { name: { equals: requestedRoleName, mode: 'insensitive' } },
@@ -187,8 +255,6 @@ router.post('/google', async (req: Request, res: Response) => {
         });
       }
 
-      const fName = firstName || cleanEmail.split('@')[0] || 'Google';
-      const lName = lastName || 'User';
       const randomPasswordHash = await bcrypt.hash(`oauth_google_${Date.now()}_${Math.random()}`, 10);
 
       // Create User
@@ -219,6 +285,7 @@ router.post('/google', async (req: Request, res: Response) => {
             firstName: fName,
             lastName: lName,
             licenseNumber: `NUR-G-${Date.now().toString().slice(-6)}`,
+            nurseId: `NUR-G${Date.now().toString().slice(-4)}`,
           },
         });
       } else if (roleLower === 'admin' || roleLower === 'hospital-admin') {
@@ -263,13 +330,16 @@ router.post('/google', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       {
-        userId:    user.id,
-        email:     user.email,
-        role:      user.role.name,
-        nurseId:   user.nurse?.id,
-        patientId: user.patient?.id,
-        doctorId:  user.doctor?.id,
-        adminId:   user.admin?.id,
+        userId:             user.id,
+        email:              user.email,
+        role:               user.role.name,
+        nurseId:            user.nurse?.id,
+        nurseCode:          user.nurse?.nurseId,
+        registrationNumber: user.nurse?.registrationNumber,
+        assignedWard:       user.nurse?.assignedWard ?? null,
+        patientId:          user.patient?.id,
+        doctorId:           user.doctor?.id,
+        adminId:            user.admin?.id,
       },
       secret,
       { expiresIn: '12h' }
@@ -279,24 +349,26 @@ router.post('/google', async (req: Request, res: Response) => {
       success: true,
       token,
       user: {
-        userId:    user.id,
-        email:     user.email,
-        role:      user.role.name,
-        firstName: user.patient?.firstName || user.doctor?.firstName || user.nurse?.firstName || user.admin?.firstName || (cleanEmail.split('@')[0]),
-        lastName:  user.patient?.lastName || user.doctor?.lastName || user.nurse?.lastName || user.admin?.lastName || '',
-        nurseId:      user.nurse?.id ?? null,
-        nurseCode:    user.nurse?.nurseId ?? null,
-        assignedWard: user.nurse?.assignedWard ?? null,
-        patientId:    user.patient?.id ?? null,
-        doctorId:     user.doctor?.id ?? null,
-        adminId:      user.admin?.id ?? null,
+        userId:             user.id,
+        email:              user.email,
+        role:               user.role.name,
+        firstName:          user.patient?.firstName || user.doctor?.firstName || user.nurse?.firstName || user.admin?.firstName || fName,
+        lastName:           user.patient?.lastName || user.doctor?.lastName || user.nurse?.lastName || user.admin?.lastName || lName,
+        avatar:             picture || undefined,
+        nurseId:            user.nurse?.id ?? null,
+        nurseCode:          user.nurse?.nurseId ?? null,
+        registrationNumber: user.nurse?.registrationNumber ?? null,
+        assignedWard:       user.nurse?.assignedWard ?? null,
+        patientId:          user.patient?.id ?? null,
+        doctorId:           user.doctor?.id ?? null,
+        adminId:            user.admin?.id ?? null,
       },
     });
   } catch (err) {
     console.error('[AUTH] Google Sign-In error:', err);
     return res.status(500).json({
       success: false,
-      error: 'Google authentication service encounter an error.',
+      error: 'Google authentication service encountered an error.',
     });
   }
 });

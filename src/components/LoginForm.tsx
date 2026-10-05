@@ -41,12 +41,13 @@ export const LoginForm: React.FC = () => {
   };
 
   // ── Session writer helper ───────────────────────────────────────────────
-  const writeSession = (userObj: any) => {
+  const writeSession = (userObj: any, token?: string) => {
+    const sessionToken = token || 'demo-token';
     if (rememberMe) {
-      localStorage.setItem('meditwin_token', 'demo-token');
+      localStorage.setItem('meditwin_token', sessionToken);
       localStorage.setItem('meditwin_user', JSON.stringify(userObj));
     } else {
-      sessionStorage.setItem('meditwin_token', 'demo-token');
+      sessionStorage.setItem('meditwin_token', sessionToken);
       sessionStorage.setItem('meditwin_user', JSON.stringify(userObj));
     }
   };
@@ -213,7 +214,7 @@ export const LoginForm: React.FC = () => {
     setIsLoading(false);
   };
 
-  const handleGoogleSuccess = (user: any, role: string) => {
+  const handleGoogleSuccess = (user: any, role: string, token?: string) => {
     setIsGoogleModalOpen(false);
     const targetRole = (role || user.role || 'patient').toLowerCase();
     const dashboardPath =
@@ -229,7 +230,8 @@ export const LoginForm: React.FC = () => {
       role: targetRole,
       firstName: user.firstName,
       lastName: user.lastName,
-    });
+      avatar: user.avatar,
+    }, token || user.token);
 
     setLoginSuccess(true);
     setTimeout(() => {
