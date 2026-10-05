@@ -10,6 +10,7 @@ class AdminDashboardPage(BasePage):
     REPORTS_TAB = (By.XPATH, "//nav//button[contains(., 'Reports')]")
     ACTIVITIES_TAB = (By.XPATH, "//nav//button[contains(., 'Activity Monitor')]")
     DEPARTMENTS_TAB = (By.XPATH, "//nav//button[contains(., 'Department Analytics')]")
+    PROFILE_TAB = (By.XPATH, "//nav//button[contains(., 'Administrator Profile') or contains(., 'Profile')]")
     LOGOUT_BTN = (By.XPATH, "//button[contains(., 'Sign Out') or contains(., 'Logout')]")
 
     # Header and Dashboard Elements
@@ -37,6 +38,10 @@ class AdminDashboardPage(BasePage):
 
     def click_departments(self):
         self.safe_click(self.DEPARTMENTS_TAB)
+        return self
+
+    def click_profile(self):
+        self.safe_click(self.PROFILE_TAB)
         return self
 
     def click_logout(self):

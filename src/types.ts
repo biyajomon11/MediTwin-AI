@@ -1458,5 +1458,150 @@ export interface NurseActivityItem {
   status: 'Completed' | 'Pending';
 }
 
+// ─────────────────────────────────────────────────────────────
+// Hospital Admin — Department Analytics
+// ─────────────────────────────────────────────────────────────
+
+export interface DepartmentMetricItem {
+  id: number;
+  name: string;
+  description: string;
+  doctorCount: number;
+  nurseCount: number;
+  totalStaff: number;
+  patientCount: number;
+  appointmentCount: number;
+  completed: number;
+  scheduled: number;
+  cancelled: number;
+  noShow: number;
+  completionRate: number;
+  cancellationRate: number;
+  noShowRate: number;
+  avgAppointmentsPerDoctor: number | null;
+  avgAppointmentsPerNurse: number | null;
+  patientToStaffRatio: number | null;
+}
+
+export interface DepartmentAnalyticsSummary {
+  totalDepartments: number;
+  activeDepartments: number;
+  totalDoctors: number;
+  totalNurses: number;
+  totalAppointments: number;
+  totalPatients: number;
+  completionRate: number;
+  cancellationRate: number;
+  noShowRate: number;
+  avgAppointmentsPerDoctor: number | null;
+  avgAppointmentsPerNurse: number | null;
+  patientToStaffRatio: number | null;
+}
+
+export interface DepartmentStatusDistributionItem {
+  status: string;
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface DepartmentTrendItem {
+  date: string;
+  completed: number;
+  scheduled: number;
+  cancelled: number;
+  noShow: number;
+  total: number;
+}
+
+export interface DepartmentAnalyticsData {
+  hospital: {
+    id: number;
+    name: string;
+    city?: string | null;
+    state?: string | null;
+  };
+  summary: DepartmentAnalyticsSummary;
+  departments: DepartmentMetricItem[];
+  statusDistribution: DepartmentStatusDistributionItem[];
+  trends: DepartmentTrendItem[];
+  appliedFilters: {
+    startDate?: string | null;
+    endDate?: string | null;
+    departmentId?: number | null;
+    appointmentStatus?: string | null;
+  };
+}
+
+export interface DepartmentAnalyticsFilters {
+  startDate?: string;
+  endDate?: string;
+  departmentId?: string;
+  appointmentStatus?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Hospital Admin — Administrator Profile
+// ─────────────────────────────────────────────────────────────
+
+export interface AdminProfile {
+  adminId: number;
+  userId: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  designation: string;
+  role: string;
+  roleId: number;
+  isActive: boolean;
+  createdAt: string;
+  hospital: {
+    id: number;
+    name: string;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    createdAt?: string;
+  } | null;
+}
+
+export interface AdminProfileUpdateInput {
+  firstName: string;
+  lastName: string;
+  phone?: string | null;
+}
+
+export interface AdminChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export interface AdminNotificationPreferences {
+  appointmentAlerts: boolean;
+  staffRosterAlerts: boolean;
+  departmentAlerts: boolean;
+  hospitalPolicyAlerts: boolean;
+  clinicalGuidelineAlerts: boolean;
+  systemMaintenanceAlerts: boolean;
+  reportGenerationAlerts: boolean;
+  emailNotifications: boolean;
+}
+
+export interface AdminActivityItem {
+  id: number;
+  action: string;
+  rawAction: string;
+  table: string;
+  timestamp: string;
+  dateFormatted: string;
+  timeFormatted: string;
+  status: string;
+}
+
 
 

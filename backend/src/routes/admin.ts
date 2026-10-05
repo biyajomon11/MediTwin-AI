@@ -2,9 +2,18 @@ import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateJWT, AuthenticatedRequest } from '../middleware/auth';
 import { requireRoles } from '../middleware/roleGuard';
+import departmentAnalyticsRouter from './departmentAnalytics';
+import adminProfileRouter from './adminProfile';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// Mount Department Analytics sub-routes
+router.use('/analytics/departments', departmentAnalyticsRouter);
+router.use('/department-analytics', departmentAnalyticsRouter);
+
+// Mount Administrator Profile sub-routes
+router.use('/profile', adminProfileRouter);
 
 // ── Helpers ───────────────────────────────────────────────────
 

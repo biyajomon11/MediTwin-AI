@@ -28,6 +28,9 @@ export const App: React.FC = () => {
         <Route path="/admin-register" element={<AdminRegisterPage />} />
         <Route path="/doctor/profile" element={<DoctorProfilePage />} />
         <Route path="/nurse/profile" element={<NurseProfilePage />} />
+        <Route path="/admin/profile" element={<Navigate to="/dashboard/admin?tab=profile" replace />} />
+        <Route path="/admin/department-analytics" element={<Navigate to="/dashboard/admin?tab=departments" replace />} />
+        <Route path="/department-analytics" element={<Navigate to="/dashboard/admin?tab=departments" replace />} />
         <Route path="/dashboard/:role" element={<DashboardPage />} />
         <Route path="/dashboard" element={<Navigate to="/dashboard/doctor" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -100,6 +100,38 @@ Automation testing replaces error-prone, repetitive manual checks with programma
 
 | Test Case ID | Module | Test Title | Priority | Expected Result | Actual Result | Status |
 | :--- | :--- | :--- | :---: | :--- | :--- | :---: |
+| `test_admin_profile_001_admin_can_load_own_profile` | test_admin_profile | ADMIN-PROFILE-001: Admin can load own profile. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_002_unauthenticated_user_blocked` | test_admin_profile | ADMIN-PROFILE-002: Unauthenticated user blocked. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_003_doctor_blocked` | test_admin_profile | ADMIN-PROFILE-003: Doctor blocked. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_004_nurse_blocked` | test_admin_profile | ADMIN-PROFILE-004: Nurse blocked. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_005_patient_blocked` | test_admin_profile | ADMIN-PROFILE-005: Patient blocked. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_006_admin_can_edit_permitted_fields` | test_admin_profile | ADMIN-PROFILE-006: Admin can edit permitted fields. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_007_changes_persist_to_postgresql` | test_admin_profile | ADMIN-PROFILE-007: Changes persist to PostgreSQL. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_008_role_cannot_be_changed` | test_admin_profile | ADMIN-PROFILE-008: Role cannot be changed. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_009_hospital_cannot_be_changed` | test_admin_profile | ADMIN-PROFILE-009: Hospital cannot be changed. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_010_permissions_cannot_be_changed` | test_admin_profile | ADMIN-PROFILE-010: Permissions cannot be changed. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_011_another_administrator_cannot_be_accessed` | test_admin_profile | ADMIN-PROFILE-011: Another administrator cannot be accessed via query param or body spoofing. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_012_invalid_phone_rejected` | test_admin_profile | ADMIN-PROFILE-012: Invalid phone rejected. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_013_required_field_validation_works` | test_admin_profile | ADMIN-PROFILE-013: Required field validation works. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_014_correct_password_allows_password_change` | test_admin_profile | ADMIN-PROFILE-014: Correct password allows password change. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_015_incorrect_password_blocks_password_change` | test_admin_profile | ADMIN-PROFILE-015: Incorrect password blocks password change. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_016_password_mismatch_rejected` | test_admin_profile | ADMIN-PROFILE-016: Password mismatch rejected. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_017_weak_password_rejected` | test_admin_profile | ADMIN-PROFILE-017: Weak password rejected (< 8 chars). | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_018_password_hash_never_returned` | test_admin_profile | ADMIN-PROFILE-018: Password hash never returned in profile or password endpoints. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_019_password_never_appears_in_logs` | test_admin_profile | ADMIN-PROFILE-019: Password never appears in logs. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_020_notification_preferences_update` | test_admin_profile | ADMIN-PROFILE-020: Notification preferences update and persist. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_021_activity_is_displayed_correctly` | test_admin_profile | ADMIN-PROFILE-021: Activity is displayed correctly. | Medium | Test should succeed | Success | **PASS** |
+| `test_admin_profile_022_logout_clears_authenticated_access` | test_admin_profile | ADMIN-PROFILE-022: Logout records ADMIN_LOGGED_OUT audit log. | Medium | Test should succeed | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-001` | test_admin_profile | ADMIN-PROFILE-E2E-001: Admin login -> Profile via sidebar | Critical | Admin navigates to profile from dashboard sidebar | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-002` | test_admin_profile | ADMIN-PROFILE-E2E-002: Profile information displayed | High | Admin and hospital details display on profile page | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-003` | test_admin_profile | ADMIN-PROFILE-E2E-003: Edit permitted fields modal opens | High | Edit profile modal opens for permitted fields | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-004` | test_admin_profile | ADMIN-PROFILE-E2E-004: Cancel editing cleanly closes modal | Medium | Edit profile modal can be cancelled without changes | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-005` | test_admin_profile | ADMIN-PROFILE-E2E-005: Protected fields are read-only and excluded from edit controls | Critical | Protected fields remain read-only | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-006` | test_admin_profile | ADMIN-PROFILE-E2E-006: Password change section displayed with security fields | High | Password change card displays all required input fields | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-007` | test_admin_profile | ADMIN-PROFILE-E2E-007: Short / invalid password rejected with validation message | High | Invalid password input is rejected on frontend | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-008` | test_admin_profile | ADMIN-PROFILE-E2E-008: Notification preferences section displayed | Medium | Notification preferences toggles display | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-009` | test_admin_profile | ADMIN-PROFILE-E2E-009: Recent activity stream displayed | Medium | Recent administrative activity audit stream displays | Success | **PASS** |
+| `ADMIN-PROFILE-E2E-010` | test_admin_profile | ADMIN-PROFILE-E2E-010: Logout button clears session | Critical | Logout control available and clears administrative session | Success | **PASS** |
 
 ---
 
@@ -157,13 +189,13 @@ Automation testing replaces error-prone, repetitive manual checks with programma
 
 | Metric | Result Value | Formula / Notes |
 | :--- | :---: | :--- |
-| **Total Test Cases** | **0** | All automated end-to-end scenarios |
-| **Passed Test Cases** | **0** | Fully verified with assertions |
+| **Total Test Cases** | **32** | All automated end-to-end scenarios |
+| **Passed Test Cases** | **32** | Fully verified with assertions |
 | **Failed Test Cases** | **0** | Zero test failures recorded |
 | **Skipped Test Cases** | **0** | None skipped |
 | **Blocked Test Cases** | **0** | None blocked |
-| **Total Execution Duration** | **0 seconds** | 5 minutes, 25 seconds |
-| **Pass Percentage** | **0.0%** | `Passed / Executed Tests × 100` |
+| **Total Execution Duration** | **55.53 seconds** | 5 minutes, 25 seconds |
+| **Pass Percentage** | **100.0%** | `Passed / Executed Tests × 100` |
 | **Fail Percentage** | **0.0%** | `Failed / Executed Tests × 100` |
 
 
@@ -171,6 +203,7 @@ Automation testing replaces error-prone, repetitive manual checks with programma
 
 | Module | Total | Passed | Failed | Blocked | Pass Rate |
 | :--- | :---: | :---: | :---: | :---: | :---: |
+| **test_admin_profile** | 32 | 32 | 0 | 0 | 100.0% |
 
 ---
 

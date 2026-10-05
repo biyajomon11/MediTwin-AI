@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Stethoscope, HeartPulse, User, Building, ShieldCheck, Activity,
@@ -35,6 +35,8 @@ import { HospitalNotificationsPage } from './hospitalAdmin/HospitalNotifications
 import { HospitalReportsPage } from './hospitalAdmin/HospitalReportsPage';
 import { HospitalActivityPage } from './hospitalAdmin/HospitalActivityPage';
 import { HospitalGuidelinesPage } from './hospitalAdmin/HospitalGuidelinesPage';
+import { DepartmentAnalyticsPage } from './hospitalAdmin/DepartmentAnalyticsPage';
+import { AdminProfilePage } from './hospitalAdmin/AdminProfilePage';
 import * as patientService from '../services/patientService';
 import * as nurseService from '../services/nurseService';
 
@@ -56,7 +58,7 @@ const HOSPITAL_ADMIN_NAV: NavItem[] = [
   { id: 'reports',        label: 'Hospital Reports & Stats',  icon: BarChart3       },
   { id: 'activities',     label: 'Hospital Activity Monitor', icon: Activity        },
   { id: 'departments',    label: 'Department Analytics',      icon: Building2       },
-  { id: 'profile',        label: 'Administrator Profile',      icon: User,      comingSoon: true },
+  { id: 'profile',        label: 'Administrator Profile',      icon: User            },
 ];
 
 const PATIENT_NAV: NavItem[] = [
@@ -171,9 +173,39 @@ const AccessDenied: React.FC<{ redirectTo: string; roleName?: string }> = ({ red
 // ─────────────────────────────────────────────────────────────────
 export const DashboardPage: React.FC = () => {
   const { role } = useParams<{ role: string }>();
+  const location = useLocation();
   const activeRole = role || 'doctor';
 
-  const [activeView, setActiveView] = useState('dashboard');
+  const searchParams = new URLSearchParams(location.search);
+  const isDeptAnalytics =
+    location.pathname.includes('/department-analytics') ||
+    searchParams.get('tab') === 'departments' ||
+    searchParams.get('view') === 'departments';
+  const isProfileTab =
+    location.pathname.includes('/profile') ||
+    searchParams.get('tab') === 'profile' ||
+    searchParams.get('view') === 'profile';
+
+  const [activeView, setActiveView] = useState(
+    isProfileTab ? 'profile' : isDeptAnalytics ? 'departments' : 'dashboard'
+  );
+
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search);
+    if (
+      location.pathname.includes('/department-analytics') ||
+      sp.get('tab') === 'departments' ||
+      sp.get('view') === 'departments'
+    ) {
+      setActiveView('departments');
+    } else if (
+      location.pathname.includes('/profile') ||
+      sp.get('tab') === 'profile' ||
+      sp.get('view') === 'profile'
+    ) {
+      setActiveView('profile');
+    }
+  }, [location.pathname, location.search]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [doctorRecordTab, setDoctorRecordTab] = useState<string>('overview');
@@ -564,6 +596,8 @@ export const DashboardPage: React.FC = () => {
         setActiveView('activities');
       } else if (action === 'Department Analytics') {
         setActiveView('departments');
+      } else if (action === 'Administrator Profile' || action === 'Manage Account' || action === 'View Profile') {
+        setActiveView('profile');
       } else {
         setActiveView('notifications');
       }
@@ -742,9 +776,20 @@ export const DashboardPage: React.FC = () => {
       case 'notifications': return <HospitalNotificationsPage />;
       case 'reports':       return <HospitalReportsPage />;
       case 'activities':    return <HospitalActivityPage />;
-      case 'departments':   return <ComingSoonView label="Department Analytics" />;
+      case 'departments':   return <DepartmentAnalyticsPage />;
       case 'staff-rosters': return <ComingSoonView label="Staff Rosters" />;
-      case 'profile':       return <ComingSoonView label="Administrator Profile" />;
+      case 'profile':
+        return (
+          <AdminProfilePage
+            onLogout={() => {
+              localStorage.removeItem('meditwin_user');
+              localStorage.removeItem('meditwin_token');
+              sessionStorage.removeItem('meditwin_user');
+              sessionStorage.removeItem('meditwin_token');
+              window.location.href = '/login';
+            }}
+          />
+        );
       default:              return renderDefaultDashboard();
     }
   };
@@ -1253,11 +1298,11 @@ export const DashboardPage: React.FC = () => {
             )}
 
             <div
-              onClick={() => (isDoctor || isNurse) && setActiveView('profile')}
+              onClick={() => (isDoctor || isNurse || isAdmin) && setActiveView('profile')}
               className={`hidden sm:flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/10 border border-white/15 text-xs text-gray-300 shadow-sm ${
-                (isDoctor || isNurse) ? 'cursor-pointer hover:bg-white/15 hover:border-accent/40 transition-all' : ''
+                (isDoctor || isNurse || isAdmin) ? 'cursor-pointer hover:bg-white/15 hover:border-accent/40 transition-all' : ''
               }`}
-              title={isDoctor ? 'View Doctor Profile' : isNurse ? 'View Nurse Profile' : undefined}
+              title={isDoctor ? 'View Doctor Profile' : isNurse ? 'View Nurse Profile' : isAdmin ? 'View Administrator Profile' : undefined}
             >
               <div className="flex flex-col items-center justify-center">
                 <RoleIcon className="w-4 h-4 text-accent" />

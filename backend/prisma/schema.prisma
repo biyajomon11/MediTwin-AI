@@ -16,21 +16,21 @@ model Role {
 }
 
 model User {
-  id            Int               @id @default(autoincrement())
-  email         String            @unique @db.VarChar(255)
-  password_hash String            @db.VarChar(255)
-  roleId        Int               @map("role_id")
-  isActive      Boolean?          @default(true) @map("is_active")
-  createdAt     DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt     DateTime?         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  auditLogs     AuditLog[]
-  admin         Admin?
-  doctor        Doctor?
-  nurse         Nurse?
-  patient       Patient?
-  role          Role              @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id               Int               @id @default(autoincrement())
+  email            String            @unique @db.VarChar(255)
+  password_hash    String            @db.VarChar(255)
+  roleId           Int               @map("role_id")
+  isActive         Boolean?          @default(true) @map("is_active")
+  createdAt        DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt        DateTime?         @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  admin            Admin?
+  auditLogs        AuditLog[]
+  doctor           Doctor?
   medicalDocuments MedicalDocument[] @relation("UploadedBy")
-  notifications Notification[]
+  notifications    Notification[]
+  nurse            Nurse?
+  patient          Patient?
+  role             Role              @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("users")
 }
@@ -51,82 +51,81 @@ model BloodGroup {
   @@map("blood_groups")
 }
 
-
 model Patient {
-  id                    Int                @id @default(autoincrement())
-  userId                Int                @unique @map("user_id")
-  firstName             String             @map("first_name") @db.VarChar(100)
-  lastName              String             @map("last_name") @db.VarChar(100)
-  dateOfBirth           DateTime           @map("date_of_birth") @db.Date
-  genderId              Int?               @map("gender_id")
-  bloodGroupId          Int?               @map("blood_group_id")
-  phone                 String?            @db.VarChar(20)
+  id                    Int                     @id @default(autoincrement())
+  userId                Int                     @unique @map("user_id")
+  firstName             String                  @map("first_name") @db.VarChar(100)
+  lastName              String                  @map("last_name") @db.VarChar(100)
+  dateOfBirth           DateTime                @map("date_of_birth") @db.Date
+  genderId              Int?                    @map("gender_id")
+  bloodGroupId          Int?                    @map("blood_group_id")
+  phone                 String?                 @db.VarChar(20)
   address               String?
-  city                  String?            @db.VarChar(100)
-  state                 String?            @db.VarChar(100)
-  emergencyContactName  String?            @map("emergency_contact_name") @db.VarChar(200)
-  emergencyContactPhone String?            @map("emergency_contact_phone") @db.VarChar(20)
-  ward                  String?            @db.VarChar(100)
-  bedNumber             String?            @map("bed_number") @db.VarChar(50)
-  admissionStatus       String?            @default("Active") @map("admission_status") @db.VarChar(50)
-  createdAt             DateTime?          @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt             DateTime?          @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  city                  String?                 @db.VarChar(100)
+  state                 String?                 @db.VarChar(100)
+  emergencyContactName  String?                 @map("emergency_contact_name") @db.VarChar(200)
+  emergencyContactPhone String?                 @map("emergency_contact_phone") @db.VarChar(20)
+  createdAt             DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt             DateTime?               @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  admissionStatus       String?                 @default("Active") @map("admission_status") @db.VarChar(50)
+  bedNumber             String?                 @map("bed_number") @db.VarChar(50)
+  ward                  String?                 @db.VarChar(100)
   appointments          Appointment[]
+  dischargeSummaries    DischargeSummary[]
   medicalDocuments      MedicalDocument[]
   medicalRecords        MedicalRecord[]
   medicineReminders     MedicineReminder[]
-  observations          PatientObservation[]
-  bloodGroup            BloodGroup?        @relation(fields: [bloodGroupId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  gender                Gender?            @relation(fields: [genderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  prescriptions         Prescription[]
-  dischargeSummaries    DischargeSummary[]
   nursingSummaries      NursingPatientSummary[]
+  observations          PatientObservation[]
+  bloodGroup            BloodGroup?             @relation(fields: [bloodGroupId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  gender                Gender?                 @relation(fields: [genderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user                  User                    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  prescriptions         Prescription[]
 
   @@map("patients")
 }
 
 model Doctor {
-  id                Int             @id @default(autoincrement())
-  userId            Int             @unique @map("user_id")
-  firstName         String          @map("first_name") @db.VarChar(100)
-  lastName          String          @map("last_name") @db.VarChar(100)
-  specializationId  Int?            @map("specialization_id")
-  departmentId      Int?            @map("department_id")
-  licenseNumber     String?         @unique @map("license_number") @db.VarChar(100)
-  phone             String?         @db.VarChar(20)
-  yearsOfExperience Int?            @map("years_of_experience")
-  createdAt         DateTime?       @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt         DateTime?       @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  appointments      Appointment[]
-  department        Department?     @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  specialization    Specialization? @relation(fields: [specializationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  medicalRecords    MedicalRecord[]
-  prescriptions     Prescription[]
-  availabilities    DoctorAvailability[]
+  id                 Int                  @id @default(autoincrement())
+  userId             Int                  @unique @map("user_id")
+  firstName          String               @map("first_name") @db.VarChar(100)
+  lastName           String               @map("last_name") @db.VarChar(100)
+  specializationId   Int?                 @map("specialization_id")
+  departmentId       Int?                 @map("department_id")
+  licenseNumber      String?              @unique @map("license_number") @db.VarChar(100)
+  phone              String?              @db.VarChar(20)
+  yearsOfExperience  Int?                 @map("years_of_experience")
+  createdAt          DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  appointments       Appointment[]
   dischargeSummaries DischargeSummary[]
+  availabilities     DoctorAvailability[]
+  department         Department?          @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  specialization     Specialization?      @relation(fields: [specializationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  medicalRecords     MedicalRecord[]
+  prescriptions      Prescription[]
 
   @@map("doctors")
 }
 
 model Nurse {
-  id                 Int                  @id @default(autoincrement())
-  nurseId            String?              @unique @map("nurse_id") @db.VarChar(50)
-  userId             Int                  @unique @map("user_id")
-  firstName          String               @map("first_name") @db.VarChar(100)
-  lastName           String               @map("last_name") @db.VarChar(100)
-  departmentId       Int?                 @map("department_id")
-  registrationNumber String?              @unique @map("registration_number") @db.VarChar(100)
-  licenseNumber      String?              @unique @map("license_number") @db.VarChar(100)
-  phone              String?              @db.VarChar(20)
-  assignedWard       String?              @map("assigned_ward") @db.VarChar(100)
-  createdAt          DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt          DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  department         Department?          @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  observations       PatientObservation[]
+  id                 Int                     @id @default(autoincrement())
+  userId             Int                     @unique @map("user_id")
+  firstName          String                  @map("first_name") @db.VarChar(100)
+  lastName           String                  @map("last_name") @db.VarChar(100)
+  departmentId       Int?                    @map("department_id")
+  licenseNumber      String?                 @unique @map("license_number") @db.VarChar(100)
+  phone              String?                 @db.VarChar(20)
+  createdAt          DateTime?               @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt          DateTime?               @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  nurseId            String?                 @unique @map("nurse_id") @db.VarChar(50)
+  registrationNumber String?                 @unique @map("registration_number") @db.VarChar(100)
+  assignedWard       String?                 @map("assigned_ward") @db.VarChar(100)
+  department         Department?             @relation(fields: [departmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   nursingSummaries   NursingPatientSummary[]
+  observations       PatientObservation[]
 
   @@map("nurses")
 }
@@ -146,14 +145,14 @@ model Admin {
 }
 
 model Hospital {
-  id          Int          @id @default(autoincrement())
-  name        String       @db.VarChar(255)
+  id          Int                 @id @default(autoincrement())
+  name        String              @db.VarChar(255)
   address     String?
-  city        String?      @db.VarChar(100)
-  state       String?      @db.VarChar(100)
-  phone       String?      @db.VarChar(20)
-  email       String?      @db.VarChar(255)
-  createdAt   DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
+  city        String?             @db.VarChar(100)
+  state       String?             @db.VarChar(100)
+  phone       String?             @db.VarChar(20)
+  email       String?             @db.VarChar(255)
+  createdAt   DateTime?           @default(now()) @map("created_at") @db.Timestamp(6)
   admins      Admin[]
   departments Department[]
   procedures  HospitalProcedure[]
@@ -170,14 +169,14 @@ model Specialization {
 }
 
 model Department {
-  id          Int      @id @default(autoincrement())
-  hospitalId  Int      @map("hospital_id")
-  name        String   @db.VarChar(150)
+  id          Int                 @id @default(autoincrement())
+  hospitalId  Int                 @map("hospital_id")
+  name        String              @db.VarChar(150)
   description String?
-  hospital    Hospital @relation(fields: [hospitalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  hospital    Hospital            @relation(fields: [hospitalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   doctors     Doctor[]
-  nurses      Nurse[]
   procedures  HospitalProcedure[]
+  nurses      Nurse[]
 
   @@map("departments")
 }
@@ -402,7 +401,7 @@ model PatientObservation {
   additionalNotes    String?   @map("additional_notes")
   createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt          DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  nurse              Nurse     @relation(fields: [nurseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  nurse              Nurse     @relation(fields: [nurseId], references: [id], onUpdate: NoAction)
   patient            Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("patient_observations")
@@ -431,7 +430,7 @@ model DoctorAvailability {
   id                Int       @id @default(autoincrement())
   doctorId          Int       @map("doctor_id")
   date              DateTime  @db.Date
-  status            String    @db.VarChar(50) // 'AVAILABLE' | 'ABSENT' | 'ON_LEAVE' | 'UNAVAILABLE'
+  status            String    @db.VarChar(50)
   startTime         String?   @default("09:00") @map("start_time") @db.VarChar(10)
   endTime           String?   @default("17:00") @map("end_time") @db.VarChar(10)
   reason            String?   @db.VarChar(255)
@@ -461,7 +460,7 @@ model DischargeSummary {
   treatmentGiven         String?   @map("treatment_given")
   conditionAtDischarge   String    @map("condition_at_discharge") @db.VarChar(100)
   dischargeMedications   Json?     @map("discharge_medications")
-  followUpInstructions  String?   @map("follow_up_instructions")
+  followUpInstructions   String?   @map("follow_up_instructions")
   followUpDate           DateTime? @map("follow_up_date") @db.Date
   followUpDepartment     String?   @map("follow_up_department") @db.VarChar(150)
   dietaryAdvice          String?   @map("dietary_advice")
@@ -473,9 +472,8 @@ model DischargeSummary {
   finalizedBy            Int?      @map("finalized_by")
   createdAt              DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt              DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-
+  doctor                 Doctor    @relation(fields: [doctorId], references: [id], onUpdate: NoAction)
   patient                Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  doctor                 Doctor    @relation(fields: [doctorId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([patientId])
   @@index([doctorId])
@@ -488,7 +486,7 @@ model NursingPatientSummary {
   patientId               Int       @map("patient_id")
   nurseId                 Int       @map("nurse_id")
   summaryDate             DateTime  @map("summary_date") @db.Date
-  status                  String    @default("DRAFT") @db.VarChar(50) // DRAFT, SUBMITTED, FINALIZED, CANCELLED
+  status                  String    @default("DRAFT") @db.VarChar(50)
   nursingAssessment       String?   @map("nursing_assessment")
   patientCurrentCondition String    @map("patient_current_condition")
   levelOfConsciousness    String?   @map("level_of_consciousness") @db.VarChar(50)
@@ -505,7 +503,7 @@ model NursingPatientSummary {
   woundCareStatus         String?   @map("wound_care_status")
   patientEducation        String?   @map("patient_education")
   dischargeInstructions   String?   @map("discharge_instructions")
-  followUpInstructions   String?   @map("follow_up_instructions")
+  followUpInstructions    String?   @map("follow_up_instructions")
   warningSignsObserved    String?   @map("warning_signs_observed")
   doctorCommunication     String?   @map("doctor_communication")
   additionalNotes         String?   @map("additional_notes")
@@ -513,9 +511,8 @@ model NursingPatientSummary {
   finalizedBy             Int?      @map("finalized_by")
   createdAt               DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt               DateTime? @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-
+  nurse                   Nurse     @relation(fields: [nurseId], references: [id], onUpdate: NoAction)
   patient                 Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  nurse                   Nurse     @relation(fields: [nurseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@index([patientId])
   @@index([nurseId])
@@ -530,19 +527,19 @@ model HospitalProcedure {
   title             String      @db.VarChar(255)
   procedureCode     String      @unique @map("procedure_code") @db.VarChar(50)
   category          String      @db.VarChar(100)
-  description       String      @db.Text
-  content           String      @db.Text
-  purpose           String?     @db.Text
-  scope             String?     @db.Text
-  responsibilities  String?     @db.Text
-  requiredEquipment String?     @map("required_equipment") @db.Text
+  description       String
+  content           String
+  purpose           String?
+  scope             String?
+  responsibilities  String?
+  requiredEquipment String?     @map("required_equipment")
   procedureSteps    Json?       @map("procedure_steps")
-  safetyPrecautions String?     @map("safety_precautions") @db.Text
-  documentationReq  String?     @map("documentation_req") @db.Text
-  escalationSteps   String?     @map("escalation_steps") @db.Text
-  references        String?     @db.Text
+  safetyPrecautions String?     @map("safety_precautions")
+  documentationReq  String?     @map("documentation_req")
+  escalationSteps   String?     @map("escalation_steps")
+  references        String?
   version           String      @default("1.0") @db.VarChar(50)
-  status            String      @default("PUBLISHED") @db.VarChar(50) // DRAFT, UNDER_REVIEW, APPROVED, PUBLISHED, ARCHIVED, CANCELLED
+  status            String      @default("PUBLISHED") @db.VarChar(50)
   effectiveDate     DateTime    @map("effective_date") @db.Date
   reviewDate        DateTime?   @map("review_date") @db.Date
   isMandatory       Boolean     @default(false) @map("is_mandatory")
@@ -551,9 +548,8 @@ model HospitalProcedure {
   updatedBy         Int?        @map("updated_by")
   createdAt         DateTime?   @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt         DateTime?   @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-
+  department        Department? @relation(fields: [departmentId], references: [id], onUpdate: NoAction)
   hospital          Hospital    @relation(fields: [hospitalId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  department        Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([hospitalId])
   @@index([departmentId])
@@ -562,4 +558,3 @@ model HospitalProcedure {
   @@index([effectiveDate])
   @@map("hospital_procedures")
 }
-

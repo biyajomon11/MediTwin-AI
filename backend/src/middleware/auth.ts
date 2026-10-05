@@ -7,6 +7,9 @@ export interface AuthenticatedRequest extends Request {
     email: string;
     role: string;
     nurseId?: number;
+    adminId?: number;
+    doctorId?: number;
+    patientId?: number;
   };
 }
 

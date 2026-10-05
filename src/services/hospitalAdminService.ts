@@ -26,6 +26,13 @@ import type {
   HospitalNotificationPriority,
   HospitalNotificationStatus,
   HospitalActivityType,
+  DepartmentAnalyticsData,
+  DepartmentAnalyticsFilters,
+  AdminProfile,
+  AdminProfileUpdateInput,
+  AdminChangePasswordInput,
+  AdminNotificationPreferences,
+  AdminActivityItem,
 } from '../types';
 
 // ── In-Memory State for Demo Mode ─────────────────────────────────────────────
@@ -887,4 +894,261 @@ export async function deleteAdminGuideline(id: number | string): Promise<void> {
 
   await delay(150);
   _localAdminGuidelines = _localAdminGuidelines.filter((g) => g.id !== Number(id) && g.guidelineCode !== String(id));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. Department Analytics & Operational Reporting
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetches real database-aggregated department analytics for the authenticated hospital administrator.
+ * Throws exact HTTP error codes and descriptions upon validation or authorization failure.
+ */
+export async function getDepartmentAnalytics(
+  filters: DepartmentAnalyticsFilters = {}
+): Promise<DepartmentAnalyticsData> {
+  const params = new URLSearchParams();
+  if (filters.startDate && filters.startDate.trim() !== '') {
+    params.append('startDate', filters.startDate.trim());
+  }
+  if (filters.endDate && filters.endDate.trim() !== '') {
+    params.append('endDate', filters.endDate.trim());
+  }
+  if (filters.departmentId && filters.departmentId !== 'all' && filters.departmentId.trim() !== '') {
+    params.append('departmentId', filters.departmentId.trim());
+  }
+  if (filters.appointmentStatus && filters.appointmentStatus !== 'all' && filters.appointmentStatus.trim() !== '') {
+    params.append('appointmentStatus', filters.appointmentStatus.trim());
+  }
+
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/admin/analytics/departments${qs}`, {
+    headers: getAuthHeaders(),
+  });
+
+  const json = await res.json().catch(() => ({}));
+
+  if (!res.ok || !json.success) {
+    const errorMsg = json.error || `Error ${res.status}: Failed to load department analytics.`;
+    throw new Error(errorMsg);
+  }
+
+  return json.data;
+}
+
+/**
+ * Downloads live department analytics report directly in CSV format.
+ */
+export async function exportDepartmentAnalyticsCsv(
+  filters: DepartmentAnalyticsFilters = {}
+): Promise<void> {
+  const params = new URLSearchParams();
+  if (filters.startDate && filters.startDate.trim() !== '') {
+    params.append('startDate', filters.startDate.trim());
+  }
+  if (filters.endDate && filters.endDate.trim() !== '') {
+    params.append('endDate', filters.endDate.trim());
+  }
+  if (filters.departmentId && filters.departmentId !== 'all' && filters.departmentId.trim() !== '') {
+    params.append('departmentId', filters.departmentId.trim());
+  }
+  if (filters.appointmentStatus && filters.appointmentStatus !== 'all' && filters.appointmentStatus.trim() !== '') {
+    params.append('appointmentStatus', filters.appointmentStatus.trim());
+  }
+
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`/api/admin/analytics/departments/export${qs}`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.error || `Export failed with status ${res.status}`);
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = `department-analytics-${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+/**
+ * Sends client-side interaction events to the audit logging endpoint.
+ */
+export async function logDepartmentAnalyticsAudit(
+  eventName: string,
+  details: Record<string, any> = {}
+): Promise<void> {
+  try {
+    await fetch('/api/admin/analytics/departments/audit', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ eventName, details }),
+    });
+  } catch (err) {
+    console.error('Failed to send analytics audit event:', err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. Administrator Profile & Account Management
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetches authenticated administrator profile from PostgreSQL.
+ */
+export async function getAdminProfile(): Promise<AdminProfile> {
+  const res = await fetch('/api/admin/profile', {
+    headers: getAuthHeaders(),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    if (res.status === 401) {
+      throw new Error('Your session has expired. Please sign in again.');
+    }
+    if (res.status === 403) {
+      throw new Error('You do not have permission to access this profile.');
+    }
+    if (res.status === 404) {
+      throw new Error('Administrator profile not found.');
+    }
+    throw new Error(json.error || `Unable to retrieve administrator profile (${res.status}).`);
+  }
+
+  return json.data;
+}
+
+/**
+ * Updates administrator personal fields (firstName, lastName, phone).
+ */
+export async function updateAdminProfile(
+  data: AdminProfileUpdateInput
+): Promise<AdminProfile> {
+  const res = await fetch('/api/admin/profile', {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    if (res.status === 422) {
+      throw new Error(json.error || 'Please correct the highlighted fields.');
+    }
+    if (res.status === 403) {
+      throw new Error(json.error || 'You do not have permission to modify these fields.');
+    }
+    throw new Error(json.error || 'Unable to update administrator profile. Please try again.');
+  }
+
+  // Update cached user name in local storage if present
+  try {
+    const raw = localStorage.getItem('meditwin_user');
+    if (raw) {
+      const u = JSON.parse(raw);
+      u.firstName = json.data.firstName;
+      u.lastName = json.data.lastName;
+      localStorage.setItem('meditwin_user', JSON.stringify(u));
+    }
+  } catch {}
+
+  return json.data;
+}
+
+/**
+ * Securely changes the administrator password via bcrypt verification.
+ */
+export async function changeAdminPassword(
+  data: AdminChangePasswordInput
+): Promise<{ success: boolean; message: string }> {
+  const res = await fetch('/api/admin/profile/password', {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || 'Failed to change password. Please verify current password.');
+  }
+
+  return { success: true, message: json.message || 'Password changed successfully.' };
+}
+
+/**
+ * Retrieves administrator notification preferences.
+ */
+export async function getAdminPreferences(): Promise<AdminNotificationPreferences> {
+  const res = await fetch('/api/admin/profile/preferences', {
+    headers: getAuthHeaders(),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || 'Notification preferences are currently unavailable.');
+  }
+
+  return json.data;
+}
+
+/**
+ * Updates administrator notification preferences.
+ */
+export async function updateAdminPreferences(
+  preferences: Partial<AdminNotificationPreferences>
+): Promise<AdminNotificationPreferences> {
+  const res = await fetch('/api/admin/profile/preferences', {
+    method: 'PATCH',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ preferences }),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || 'Failed to update notification preferences.');
+  }
+
+  return json.data;
+}
+
+/**
+ * Retrieves recent chronological administrative activity stream from PostgreSQL audit logs.
+ */
+export async function getAdminActivity(limit: number = 15): Promise<AdminActivityItem[]> {
+  const res = await fetch(`/api/admin/profile/activity?limit=${limit}`, {
+    headers: getAuthHeaders(),
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    throw new Error(json.error || 'Failed to retrieve administrative activity.');
+  }
+
+  return json.data || [];
+}
+
+/**
+ * Securely terminates administrator session and clears stored tokens.
+ */
+export async function adminLogout(): Promise<void> {
+  try {
+    await fetch('/api/admin/profile/logout', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+  } catch (err) {
+    console.error('Logout request failed:', err);
+  } finally {
+    localStorage.removeItem('meditwin_token');
+    localStorage.removeItem('meditwin_user');
+    sessionStorage.removeItem('meditwin_token');
+    sessionStorage.removeItem('meditwin_user');
+  }
 }
