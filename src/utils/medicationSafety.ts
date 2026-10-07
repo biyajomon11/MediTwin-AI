@@ -24,10 +24,11 @@ export function searchFormulary(query: string): FormularyMedication[] {
 
   return MEDICATION_FORMULARY.filter((med) => {
     const nameMatch = med.genericName.toLowerCase().includes(q);
+    const tallManMatch = med.tallManName.toLowerCase().includes(q);
     const brandMatch = med.brandNames.some((b) => b.toLowerCase().includes(q));
     const classMatch = med.drugClass.toLowerCase().includes(q);
     const categoryMatch = med.category.toLowerCase().includes(q);
-    return nameMatch || brandMatch || classMatch || categoryMatch;
+    return nameMatch || tallManMatch || brandMatch || classMatch || categoryMatch;
   });
 }
 
@@ -36,6 +37,7 @@ export function findMedicationByName(name: string): FormularyMedication | undefi
   return MEDICATION_FORMULARY.find(
     (m) =>
       m.genericName.toLowerCase().includes(normalized) ||
+      m.tallManName.toLowerCase().includes(normalized) ||
       m.brandNames.some((b) => b.toLowerCase() === normalized) ||
       normalized.includes(m.genericName.toLowerCase().split(' ')[0])
   );
