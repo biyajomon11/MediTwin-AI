@@ -426,4 +426,18 @@ export const MEDICATION_FORMULARY: FormularyMedication[] = [
     commonFrequencies: ['Once Daily in the Morning with Breakfast'],
     foodInstructions: 'Always take in the morning with food to prevent gastric ulcers and insomnia.',
   },
+  {
+    id: 'med-montelukast',
+    genericName: 'Montelukast Sodium',
+    brandNames: ['Singulair', 'Montair', 'Telekast'],
+    tallManName: 'monteLUKAST',
+    drugClass: 'Leukotriene Receptor Antagonist (LTRA)',
+    category: 'Respiratory',
+    availableStrengths: ['4 mg', '5 mg', '10 mg'],
+    standardUnits: 'mg',
+    maxSafeDailyDose: 10,
+    commonRoutes: ['Oral'],
+    commonFrequencies: ['Once Daily at Bedtime'],
+    foodInstructions: 'Take once daily in the evening, with or without food.',
+  },
 ];

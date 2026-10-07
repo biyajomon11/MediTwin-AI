@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileCheck,
@@ -27,6 +27,8 @@ import type {
   CreateDischargeSummaryInput,
 } from '../../types';
 import * as doctorService from '../../services/doctorService';
+import { MEDICATION_FORMULARY, type FormularyMedication } from '../../data/medicationFormulary';
+import { getTallManName } from '../../utils/medicationSafety';
 
 interface DischargeSummaryTabProps {
   patient: DoctorPatient;
@@ -67,11 +69,29 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
   const [warningSigns, setWarningSigns] = useState('');
   const [additionalInstructions, setAdditionalInstructions] = useState('');
 
-  // New medication form row
+  // New medication form row & options selection
   const [newMedName, setNewMedName] = useState('');
   const [newMedDosage, setNewMedDosage] = useState('');
   const [newMedFreq, setNewMedFreq] = useState('');
   const [newMedInstructions, setNewMedInstructions] = useState('');
+  const [selectedMedOptionId, setSelectedMedOptionId] = useState('');
+  const [capitalMode, setCapitalMode] = useState<'UPPERCASE' | 'TALLMAN'>('UPPERCASE');
+
+  // Group formulary medications by category for clear selection options
+  const groupedFormulary = useMemo(() => {
+    const groups: Record<string, FormularyMedication[]> = {};
+    MEDICATION_FORMULARY.forEach((med) => {
+      const cat = med.category || 'Other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(med);
+    });
+    return groups;
+  }, []);
+
+  const selectedMedFormulary = useMemo(() => {
+    if (!selectedMedOptionId || selectedMedOptionId === '__CUSTOM__') return null;
+    return MEDICATION_FORMULARY.find((m) => m.id === selectedMedOptionId) || null;
+  }, [selectedMedOptionId]);
 
   // Validation & Submission
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -147,24 +167,50 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
     setValidationErrors({});
     setAiNotice(null);
 
-    // Auto-populate active prescriptions as requested
+    // Auto-populate active prescriptions with capital letters to avoid confusions
     const initialMeds: DischargeMedicationItem[] = [];
+    const sourceMeds: { name: string; dosage: string; frequency: string; instructions?: string }[] = [];
+
     if (patient.prescriptions && patient.prescriptions.length > 0) {
       patient.prescriptions.forEach((rx) => {
         if (rx.medications && Array.isArray(rx.medications)) {
           rx.medications.forEach((m) => {
-            if (!initialMeds.some((x) => x.name.toLowerCase() === m.name.toLowerCase())) {
-              initialMeds.push({
-                name: m.name,
-                dosage: m.dosage,
-                frequency: m.frequency,
-                instructions: (m as any).instructions || 'Take as prescribed after meals.',
-              });
-            }
+            sourceMeds.push({
+              name: m.name,
+              dosage: m.dosage,
+              frequency: m.frequency,
+              instructions: (m as any).instructions,
+            });
           });
         }
       });
     }
+
+    if (patient.currentMedications && patient.currentMedications.length > 0) {
+      patient.currentMedications.forEach((m) => {
+        if (!sourceMeds.some((x) => x.name.toLowerCase() === m.name.toLowerCase())) {
+          sourceMeds.push({
+            name: m.name,
+            dosage: m.dosage,
+            frequency: m.frequency,
+            instructions: 'Take as prescribed after meals.',
+          });
+        }
+      });
+    }
+
+    sourceMeds.forEach((m) => {
+      const upperName = m.name.toUpperCase();
+      if (!initialMeds.some((x) => x.name.toUpperCase() === upperName)) {
+        initialMeds.push({
+          name: upperName,
+          dosage: m.dosage,
+          frequency: m.frequency,
+          instructions: m.instructions || 'Take as prescribed after meals.',
+        });
+      }
+    });
+
     setMedications(initialMeds);
     setViewMode('create');
     setSelectedSummary(null);
@@ -183,7 +229,12 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
     setInvestigations(summary.investigations || '');
     setTreatmentGiven(summary.treatmentGiven || '');
     setConditionAtDischarge(summary.conditionAtDischarge || 'Stable');
-    setMedications(summary.dischargeMedications || []);
+    setMedications(
+      (summary.dischargeMedications || []).map((m) => ({
+        ...m,
+        name: m.name.toUpperCase(),
+      }))
+    );
     setFollowUpInstructions(summary.followUpInstructions || '');
     setFollowUpDate(summary.followUpDate || '');
     setFollowUpDepartment(summary.followUpDepartment || '');
@@ -242,7 +293,12 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
       if (draft.additionalInstructions) setAdditionalInstructions(draft.additionalInstructions);
 
       if (draft.dischargeMedications && draft.dischargeMedications.length > 0) {
-        setMedications(draft.dischargeMedications);
+        setMedications(
+          draft.dischargeMedications.map((m) => ({
+            ...m,
+            name: m.name.toUpperCase(),
+          }))
+        );
       }
 
       setAiNotice(res.disclaimer || 'AI-assisted clinical draft. Attending physician verification required.');
@@ -255,21 +311,56 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
   };
 
   /** Medication row actions */
+  const handleSelectMedicationOption = (medId: string) => {
+    setSelectedMedOptionId(medId);
+    if (!medId || medId === '__CUSTOM__') {
+      return;
+    }
+    const med = MEDICATION_FORMULARY.find((m) => m.id === medId);
+    if (!med) return;
+
+    // Provide capital letters to medication name to avoid confusion (ISMP / FDA standard)
+    const formattedName =
+      capitalMode === 'TALLMAN' && med.tallManName
+        ? med.tallManName
+        : med.genericName.toUpperCase();
+
+    setNewMedName(formattedName);
+
+    if (med.availableStrengths && med.availableStrengths.length > 0) {
+      setNewMedDosage(med.availableStrengths[0]);
+    }
+    if (med.commonFrequencies && med.commonFrequencies.length > 0) {
+      setNewMedFreq(med.commonFrequencies[0]);
+    }
+    if (med.foodInstructions) {
+      setNewMedInstructions(med.foodInstructions);
+    }
+  };
+
   const handleAddMedication = () => {
     if (!newMedName.trim() || !newMedDosage.trim()) return;
+
+    // Enforce capital letters to avoid confusions
+    const formattedName =
+      capitalMode === 'TALLMAN'
+        ? (getTallManName(newMedName.trim()) || newMedName.trim().toUpperCase())
+        : newMedName.trim().toUpperCase();
+
     setMedications((prev) => [
       ...prev,
       {
-        name: newMedName.trim(),
+        name: formattedName,
         dosage: newMedDosage.trim(),
-        frequency: newMedFreq.trim() || 'Daily',
-        instructions: newMedInstructions.trim() || 'Take as directed.',
+        frequency: newMedFreq.trim() || 'Once daily',
+        instructions: newMedInstructions.trim() || 'Take as prescribed after meals.',
       },
     ]);
     setNewMedName('');
     setNewMedDosage('');
     setNewMedFreq('');
     setNewMedInstructions('');
+    setSelectedMedOptionId('');
   };
 
   const handleRemoveMedication = (index: number) => {
@@ -661,7 +752,7 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
                 ${full.dischargeMedications.map((m: any, idx: number) => `
                   <tr>
                     <td>${idx + 1}</td>
-                    <td><strong>${m.name}</strong></td>
+                    <td><strong>${m.name.toUpperCase()}</strong></td>
                     <td>${m.dosage}</td>
                     <td>${m.frequency}</td>
                     <td>${m.instructions || 'Take as directed'}</td>
@@ -1037,18 +1128,27 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
 
                   {viewingModalSummary.dischargeMedications && viewingModalSummary.dischargeMedications.length > 0 && (
                     <div>
-                      <h5 className="font-bold text-gray-300 uppercase tracking-wider text-[11px] mb-1">Discharge Medications</h5>
+                      <h5 className="font-bold text-gray-300 uppercase tracking-wider text-[11px] mb-1">Discharge Medications (Capital Letters)</h5>
                       <div className="space-y-2">
-                        {viewingModalSummary.dischargeMedications.map((m, idx) => (
-                          <div key={idx} className="p-2.5 rounded-lg bg-black/40 border border-white/10 flex justify-between items-center">
-                            <div>
-                              <strong className="text-white text-xs">{m.name}</strong>
-                              <span className="text-gray-400 ml-2">({m.dosage})</span>
-                              <span className="text-gray-500 block text-[11px]">{m.instructions}</span>
+                        {viewingModalSummary.dischargeMedications.map((m, idx) => {
+                          const tallMan = getTallManName(m.name);
+                          const isLASA = tallMan && tallMan.toLowerCase() !== m.name.toLowerCase();
+                          return (
+                            <div key={idx} className="p-2.5 rounded-lg bg-black/40 border border-white/10 flex justify-between items-center">
+                              <div>
+                                <strong className="text-white text-xs uppercase tracking-wide">{m.name.toUpperCase()}</strong>
+                                {isLASA && (
+                                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-accent/20 text-accent font-mono border border-accent/30 font-semibold" title="Tall Man Lettering to prevent confusion">
+                                    {tallMan}
+                                  </span>
+                                )}
+                                <span className="text-gray-400 ml-2">({m.dosage})</span>
+                                <span className="text-gray-500 block text-[11px]">{m.instructions}</span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded bg-white/5 text-[11px] text-accent font-semibold">{m.frequency}</span>
                             </div>
-                            <span className="px-2 py-0.5 rounded bg-white/5 text-[11px] text-accent font-semibold">{m.frequency}</span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -1439,7 +1539,7 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-white/10 text-gray-400 font-semibold text-[11px] uppercase">
-                  <th className="pb-2">Medication Name</th>
+                  <th className="pb-2">Medication Name (Capital Letters)</th>
                   <th className="pb-2">Dosage / Strength</th>
                   <th className="pb-2">Frequency</th>
                   <th className="pb-2">Instructions</th>
@@ -1447,28 +1547,44 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {medications.map((med, index) => (
-                  <tr key={index} className="hover:bg-white/5">
-                    <td className="py-2.5 font-bold text-white">{med.name}</td>
-                    <td className="py-2.5 text-gray-300">{med.dosage}</td>
-                    <td className="py-2.5">
-                      <span className="px-2 py-0.5 rounded bg-accent/20 text-accent font-semibold text-[11px]">
-                        {med.frequency}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-gray-400 text-[11px]">{med.instructions || '—'}</td>
-                    <td className="py-2.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMedication(index)}
-                        className="p-1 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        title="Remove medication"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {medications.map((med, index) => {
+                  const tallMan = getTallManName(med.name);
+                  const isLASA = tallMan && tallMan.toLowerCase() !== med.name.toLowerCase();
+                  return (
+                    <tr key={index} className="hover:bg-white/5">
+                      <td className="py-2.5 font-bold text-white uppercase tracking-wide">
+                        <div className="flex items-center gap-2">
+                          <span>{med.name.toUpperCase()}</span>
+                          {isLASA && (
+                            <span
+                              className="px-1.5 py-0.5 rounded text-[10px] bg-accent/20 text-accent font-mono border border-accent/30 font-semibold"
+                              title="Tall Man Capitalization to prevent Look-Alike Sound-Alike confusion"
+                            >
+                              {tallMan}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 text-gray-300 font-medium">{med.dosage}</td>
+                      <td className="py-2.5">
+                        <span className="px-2 py-0.5 rounded bg-accent/20 text-accent font-semibold text-[11px]">
+                          {med.frequency}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-gray-400 text-[11px]">{med.instructions || '—'}</td>
+                      <td className="py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMedication(index)}
+                          className="p-1 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                          title="Remove medication"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1477,46 +1593,208 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
         )}
 
         {/* Add Medication Row */}
-        <div className="pt-3 border-t border-white/10">
-          <span className="text-[11px] font-semibold text-gray-300 block mb-2">Add Additional Discharge Medication:</span>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-            <input
-              type="text"
-              placeholder="Medication name (e.g. Salbutamol)"
-              value={newMedName}
-              onChange={(e) => setNewMedName(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-            />
-            <input
-              type="text"
-              placeholder="Dosage (e.g. 100 mcg)"
-              value={newMedDosage}
-              onChange={(e) => setNewMedDosage(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-            />
-            <input
-              type="text"
-              placeholder="Frequency (e.g. BID / Twice Daily)"
-              value={newMedFreq}
-              onChange={(e) => setNewMedFreq(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-            />
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Instructions (e.g. Inhale 2 puffs)"
-                value={newMedInstructions}
-                onChange={(e) => setNewMedInstructions(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-              />
+        <div className="pt-4 border-t border-white/10 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-gray-200">
+                Add Additional Discharge Medication:
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" /> CAPITAL LETTERS ACTIVE
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="text-gray-400">Capital Format:</span>
               <button
                 type="button"
-                onClick={handleAddMedication}
-                disabled={!newMedName.trim() || !newMedDosage.trim()}
-                className="px-3 py-2 rounded-xl bg-accent text-white font-bold text-xs hover:bg-accent/80 transition-colors disabled:opacity-40"
+                onClick={() => {
+                  setCapitalMode('UPPERCASE');
+                  if (newMedName) setNewMedName(newMedName.toUpperCase());
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  capitalMode === 'UPPERCASE'
+                    ? 'bg-accent text-white shadow-sm'
+                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+                title="Format medication name in FULL CAPITAL LETTERS"
               >
-                Add
+                ALL CAPS (UPPERCASE)
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCapitalMode('TALLMAN');
+                  if (newMedName) {
+                    const tm = getTallManName(newMedName);
+                    if (tm) setNewMedName(tm);
+                  }
+                }}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  capitalMode === 'TALLMAN'
+                    ? 'bg-accent text-white shadow-sm'
+                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                }`}
+                title="Format with ISMP/FDA Tall Man Capital Letters"
+              >
+                Tall Man Letters
+              </button>
+            </div>
+          </div>
+
+          {/* 1. Medication Options Selector */}
+          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="select-discharge-medication-option" className="text-[11px] font-semibold text-accent flex items-center gap-1.5">
+                <Pill className="w-3.5 h-3.5" /> Select Medicine Option:
+              </label>
+              <span className="text-[10px] text-gray-400">
+                Choose an option to auto-fill in Capital Letters
+              </span>
+            </div>
+
+            <select
+              id="select-discharge-medication-option"
+              value={selectedMedOptionId}
+              onChange={(e) => handleSelectMedicationOption(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-[#0B132B] border border-white/20 text-xs text-white font-medium focus:outline-none focus:border-accent cursor-pointer"
+            >
+              <option value="">— Select Medicine Option (Formulary Drugs in Capital Letters) —</option>
+              {Object.entries(groupedFormulary).map(([category, meds]) => (
+                <optgroup key={category} label={`── ${category.toUpperCase()} ──`} className="bg-navy-900 text-accent font-bold">
+                  {meds.map((m) => (
+                    <option key={m.id} value={m.id} className="bg-[#0B132B] text-white py-1">
+                      {m.genericName.toUpperCase()} {m.tallManName && `[Tall Man: ${m.tallManName}]`} ({m.availableStrengths.join(', ')})
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value="__CUSTOM__">✍️ Other / Custom Medicine (Type in Capital Letters below)</option>
+            </select>
+
+            {/* Quick Pick Chips */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+              <span className="text-[10px] text-gray-400 font-medium">Quick Select Options:</span>
+              {[
+                { name: 'SALBUTAMOL', id: 'med-salbutamol' },
+                { name: 'MONTELUKAST', id: 'med-montelukast' },
+                { name: 'LEVOTHYROXINE', id: 'med-levothyroxine' },
+                { name: 'PARACETAMOL', id: 'med-paracetamol' },
+                { name: 'PANTOPRAZOLE', id: 'med-pantoprazole' },
+                { name: 'AMLODIPINE', id: 'med-amlodipine' },
+                { name: 'ATORVASTATIN', id: 'med-atorvastatin' },
+                { name: 'CETIRIZINE', id: 'med-cetirizine' },
+              ].map((chip) => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => handleSelectMedicationOption(chip.id)}
+                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-accent/20 hover:text-accent border border-white/10 text-[10px] font-bold text-gray-300 font-mono transition-colors"
+                >
+                  + {chip.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 2. Direct Form Inputs (Medication name, Dosage, Frequency, Instructions) */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+            <div>
+              <input
+                type="text"
+                list="medication-options-datalist"
+                placeholder="MEDICATION NAME (CAPITALS)"
+                value={newMedName}
+                onChange={(e) => {
+                  const val = capitalMode === 'UPPERCASE' ? e.target.value.toUpperCase() : e.target.value;
+                  setNewMedName(val);
+                }}
+                className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white uppercase font-bold placeholder-gray-500 focus:outline-none focus:border-accent"
+                title="Medication name in Capital Letters to avoid confusion"
+              />
+              <datalist id="medication-options-datalist">
+                {MEDICATION_FORMULARY.map((m) => (
+                  <option key={m.id} value={m.genericName.toUpperCase()}>
+                    {m.tallManName ? `${m.tallManName} (${m.drugClass})` : m.genericName}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Dosage (e.g. 100 mcg)"
+                value={newMedDosage}
+                onChange={(e) => setNewMedDosage(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+              />
+              {selectedMedFormulary && selectedMedFormulary.availableStrengths.length > 0 && (
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {selectedMedFormulary.availableStrengths.map((str) => (
+                    <button
+                      key={str}
+                      type="button"
+                      onClick={() => setNewMedDosage(str)}
+                      className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
+                        newMedDosage === str
+                          ? 'bg-accent text-white border-accent'
+                          : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                      }`}
+                    >
+                      {str}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <input
+                type="text"
+                placeholder="Frequency (e.g. Once daily / BID)"
+                value={newMedFreq}
+                onChange={(e) => setNewMedFreq(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+              />
+              <div className="flex gap-1 mt-1 flex-wrap">
+                {['Once daily (Night)', 'Once daily (Morning)', 'Twice daily (BID)', 'As needed (PRN)'].map((fq) => (
+                  <button
+                    key={fq}
+                    type="button"
+                    onClick={() => setNewMedFreq(fq)}
+                    className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
+                      newMedFreq === fq
+                        ? 'bg-accent/30 text-accent border-accent/40'
+                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                    }`}
+                  >
+                    {fq.split(' ')[0] + (fq.includes('(') ? ' ' + fq.split('(')[1].replace(')', '') : '')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Instructions (e.g. Take after meals)"
+                  value={newMedInstructions}
+                  onChange={(e) => setNewMedInstructions(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddMedication}
+                  disabled={!newMedName.trim() || !newMedDosage.trim()}
+                  className="px-4 py-2 rounded-xl bg-accent text-white font-bold text-xs hover:bg-accent/80 transition-colors disabled:opacity-40 flex items-center gap-1 shadow-md"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              </div>
+              <span className="text-[10px] text-gray-400">
+                💡 Added medication names are stored in capital letters to prevent confusion
+              </span>
             </div>
           </div>
         </div>
