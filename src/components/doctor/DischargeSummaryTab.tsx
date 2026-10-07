@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileCheck,
@@ -27,8 +27,282 @@ import type {
   CreateDischargeSummaryInput,
 } from '../../types';
 import * as doctorService from '../../services/doctorService';
-import { MEDICATION_FORMULARY, type FormularyMedication } from '../../data/medicationFormulary';
-import { getTallManName } from '../../utils/medicationSafety';
+
+export interface DischargeMedicationOption {
+  name: string; // Stored and displayed in UPPERCASE to prevent medication confusion
+  category: string;
+  defaultDosage: string;
+  defaultFreq: string;
+  defaultInstructions: string;
+}
+
+export const COMMON_DISCHARGE_MEDICATIONS: DischargeMedicationOption[] = [
+  // ── Respiratory & Allergy ──
+  {
+    name: 'SALBUTAMOL (ALBUTEROL) INHALER',
+    category: 'Respiratory & Allergy',
+    defaultDosage: '100 mcg (2 puffs)',
+    defaultFreq: 'Q4-6H PRN (As needed for wheezing)',
+    defaultInstructions: 'Inhale 2 puffs as needed. Rinse mouth with water after use.',
+  },
+  {
+    name: 'BUDESONIDE / FORMOTEROL INHALER',
+    category: 'Respiratory & Allergy',
+    defaultDosage: '160 / 4.5 mcg',
+    defaultFreq: 'BID (Twice Daily)',
+    defaultInstructions: 'Inhale 1 puff twice daily. Rinse mouth thoroughly after inhalation.',
+  },
+  {
+    name: 'IPRATROPIUM BROMIDE INHALER',
+    category: 'Respiratory & Allergy',
+    defaultDosage: '20 mcg/puff',
+    defaultFreq: 'Q6H (Four times daily)',
+    defaultInstructions: 'Inhale 2 puffs four times daily for bronchospasm.',
+  },
+  {
+    name: 'CETIRIZINE',
+    category: 'Respiratory & Allergy',
+    defaultDosage: '10 mg',
+    defaultFreq: 'Once Daily at Bedtime',
+    defaultInstructions: 'Take with or without food at bedtime.',
+  },
+  {
+    name: 'MONTELUKAST',
+    category: 'Respiratory & Allergy',
+    defaultDosage: '10 mg',
+    defaultFreq: 'Once Daily in Evening',
+    defaultInstructions: 'Take once daily in the evening with water.',
+  },
+  {
+    name: 'HYDROXYZINE',
+    category: 'Respiratory & Allergy',
+    defaultDosage: '25 mg',
+    defaultFreq: 'Once Daily at Bedtime (PRN)',
+    defaultInstructions: 'Take at bedtime for allergy or itching.',
+  },
+
+  // ── Analgesics & Pain Management ──
+  {
+    name: 'PARACETAMOL (ACETAMINOPHEN)',
+    category: 'Analgesics & Pain',
+    defaultDosage: '500 mg',
+    defaultFreq: 'TID PRN (Every 8 Hours)',
+    defaultInstructions: 'Take after meals for fever/pain. Maximum 4000 mg/24 hours.',
+  },
+  {
+    name: 'PARACETAMOL 650',
+    category: 'Analgesics & Pain',
+    defaultDosage: '650 mg',
+    defaultFreq: 'TID PRN (Every 8 Hours)',
+    defaultInstructions: 'Take after meals for fever/pain. Do not exceed 4000 mg/day.',
+  },
+  {
+    name: 'IBUPROFEN',
+    category: 'Analgesics & Pain',
+    defaultDosage: '400 mg',
+    defaultFreq: 'TID (Three Times Daily)',
+    defaultInstructions: 'Always take with food or milk to prevent gastric irritation.',
+  },
+  {
+    name: 'TRAMADOL',
+    category: 'Analgesics & Pain',
+    defaultDosage: '50 mg',
+    defaultFreq: 'Q8H PRN (For severe pain)',
+    defaultInstructions: 'Take with water. May cause mild drowsiness.',
+  },
+  {
+    name: 'DICLOFENAC SODIUM',
+    category: 'Analgesics & Pain',
+    defaultDosage: '50 mg',
+    defaultFreq: 'BID (Twice Daily with Meals)',
+    defaultInstructions: 'Take with or immediately after food.',
+  },
+
+  // ── Antibiotics & Anti-infectives ──
+  {
+    name: 'AMOXICILLIN & CLAVULANATE (AUGMENTIN)',
+    category: 'Antibiotics & Anti-infectives',
+    defaultDosage: '625 mg',
+    defaultFreq: 'BID (Twice Daily)',
+    defaultInstructions: 'Take at start of meals. Complete full 5-7 day prescribed course.',
+  },
+  {
+    name: 'AMOXICILLIN',
+    category: 'Antibiotics & Anti-infectives',
+    defaultDosage: '500 mg',
+    defaultFreq: 'TID (Every 8 Hours)',
+    defaultInstructions: 'Take with plenty of water. Complete full course.',
+  },
+  {
+    name: 'AZITHROMYCIN',
+    category: 'Antibiotics & Anti-infectives',
+    defaultDosage: '500 mg',
+    defaultFreq: 'Once Daily',
+    defaultInstructions: 'Take 1 hour before or 2 hours after food for 3-5 days.',
+  },
+  {
+    name: 'CEFIXIME',
+    category: 'Antibiotics & Anti-infectives',
+    defaultDosage: '200 mg',
+    defaultFreq: 'BID (Twice Daily)',
+    defaultInstructions: 'Take with meals for 5-7 days.',
+  },
+  {
+    name: 'CIPROFLOXACIN',
+    category: 'Antibiotics & Anti-infectives',
+    defaultDosage: '500 mg',
+    defaultFreq: 'BID (Twice Daily)',
+    defaultInstructions: 'Drink plenty of water. Avoid antacids within 2 hours of dose.',
+  },
+  {
+    name: 'METRONIDAZOLE',
+    category: 'Antibiotics & Anti-infectives',
+    defaultDosage: '400 mg',
+    defaultFreq: 'TID (Every 8 Hours)',
+    defaultInstructions: 'Take with food. Strictly avoid alcohol during treatment.',
+  },
+
+  // ── Gastrointestinal & Acid Reducers ──
+  {
+    name: 'PANTOPRAZOLE',
+    category: 'Gastrointestinal',
+    defaultDosage: '40 mg',
+    defaultFreq: 'Once Daily (Before Breakfast)',
+    defaultInstructions: 'Take on empty stomach 30-60 minutes before morning breakfast.',
+  },
+  {
+    name: 'OMEPRAZOLE',
+    category: 'Gastrointestinal',
+    defaultDosage: '20 mg',
+    defaultFreq: 'Once Daily (Before Breakfast)',
+    defaultInstructions: 'Take 30 minutes before breakfast.',
+  },
+  {
+    name: 'ONDANSETRON',
+    category: 'Gastrointestinal',
+    defaultDosage: '4 mg',
+    defaultFreq: 'TID PRN (For Nausea/Vomiting)',
+    defaultInstructions: 'Take 30 minutes before meals as needed for nausea.',
+  },
+  {
+    name: 'SUCRALFATE',
+    category: 'Gastrointestinal',
+    defaultDosage: '1 g (10 mL)',
+    defaultFreq: 'QID (1 hr before meals & bedtime)',
+    defaultInstructions: 'Take on empty stomach 1 hour before meals and at bedtime.',
+  },
+
+  // ── Cardiovascular & Antihypertensives ──
+  {
+    name: 'AMLODIPINE',
+    category: 'Cardiovascular',
+    defaultDosage: '5 mg',
+    defaultFreq: 'Once Daily (Morning)',
+    defaultInstructions: 'Take once daily at the same time each morning.',
+  },
+  {
+    name: 'ATORVASTATIN',
+    category: 'Cardiovascular',
+    defaultDosage: '20 mg',
+    defaultFreq: 'Once Daily at Bedtime',
+    defaultInstructions: 'Take once daily in evening or at bedtime.',
+  },
+  {
+    name: 'TELMISARTAN',
+    category: 'Cardiovascular',
+    defaultDosage: '40 mg',
+    defaultFreq: 'Once Daily (Morning)',
+    defaultInstructions: 'Take with or without food. Monitor blood pressure periodically.',
+  },
+  {
+    name: 'RAMIPRIL',
+    category: 'Cardiovascular',
+    defaultDosage: '2.5 mg',
+    defaultFreq: 'Once Daily (Morning)',
+    defaultInstructions: 'Take in the morning with plenty of water.',
+  },
+  {
+    name: 'FUROSEMIDE',
+    category: 'Cardiovascular',
+    defaultDosage: '40 mg',
+    defaultFreq: 'Once Daily (Morning)',
+    defaultInstructions: 'Take in the morning with breakfast to avoid nocturnal urination.',
+  },
+  {
+    name: 'ASPIRIN (ECOSPRIN)',
+    category: 'Cardiovascular',
+    defaultDosage: '75 mg',
+    defaultFreq: 'Once Daily with Lunch',
+    defaultInstructions: 'Always take with or immediately after food.',
+  },
+  {
+    name: 'CLOPIDOGREL',
+    category: 'Cardiovascular',
+    defaultDosage: '75 mg',
+    defaultFreq: 'Once Daily with Food',
+    defaultInstructions: 'Take once daily with food.',
+  },
+  {
+    name: 'WARFARIN',
+    category: 'Cardiovascular',
+    defaultDosage: '2.5 mg',
+    defaultFreq: 'Once Daily in Evening',
+    defaultInstructions: 'Take in evening. Strict regular INR monitoring required.',
+  },
+
+  // ── Endocrine & Diabetes ──
+  {
+    name: 'METFORMIN',
+    category: 'Endocrine & Diabetes',
+    defaultDosage: '500 mg',
+    defaultFreq: 'BID (With Meals)',
+    defaultInstructions: 'Always take with or immediately after meals to reduce GI upset.',
+  },
+  {
+    name: 'GLIMEPIRIDE',
+    category: 'Endocrine & Diabetes',
+    defaultDosage: '1 mg',
+    defaultFreq: 'Once Daily with Breakfast',
+    defaultInstructions: 'Take with breakfast or first main meal.',
+  },
+  {
+    name: 'EMPAGLIFLOZIN',
+    category: 'Endocrine & Diabetes',
+    defaultDosage: '10 mg',
+    defaultFreq: 'Once Daily (Morning)',
+    defaultInstructions: 'Take in the morning with water. Stay well-hydrated.',
+  },
+  {
+    name: 'LEVOTHYROXINE',
+    category: 'Endocrine & Diabetes',
+    defaultDosage: '50 mcg',
+    defaultFreq: 'Once Daily (Empty Stomach)',
+    defaultInstructions: 'Take on empty stomach with water 30-60 minutes before breakfast.',
+  },
+
+  // ── Corticosteroids & Recovery ──
+  {
+    name: 'PREDNISOLONE',
+    category: 'Corticosteroids & Recovery',
+    defaultDosage: '20 mg (Tapering)',
+    defaultFreq: 'Once Daily (Morning with Food)',
+    defaultInstructions: 'Take with breakfast. Taper dose strictly as prescribed by physician.',
+  },
+  {
+    name: 'METHYLPREDNISOLONE',
+    category: 'Corticosteroids & Recovery',
+    defaultDosage: '8 mg',
+    defaultFreq: 'Once Daily (Morning with Food)',
+    defaultInstructions: 'Take with food in the morning.',
+  },
+];
+
+const GROUPED_DISCHARGE_MEDICATIONS: Record<string, DischargeMedicationOption[]> =
+  COMMON_DISCHARGE_MEDICATIONS.reduce((acc, item) => {
+    if (!acc[item.category]) acc[item.category] = [];
+    acc[item.category].push(item);
+    return acc;
+  }, {} as Record<string, DischargeMedicationOption[]>);
 
 interface DischargeSummaryTabProps {
   patient: DoctorPatient;
@@ -69,29 +343,13 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
   const [warningSigns, setWarningSigns] = useState('');
   const [additionalInstructions, setAdditionalInstructions] = useState('');
 
-  // New medication form row & options selection
+  // New medication form row
   const [newMedName, setNewMedName] = useState('');
   const [newMedDosage, setNewMedDosage] = useState('');
   const [newMedFreq, setNewMedFreq] = useState('');
   const [newMedInstructions, setNewMedInstructions] = useState('');
-  const [selectedMedOptionId, setSelectedMedOptionId] = useState('');
-  const [capitalMode, setCapitalMode] = useState<'UPPERCASE' | 'TALLMAN'>('UPPERCASE');
-
-  // Group formulary medications by category for clear selection options
-  const groupedFormulary = useMemo(() => {
-    const groups: Record<string, FormularyMedication[]> = {};
-    MEDICATION_FORMULARY.forEach((med) => {
-      const cat = med.category || 'Other';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(med);
-    });
-    return groups;
-  }, []);
-
-  const selectedMedFormulary = useMemo(() => {
-    if (!selectedMedOptionId || selectedMedOptionId === '__CUSTOM__') return null;
-    return MEDICATION_FORMULARY.find((m) => m.id === selectedMedOptionId) || null;
-  }, [selectedMedOptionId]);
+  const [isCustomMed, setIsCustomMed] = useState(false);
+  const [selectedDropdownMed, setSelectedDropdownMed] = useState('');
 
   // Validation & Submission
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -167,50 +425,24 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
     setValidationErrors({});
     setAiNotice(null);
 
-    // Auto-populate active prescriptions with capital letters to avoid confusions
+    // Auto-populate active prescriptions as requested
     const initialMeds: DischargeMedicationItem[] = [];
-    const sourceMeds: { name: string; dosage: string; frequency: string; instructions?: string }[] = [];
-
     if (patient.prescriptions && patient.prescriptions.length > 0) {
       patient.prescriptions.forEach((rx) => {
         if (rx.medications && Array.isArray(rx.medications)) {
           rx.medications.forEach((m) => {
-            sourceMeds.push({
-              name: m.name,
-              dosage: m.dosage,
-              frequency: m.frequency,
-              instructions: (m as any).instructions,
-            });
+            if (!initialMeds.some((x) => x.name.toLowerCase() === m.name.toLowerCase())) {
+              initialMeds.push({
+                name: m.name.toUpperCase(),
+                dosage: m.dosage,
+                frequency: m.frequency,
+                instructions: (m as any).instructions || 'Take as prescribed after meals.',
+              });
+            }
           });
         }
       });
     }
-
-    if (patient.currentMedications && patient.currentMedications.length > 0) {
-      patient.currentMedications.forEach((m) => {
-        if (!sourceMeds.some((x) => x.name.toLowerCase() === m.name.toLowerCase())) {
-          sourceMeds.push({
-            name: m.name,
-            dosage: m.dosage,
-            frequency: m.frequency,
-            instructions: 'Take as prescribed after meals.',
-          });
-        }
-      });
-    }
-
-    sourceMeds.forEach((m) => {
-      const upperName = m.name.toUpperCase();
-      if (!initialMeds.some((x) => x.name.toUpperCase() === upperName)) {
-        initialMeds.push({
-          name: upperName,
-          dosage: m.dosage,
-          frequency: m.frequency,
-          instructions: m.instructions || 'Take as prescribed after meals.',
-        });
-      }
-    });
-
     setMedications(initialMeds);
     setViewMode('create');
     setSelectedSummary(null);
@@ -311,56 +543,39 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
   };
 
   /** Medication row actions */
-  const handleSelectMedicationOption = (medId: string) => {
-    setSelectedMedOptionId(medId);
-    if (!medId || medId === '__CUSTOM__') {
-      return;
-    }
-    const med = MEDICATION_FORMULARY.find((m) => m.id === medId);
-    if (!med) return;
-
-    // Provide capital letters to medication name to avoid confusion (ISMP / FDA standard)
-    const formattedName =
-      capitalMode === 'TALLMAN' && med.tallManName
-        ? med.tallManName
-        : med.genericName.toUpperCase();
-
-    setNewMedName(formattedName);
-
-    if (med.availableStrengths && med.availableStrengths.length > 0) {
-      setNewMedDosage(med.availableStrengths[0]);
-    }
-    if (med.commonFrequencies && med.commonFrequencies.length > 0) {
-      setNewMedFreq(med.commonFrequencies[0]);
-    }
-    if (med.foodInstructions) {
-      setNewMedInstructions(med.foodInstructions);
-    }
-  };
-
   const handleAddMedication = () => {
     if (!newMedName.trim() || !newMedDosage.trim()) return;
-
-    // Enforce capital letters to avoid confusions
-    const formattedName =
-      capitalMode === 'TALLMAN'
-        ? (getTallManName(newMedName.trim()) || newMedName.trim().toUpperCase())
-        : newMedName.trim().toUpperCase();
-
     setMedications((prev) => [
       ...prev,
       {
-        name: formattedName,
+        name: newMedName.trim().toUpperCase(),
         dosage: newMedDosage.trim(),
-        frequency: newMedFreq.trim() || 'Once daily',
-        instructions: newMedInstructions.trim() || 'Take as prescribed after meals.',
+        frequency: newMedFreq.trim() || 'Daily',
+        instructions: newMedInstructions.trim() || 'Take as directed.',
       },
     ]);
     setNewMedName('');
     setNewMedDosage('');
     setNewMedFreq('');
     setNewMedInstructions('');
-    setSelectedMedOptionId('');
+    setSelectedDropdownMed('');
+  };
+
+  /** Handles choosing a medication from the standard discharge formulary dropdown */
+  const handleSelectPredefinedMed = (medicineName: string) => {
+    if (!medicineName) {
+      setSelectedDropdownMed('');
+      setNewMedName('');
+      return;
+    }
+    const found = COMMON_DISCHARGE_MEDICATIONS.find((m) => m.name === medicineName);
+    setSelectedDropdownMed(medicineName);
+    setNewMedName(medicineName.toUpperCase());
+    if (found) {
+      setNewMedDosage(found.defaultDosage);
+      setNewMedFreq(found.defaultFreq);
+      setNewMedInstructions(found.defaultInstructions);
+    }
   };
 
   const handleRemoveMedication = (index: number) => {
@@ -752,7 +967,7 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
                 ${full.dischargeMedications.map((m: any, idx: number) => `
                   <tr>
                     <td>${idx + 1}</td>
-                    <td><strong>${m.name.toUpperCase()}</strong></td>
+                    <td><strong style="text-transform: uppercase;">${m.name}</strong></td>
                     <td>${m.dosage}</td>
                     <td>${m.frequency}</td>
                     <td>${m.instructions || 'Take as directed'}</td>
@@ -1128,27 +1343,18 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
 
                   {viewingModalSummary.dischargeMedications && viewingModalSummary.dischargeMedications.length > 0 && (
                     <div>
-                      <h5 className="font-bold text-gray-300 uppercase tracking-wider text-[11px] mb-1">Discharge Medications (Capital Letters)</h5>
+                      <h5 className="font-bold text-gray-300 uppercase tracking-wider text-[11px] mb-1">Discharge Medications</h5>
                       <div className="space-y-2">
-                        {viewingModalSummary.dischargeMedications.map((m, idx) => {
-                          const tallMan = getTallManName(m.name);
-                          const isLASA = tallMan && tallMan.toLowerCase() !== m.name.toLowerCase();
-                          return (
-                            <div key={idx} className="p-2.5 rounded-lg bg-black/40 border border-white/10 flex justify-between items-center">
-                              <div>
-                                <strong className="text-white text-xs uppercase tracking-wide">{m.name.toUpperCase()}</strong>
-                                {isLASA && (
-                                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] bg-accent/20 text-accent font-mono border border-accent/30 font-semibold" title="Tall Man Lettering to prevent confusion">
-                                    {tallMan}
-                                  </span>
-                                )}
-                                <span className="text-gray-400 ml-2">({m.dosage})</span>
-                                <span className="text-gray-500 block text-[11px]">{m.instructions}</span>
-                              </div>
-                              <span className="px-2 py-0.5 rounded bg-white/5 text-[11px] text-accent font-semibold">{m.frequency}</span>
+                        {viewingModalSummary.dischargeMedications.map((m, idx) => (
+                          <div key={idx} className="p-2.5 rounded-lg bg-black/40 border border-white/10 flex justify-between items-center">
+                            <div>
+                              <strong className="text-white text-xs uppercase">{m.name}</strong>
+                              <span className="text-gray-400 ml-2">({m.dosage})</span>
+                              <span className="text-gray-500 block text-[11px]">{m.instructions}</span>
                             </div>
-                          );
-                        })}
+                            <span className="px-2 py-0.5 rounded bg-white/5 text-[11px] text-accent font-semibold">{m.frequency}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -1539,7 +1745,7 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-white/10 text-gray-400 font-semibold text-[11px] uppercase">
-                  <th className="pb-2">Medication Name (Capital Letters)</th>
+                  <th className="pb-2">Medication Name</th>
                   <th className="pb-2">Dosage / Strength</th>
                   <th className="pb-2">Frequency</th>
                   <th className="pb-2">Instructions</th>
@@ -1547,44 +1753,28 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {medications.map((med, index) => {
-                  const tallMan = getTallManName(med.name);
-                  const isLASA = tallMan && tallMan.toLowerCase() !== med.name.toLowerCase();
-                  return (
-                    <tr key={index} className="hover:bg-white/5">
-                      <td className="py-2.5 font-bold text-white uppercase tracking-wide">
-                        <div className="flex items-center gap-2">
-                          <span>{med.name.toUpperCase()}</span>
-                          {isLASA && (
-                            <span
-                              className="px-1.5 py-0.5 rounded text-[10px] bg-accent/20 text-accent font-mono border border-accent/30 font-semibold"
-                              title="Tall Man Capitalization to prevent Look-Alike Sound-Alike confusion"
-                            >
-                              {tallMan}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-2.5 text-gray-300 font-medium">{med.dosage}</td>
-                      <td className="py-2.5">
-                        <span className="px-2 py-0.5 rounded bg-accent/20 text-accent font-semibold text-[11px]">
-                          {med.frequency}
-                        </span>
-                      </td>
-                      <td className="py-2.5 text-gray-400 text-[11px]">{med.instructions || '—'}</td>
-                      <td className="py-2.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMedication(index)}
-                          className="p-1 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                          title="Remove medication"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {medications.map((med, index) => (
+                  <tr key={index} className="hover:bg-white/5">
+                    <td className="py-2.5 font-bold text-white uppercase">{med.name}</td>
+                    <td className="py-2.5 text-gray-300">{med.dosage}</td>
+                    <td className="py-2.5">
+                      <span className="px-2 py-0.5 rounded bg-accent/20 text-accent font-semibold text-[11px]">
+                        {med.frequency}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-gray-400 text-[11px]">{med.instructions || '—'}</td>
+                    <td className="py-2.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMedication(index)}
+                        className="p-1 rounded text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        title="Remove medication"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -1593,208 +1783,123 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
         )}
 
         {/* Add Medication Row */}
-        <div className="pt-4 border-t border-white/10 space-y-3">
+        <div className="pt-3 border-t border-white/10 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-gray-200">
+              <span className="text-[11px] font-semibold text-gray-300 block">
                 Add Additional Discharge Medication:
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> CAPITAL LETTERS ACTIVE
+              <span className="text-[10px] px-2 py-0.5 rounded-md bg-accent/15 border border-accent/30 text-accent font-bold uppercase tracking-wider">
+                UPPERCASE TO AVOID CONFUSION
               </span>
             </div>
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <span className="text-gray-400">Capital Format:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setCapitalMode('UPPERCASE');
-                  if (newMedName) setNewMedName(newMedName.toUpperCase());
-                }}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
-                  capitalMode === 'UPPERCASE'
-                    ? 'bg-accent text-white shadow-sm'
-                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                }`}
-                title="Format medication name in FULL CAPITAL LETTERS"
-              >
-                ALL CAPS (UPPERCASE)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCapitalMode('TALLMAN');
-                  if (newMedName) {
-                    const tm = getTallManName(newMedName);
-                    if (tm) setNewMedName(tm);
-                  }
-                }}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
-                  capitalMode === 'TALLMAN'
-                    ? 'bg-accent text-white shadow-sm'
-                    : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                }`}
-                title="Format with ISMP/FDA Tall Man Capital Letters"
-              >
-                Tall Man Letters
-              </button>
-            </div>
-          </div>
-
-          {/* 1. Medication Options Selector */}
-          <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
-            <div className="flex items-center justify-between">
-              <label htmlFor="select-discharge-medication-option" className="text-[11px] font-semibold text-accent flex items-center gap-1.5">
-                <Pill className="w-3.5 h-3.5" /> Select Medicine Option:
-              </label>
-              <span className="text-[10px] text-gray-400">
-                Choose an option to auto-fill in Capital Letters
-              </span>
-            </div>
-
-            <select
-              id="select-discharge-medication-option"
-              value={selectedMedOptionId}
-              onChange={(e) => handleSelectMedicationOption(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-[#0B132B] border border-white/20 text-xs text-white font-medium focus:outline-none focus:border-accent cursor-pointer"
+            <button
+              type="button"
+              onClick={() => {
+                setIsCustomMed(!isCustomMed);
+                if (!isCustomMed) {
+                  setSelectedDropdownMed('');
+                }
+              }}
+              className="text-[11px] text-accent hover:text-accent/80 font-semibold flex items-center gap-1 transition-colors"
             >
-              <option value="">— Select Medicine Option (Formulary Drugs in Capital Letters) —</option>
-              {Object.entries(groupedFormulary).map(([category, meds]) => (
-                <optgroup key={category} label={`── ${category.toUpperCase()} ──`} className="bg-navy-900 text-accent font-bold">
-                  {meds.map((m) => (
-                    <option key={m.id} value={m.id} className="bg-[#0B132B] text-white py-1">
-                      {m.genericName.toUpperCase()} {m.tallManName && `[Tall Man: ${m.tallManName}]`} ({m.availableStrengths.join(', ')})
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              <option value="__CUSTOM__">✍️ Other / Custom Medicine (Type in Capital Letters below)</option>
-            </select>
-
-            {/* Quick Pick Chips */}
-            <div className="flex items-center gap-1.5 flex-wrap pt-1">
-              <span className="text-[10px] text-gray-400 font-medium">Quick Select Options:</span>
-              {[
-                { name: 'SALBUTAMOL', id: 'med-salbutamol' },
-                { name: 'MONTELUKAST', id: 'med-montelukast' },
-                { name: 'LEVOTHYROXINE', id: 'med-levothyroxine' },
-                { name: 'PARACETAMOL', id: 'med-paracetamol' },
-                { name: 'PANTOPRAZOLE', id: 'med-pantoprazole' },
-                { name: 'AMLODIPINE', id: 'med-amlodipine' },
-                { name: 'ATORVASTATIN', id: 'med-atorvastatin' },
-                { name: 'CETIRIZINE', id: 'med-cetirizine' },
-              ].map((chip) => (
-                <button
-                  key={chip.id}
-                  type="button"
-                  onClick={() => handleSelectMedicationOption(chip.id)}
-                  className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-accent/20 hover:text-accent border border-white/10 text-[10px] font-bold text-gray-300 font-mono transition-colors"
-                >
-                  + {chip.name}
-                </button>
-              ))}
-            </div>
+              {isCustomMed ? '📋 Choose from Dropdown' : '✏️ Type Custom Medicine'}
+            </button>
           </div>
 
-          {/* 2. Direct Form Inputs (Medication name, Dosage, Frequency, Instructions) */}
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-            <div>
-              <input
-                type="text"
-                list="medication-options-datalist"
-                placeholder="MEDICATION NAME (CAPITALS)"
-                value={newMedName}
-                onChange={(e) => {
-                  const val = capitalMode === 'UPPERCASE' ? e.target.value.toUpperCase() : e.target.value;
-                  setNewMedName(val);
-                }}
-                className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white uppercase font-bold placeholder-gray-500 focus:outline-none focus:border-accent"
-                title="Medication name in Capital Letters to avoid confusion"
-              />
-              <datalist id="medication-options-datalist">
-                {MEDICATION_FORMULARY.map((m) => (
-                  <option key={m.id} value={m.genericName.toUpperCase()}>
-                    {m.tallManName ? `${m.tallManName} (${m.drugClass})` : m.genericName}
+            {/* 1. Medication Name / Dropdown */}
+            {!isCustomMed ? (
+              <div className="relative">
+                <select
+                  id="select-discharge-medication"
+                  value={selectedDropdownMed}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__CUSTOM__') {
+                      setIsCustomMed(true);
+                      setSelectedDropdownMed('');
+                      setNewMedName('');
+                    } else {
+                      handleSelectPredefinedMed(val);
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white uppercase font-bold focus:outline-none focus:border-accent truncate cursor-pointer"
+                >
+                  <option value="" className="bg-[#0F172A] text-gray-400 normal-case font-normal">
+                    -- CHOOSE MEDICINE FROM DROPDOWN (UPPERCASE) --
                   </option>
-                ))}
-              </datalist>
-            </div>
-
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Dosage (e.g. 100 mcg)"
-                value={newMedDosage}
-                onChange={(e) => setNewMedDosage(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-              />
-              {selectedMedFormulary && selectedMedFormulary.availableStrengths.length > 0 && (
-                <div className="flex gap-1 mt-1 flex-wrap">
-                  {selectedMedFormulary.availableStrengths.map((str) => (
-                    <button
-                      key={str}
-                      type="button"
-                      onClick={() => setNewMedDosage(str)}
-                      className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
-                        newMedDosage === str
-                          ? 'bg-accent text-white border-accent'
-                          : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
-                      }`}
+                  <option value="__CUSTOM__" className="bg-[#0F172A] text-accent font-bold">
+                    ✏️ + TYPE OTHER / CUSTOM MEDICINE
+                  </option>
+                  {Object.entries(GROUPED_DISCHARGE_MEDICATIONS).map(([cat, list]) => (
+                    <optgroup
+                      key={cat}
+                      label={`── ${cat.toUpperCase()} ──`}
+                      className="bg-[#0B132B] text-cyan-400 font-bold"
                     >
-                      {str}
-                    </button>
+                      {list.map((med) => (
+                        <option
+                          key={med.name}
+                          value={med.name}
+                          className="bg-[#0F172A] text-white font-semibold"
+                        >
+                          {med.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <input
-                type="text"
-                placeholder="Frequency (e.g. Once daily / BID)"
-                value={newMedFreq}
-                onChange={(e) => setNewMedFreq(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
-              />
-              <div className="flex gap-1 mt-1 flex-wrap">
-                {['Once daily (Night)', 'Once daily (Morning)', 'Twice daily (BID)', 'As needed (PRN)'].map((fq) => (
-                  <button
-                    key={fq}
-                    type="button"
-                    onClick={() => setNewMedFreq(fq)}
-                    className={`text-[9px] px-1.5 py-0.5 rounded border transition-colors ${
-                      newMedFreq === fq
-                        ? 'bg-accent/30 text-accent border-accent/40'
-                        : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
-                    }`}
-                  >
-                    {fq.split(' ')[0] + (fq.includes('(') ? ' ' + fq.split('(')[1].replace(')', '') : '')}
-                  </button>
-                ))}
+                </select>
               </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <div className="flex gap-2">
+            ) : (
+              <div className="relative">
                 <input
                   type="text"
-                  placeholder="Instructions (e.g. Take after meals)"
-                  value={newMedInstructions}
-                  onChange={(e) => setNewMedInstructions(e.target.value)}
-                  className="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+                  id="input-discharge-medication-custom"
+                  placeholder="MEDICATION NAME (UPPERCASE)"
+                  value={newMedName}
+                  onChange={(e) => setNewMedName(e.target.value.toUpperCase())}
+                  className="w-full px-3 py-2 rounded-xl bg-black/40 border border-accent text-xs text-white uppercase font-bold placeholder-gray-500 focus:outline-none focus:border-accent"
+                  autoFocus
                 />
-                <button
-                  type="button"
-                  onClick={handleAddMedication}
-                  disabled={!newMedName.trim() || !newMedDosage.trim()}
-                  className="px-4 py-2 rounded-xl bg-accent text-white font-bold text-xs hover:bg-accent/80 transition-colors disabled:opacity-40 flex items-center gap-1 shadow-md"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add
-                </button>
               </div>
-              <span className="text-[10px] text-gray-400">
-                💡 Added medication names are stored in capital letters to prevent confusion
-              </span>
+            )}
+
+            {/* 2. Dosage */}
+            <input
+              type="text"
+              placeholder="Dosage (e.g. 100 mcg)"
+              value={newMedDosage}
+              onChange={(e) => setNewMedDosage(e.target.value)}
+              className="px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+            />
+
+            {/* 3. Frequency */}
+            <input
+              type="text"
+              placeholder="Frequency (e.g. BID / Twice Daily)"
+              value={newMedFreq}
+              onChange={(e) => setNewMedFreq(e.target.value)}
+              className="px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+            />
+
+            {/* 4. Instructions + Add */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Instructions (e.g. Inhale 2 puffs)"
+                value={newMedInstructions}
+                onChange={(e) => setNewMedInstructions(e.target.value)}
+                className="flex-1 px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={handleAddMedication}
+                disabled={!newMedName.trim() || !newMedDosage.trim()}
+                className="px-4 py-2 rounded-xl bg-accent text-white font-bold text-xs hover:bg-accent/80 transition-colors disabled:opacity-40 whitespace-nowrap"
+              >
+                Add
+              </button>
             </div>
           </div>
         </div>
