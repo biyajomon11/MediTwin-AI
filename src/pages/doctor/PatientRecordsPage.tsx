@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Plus, Save, Loader2, Users,
   Activity, FolderOpen, Printer, ShieldAlert, StopCircle, Stethoscope,
   Eye, Download, X, HeartPulse, ArrowUp, ArrowDown, RotateCcw, FileCheck,
-  Clock, Bed,
+  Clock,
 } from 'lucide-react';
 import type {
   DoctorPatient, PatientStatus, ClinicalNote, Prescription, MedicalDocument,
@@ -15,7 +15,6 @@ import { getPatients, addClinicalNote, discontinuePrescription, updatePatientBed
 import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
 import { DischargeSummaryTab } from '../../components/doctor/DischargeSummaryTab';
 import { DoctorNursingSummaryTab } from '../../components/doctor/DoctorNursingSummaryTab';
-import { InpatientAdmissionModal } from '../../components/doctor/InpatientAdmissionModal';
 import { getTallManName } from '../../utils/medicationSafety';
 import { formatPatientId, isPatientInpatient } from '../../utils/patientUtils';
 
@@ -234,18 +233,7 @@ const PatientRecord: React.FC<{
   initialTab?: string;
   onMarkAppointmentCompleted?: (patient: DoctorPatient, appointment: any) => void;
   updatingAptId?: string | number | null;
-  onPatientUpdated?: (patient: DoctorPatient) => void;
-  onOpenAdmissionModal?: (patientId: number) => void;
-}> = ({
-  patient,
-  onBack,
-  onNoteAdded,
-  initialTab = 'overview',
-  onMarkAppointmentCompleted,
-  updatingAptId,
-  onPatientUpdated,
-  onOpenAdmissionModal,
-}) => {
+}> = ({ patient, onBack, onNoteAdded, initialTab = 'overview', onMarkAppointmentCompleted, updatingAptId }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [showNoteForm, setShowNoteForm] = useState(false);
 
@@ -340,17 +328,9 @@ const PatientRecord: React.FC<{
         patient.ward = newWard || undefined;
         patient.bedNumber = newBed || undefined;
         patient.status = newStatus;
-        if (newWard && !patient.admissionDate) {
-          patient.admissionDate = new Date().toISOString().split('T')[0];
-        }
-        onPatientUpdated?.({ ...patient });
         setIsEditingBed(false);
-        setBedSuccessMsg(
-          newWard
-            ? `Inpatient Bed successfully allocated: ${newWard} (Status: ${newStatus}).`
-            : `Patient successfully transitioned to Outpatient (Active).`
-        );
-        setTimeout(() => setBedSuccessMsg(''), 4500);
+        setBedSuccessMsg(`Bed successfully updated to ${newWard || 'Outpatient'} in PostgreSQL.`);
+        setTimeout(() => setBedSuccessMsg(''), 4000);
       }
     } catch (e) {
       console.error('Failed to update bed:', e);
@@ -1010,33 +990,21 @@ const PatientRecord: React.FC<{
                     <span className="text-gray-400">Assigned Ward & Bed:</span>
                     <div className="flex items-center gap-2">
                       {currentWard ? (
-                        <span className="px-2.5 py-0.5 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/30 font-mono text-[11px] font-bold shadow-sm flex items-center gap-1">
-                          <Bed className="w-3 h-3 text-purple-400" />
-                          <span>{currentWard}</span>
+                        <span className="px-2.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-mono text-[11px] font-bold shadow-sm">
+                          {currentWard}
                         </span>
                       ) : (
                         <span className="text-teal-300 text-xs font-semibold px-2 py-0.5 rounded bg-teal-500/10 border border-teal-500/20">
-                          Outpatient (No Bed Assigned)
+                          Outpatient (No Bed)
                         </span>
                       )}
                       <button
                         type="button"
                         onClick={() => setIsEditingBed(!isEditingBed)}
-                        className="text-[11px] px-2.5 py-1 rounded-lg bg-accent/15 hover:bg-accent/25 text-accent border border-accent/30 font-bold transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                        className="text-[11px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-accent font-semibold transition-colors cursor-pointer"
                       >
-                        <Bed className="w-3 h-3" />
-                        <span>{isEditingBed ? 'Cancel' : currentWard ? 'Transfer / Change Bed' : 'Admit to Bed'}</span>
+                        {isEditingBed ? 'Cancel' : 'Change Bed'}
                       </button>
-                      {onOpenAdmissionModal && !currentWard && (
-                        <button
-                          type="button"
-                          onClick={() => onOpenAdmissionModal(patient.id)}
-                          className="text-[11px] px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-gray-300 font-semibold transition-all cursor-pointer"
-                          title="Open Full Inpatient Admission Protocol Modal"
-                        >
-                          Protocol
-                        </button>
-                      )}
                     </div>
                   </div>
 
@@ -1836,36 +1804,6 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
 
   const [updatingAptId, setUpdatingAptId] = useState<string | number | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
-  const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
-  const [admissionTargetPatientId, setAdmissionTargetPatientId] = useState<number | undefined>(undefined);
-
-  const handlePatientAdmitted = (admittedP: DoctorPatient) => {
-    setPatients((prev) => {
-      const idx = prev.findIndex((p) => p.id === admittedP.id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = admittedP;
-        return copy;
-      }
-      return [admittedP, ...prev];
-    });
-    setAllPatients((prev) => {
-      const idx = prev.findIndex((p) => p.id === admittedP.id);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = admittedP;
-        return copy;
-      }
-      return [admittedP, ...prev];
-    });
-    if (selectedPatient && selectedPatient.id === admittedP.id) {
-      setSelectedPatient(admittedP);
-    }
-    setActionSuccessMsg(
-      `Patient ${admittedP.firstName} ${admittedP.lastName} successfully admitted to ${admittedP.ward || 'Inpatient Bed'} with status "${admittedP.status}".`
-    );
-    setTimeout(() => setActionSuccessMsg(null), 6000);
-  };
 
   const handleMarkAppointmentCompleted = async (
     targetPatient: DoctorPatient,
@@ -1988,11 +1926,6 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
         initialTab={initialTab}
         onMarkAppointmentCompleted={handleMarkAppointmentCompleted}
         updatingAptId={updatingAptId}
-        onPatientUpdated={handlePatientAdmitted}
-        onOpenAdmissionModal={(id) => {
-          setAdmissionTargetPatientId(id);
-          setIsAdmissionModalOpen(true);
-        }}
       />
     );
   }
@@ -2041,30 +1974,16 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
           <p className="text-sm text-gray-400 mt-0.5">Showing patients assigned to your clinical care</p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {criticalCount > 0 && (
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold shadow-sm">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-              </span>
-              <AlertTriangle className="w-4 h-4 text-rose-400" />
-              <span>{criticalCount} Critical Patient{criticalCount > 1 ? 's' : ''} on Duty</span>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => {
-              setAdmissionTargetPatientId(undefined);
-              setIsAdmissionModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-accent to-emerald-400 hover:from-accent/90 hover:to-emerald-400/90 text-navy-950 text-xs sm:text-sm font-bold shadow-lg shadow-accent/20 transition-all cursor-pointer group active:scale-95 whitespace-nowrap"
-          >
-            <Bed className="w-4 h-4 text-navy-950 group-hover:scale-110 transition-transform" />
-            <span>Admit Inpatient</span>
-          </button>
-        </div>
+        {criticalCount > 0 && (
+          <div className="flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold shadow-sm">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+            </span>
+            <AlertTriangle className="w-4 h-4 text-rose-400" />
+            <span>{criticalCount} Critical Patient{criticalCount > 1 ? 's' : ''} on Duty</span>
+          </div>
+        )}
       </div>
 
       {/* ── Emergency Priority Triage Alert Banner (always visible when critical patients exist) ── */}
@@ -2592,15 +2511,6 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
           })}
         </div>
       )}
-
-      {/* Inpatient Admission & Bed Allocation Modal */}
-      <InpatientAdmissionModal
-        isOpen={isAdmissionModalOpen}
-        onClose={() => setIsAdmissionModalOpen(false)}
-        patients={allPatients.length > 0 ? allPatients : patients}
-        initialPatientId={admissionTargetPatientId}
-        onAdmitted={handlePatientAdmitted}
-      />
     </div>
   );
 };

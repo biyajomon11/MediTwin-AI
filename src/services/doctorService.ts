@@ -198,7 +198,7 @@ export async function getPatients(
 
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && Array.isArray(json.data)) {
         return json.data;
       }
     }
@@ -329,13 +329,7 @@ export async function getPatientById(
  */
 export async function updatePatientBed(
   patientId: number,
-  data: {
-    ward?: string | null;
-    bedNumber?: string | null;
-    admissionStatus?: string;
-    diagnosis?: string;
-    reason?: string;
-  }
+  data: { ward?: string | null; bedNumber?: string | null; admissionStatus?: string }
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   try {
     const res = await fetch(`/api/doctor/patients/${patientId}/bed`, {
@@ -347,121 +341,11 @@ export async function updatePatientBed(
       body: JSON.stringify(data),
     });
 
-    if (res.ok) {
-      const json = await res.json();
-      // Synchronize in-memory mock if present
-      const mockP = MOCK_PATIENTS.find((p) => p.id === patientId) || (JOLDA_INPATIENT_MOCK.id === patientId ? JOLDA_INPATIENT_MOCK : null);
-      if (mockP) {
-        mockP.ward = data.ward || undefined;
-        mockP.bedNumber = data.bedNumber || undefined;
-        if (data.admissionStatus) mockP.status = data.admissionStatus as any;
-      }
-      return json;
-    }
+    return await res.json();
   } catch (err: any) {
-    console.warn('[DOCTOR_SERVICE] Failed to update patient bed on backend, falling back to local sync:', err);
+    console.error('[DOCTOR_SERVICE] Failed to update patient bed:', err);
+    return { success: false, error: err.message || 'Failed to update patient bed.' };
   }
-
-  // Graceful local sync for mock / demo patient models
-  const mockP = MOCK_PATIENTS.find((p) => p.id === patientId) || (JOLDA_INPATIENT_MOCK.id === patientId ? JOLDA_INPATIENT_MOCK : null);
-  if (mockP) {
-    mockP.ward = data.ward || undefined;
-    mockP.bedNumber = data.bedNumber || undefined;
-    if (data.admissionStatus) mockP.status = data.admissionStatus as any;
-    return {
-      success: true,
-      data: {
-        id: patientId,
-        ward: data.ward,
-        bedNumber: data.bedNumber,
-        admissionStatus: data.admissionStatus,
-      },
-    };
-  }
-
-  return { success: false, error: 'Failed to update patient bed.' };
-}
-
-/**
- * Directly admits a patient as an Inpatient to a designated hospital ward and bed.
- * Calls backend POST /api/doctor/patients/:id/admit (with graceful PATCH fallback).
- */
-export async function admitPatient(
-  patientId: number,
-  data: {
-    ward: string;
-    bedNumber?: string | null;
-    admissionStatus?: string;
-    reason?: string;
-    diagnosis?: string;
-  }
-): Promise<{ success: boolean; data?: any; error?: string; message?: string }> {
-  const effectiveStatus = data.admissionStatus || (data.ward.toLowerCase().includes('icu') ? 'Critical' : 'Admitted');
-  const cleanBed = data.bedNumber
-    ? (data.bedNumber.toLowerCase().startsWith('bed') ? data.bedNumber.trim() : `Bed ${data.bedNumber.trim()}`)
-    : 'Bed 01';
-  const formattedWard = data.ward.includes(cleanBed) ? data.ward : `${data.ward} – ${cleanBed}`;
-
-  try {
-    const res = await fetch(`/api/doctor/patients/${patientId}/admit`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify({
-        ...data,
-        ward: formattedWard,
-        bedNumber: cleanBed,
-        admissionStatus: effectiveStatus,
-      }),
-    });
-
-    if (res.ok) {
-      const json = await res.json();
-      const mockP = MOCK_PATIENTS.find((p) => p.id === patientId) || (JOLDA_INPATIENT_MOCK.id === patientId ? JOLDA_INPATIENT_MOCK : null);
-      if (mockP) {
-        mockP.ward = formattedWard;
-        mockP.bedNumber = cleanBed;
-        mockP.status = effectiveStatus as any;
-        if (data.diagnosis) mockP.primaryCondition = data.diagnosis;
-      }
-      return json;
-    }
-  } catch (err) {
-    console.warn('[DOCTOR_SERVICE] POST /admit failed, attempting fallback to PATCH /bed:', err);
-  }
-
-  // Fallback to updatePatientBed
-  return updatePatientBed(patientId, {
-    ward: formattedWard,
-    bedNumber: cleanBed,
-    admissionStatus: effectiveStatus,
-    diagnosis: data.diagnosis,
-    reason: data.reason,
-  });
-}
-
-/**
- * Retrieves all patients in the hospital directory (including outpatients and inpatients)
- * for clinical triage and inpatient admission.
- */
-export async function getAllHospitalPatients(): Promise<DoctorPatient[]> {
-  try {
-    const res = await fetch(`/api/doctor/patients?scope=all&limit=50`, {
-      headers: getAuthHeaders(),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-        return json.data;
-      }
-    }
-  } catch (e) {
-    console.warn('[DOCTOR_SERVICE] Failed to fetch hospital directory, using mock directory:', e);
-  }
-
-  return [...MOCK_PATIENTS, JOLDA_INPATIENT_MOCK];
 }
 
 /**
