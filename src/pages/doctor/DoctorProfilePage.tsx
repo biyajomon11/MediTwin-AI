@@ -167,10 +167,25 @@ export const DoctorProfilePage: React.FC<DoctorProfilePageProps> = ({
       setReminders(remData);
       setActivityLogs(actData);
 
-      if (overviewData) {
-        setClinicalOverview(overviewData);
-        if (overviewData.todaysAppointments.length > 0) {
-          setSelectedAppointment(overviewData.todaysAppointments[0]);
+      let finalOverview = overviewData;
+      if (
+        !finalOverview ||
+        (finalOverview.stats.activePatientsCount === 0 && finalOverview.stats.appointmentsCount === 0)
+      ) {
+        try {
+          const patientRecords = await doctorService.getPatients();
+          if (patientRecords && patientRecords.length > 0) {
+            finalOverview = doctorService.buildClinicalOverviewFromPatients(patientRecords, profData);
+          }
+        } catch (e) {
+          console.warn('Fallback patient records overview build error:', e);
+        }
+      }
+
+      if (finalOverview) {
+        setClinicalOverview(finalOverview);
+        if (finalOverview.todaysAppointments.length > 0) {
+          setSelectedAppointment(finalOverview.todaysAppointments[0]);
         }
       }
     } catch (err: any) {
