@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Calendar, Clock, User, Stethoscope, CheckCircle2, AlertTriangle,
@@ -42,10 +42,49 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
   const [searchDoctor, setSearchDoctor] = useState<string>('');
   const [selectedDoctor, setSelectedDoctor] = useState<DoctorOption | null>(null);
 
-  // Date & Slot Selection
-  // Default to 2026-09-28 (a Monday in active test window) or today's date if later
-  const defaultDateStr = '2026-09-28';
-  const [selectedDate, setSelectedDate] = useState<string>(defaultDateStr);
+  // Helper to format local Date object to YYYY-MM-DD
+  const formatLocalDate = (d: Date): string => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // Date range: strictly from today's date to next coming 5 days
+  const { minDateStr, maxDateStr, datePresets } = useMemo(() => {
+    const today = new Date();
+    const minStr = formatLocalDate(today);
+
+    const maxDate = new Date();
+    maxDate.setDate(today.getDate() + 5);
+    const maxStr = formatLocalDate(maxDate);
+
+    // Generate quick selection options: Today + next coming 5 days (6 days total)
+    const presets = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date();
+      d.setDate(today.getDate() + i);
+      const dateStr = formatLocalDate(d);
+      const monthShort = d.toLocaleDateString('en-US', { month: 'short' });
+      const dayNum = String(d.getDate()).padStart(2, '0');
+      const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+      return {
+        date: dateStr,
+        label: i === 0 ? `Today (${monthShort} ${dayNum})` : `${monthShort} ${dayNum}`,
+        fullLabel: i === 0 ? `Today, ${monthShort} ${dayNum}` : `${weekday}, ${monthShort} ${dayNum}`,
+      };
+    });
+
+    return { minDateStr: minStr, maxDateStr: maxStr, datePresets: presets };
+  }, []);
+
+  // Date & Slot Selection (defaults dynamically to today's date)
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
   const [availability, setAvailability] = useState<DoctorAvailabilityInfo | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [loadingAvailability, setLoadingAvailability] = useState<boolean>(false);
@@ -59,7 +98,13 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
 
   // Reschedule Modal state
   const [rescheduleTarget, setRescheduleTarget] = useState<PatientBookedAppointment | null>(null);
-  const [rescheduleDate, setRescheduleDate] = useState<string>('2026-10-02');
+  const [rescheduleDate, setRescheduleDate] = useState<string>(() => {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
   const [rescheduleSlot, setRescheduleSlot] = useState<string>('11:00 AM');
 
   // Cancel Modal state
@@ -159,6 +204,11 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
       return;
     }
 
+    if (selectedDate < minDateStr || selectedDate > maxDateStr) {
+      setErrorMsg(`Consultation date must be between today (${minDateStr}) and the next 5 days (${maxDateStr}).`);
+      return;
+    }
+
     setSubmitting(true);
     setErrorMsg(null);
 
@@ -210,6 +260,10 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
   // Handle Rescheduling
   const handleConfirmReschedule = async () => {
     if (!rescheduleTarget || !rescheduleDate || !rescheduleSlot) return;
+    if (rescheduleDate < minDateStr || rescheduleDate > maxDateStr) {
+      setErrorMsg(`Rescheduled date must be between today (${minDateStr}) and the next 5 days (${maxDateStr}).`);
+      return;
+    }
     setSubmitting(true);
     try {
       await reschedulePatientAppointment(rescheduleTarget.id, rescheduleDate, rescheduleSlot);
@@ -464,31 +518,41 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
 
               {/* Date Picker Input & Quick Presets */}
               <div className="space-y-2">
-                <label className="block text-xs font-bold text-gray-200">
-                  Select Consultation Date
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-gray-200">
+                    Select Consultation Date
+                  </label>
+                  <span className="text-[10px] text-accent font-semibold">
+                    Today to next 5 days
+                  </span>
+                </div>
                 <div className="relative">
                   <Calendar className="w-4 h-4 absolute left-3.5 top-3 text-accent pointer-events-none" />
                   <input
                     type="date"
                     id="input-consultation-date"
                     value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    min={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      if (val < minDateStr) {
+                        setSelectedDate(minDateStr);
+                      } else if (val > maxDateStr) {
+                        setSelectedDate(maxDateStr);
+                      } else {
+                        setSelectedDate(val);
+                      }
+                    }}
+                    min={minDateStr}
+                    max={maxDateStr}
                     className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-accent"
                   />
                 </div>
 
-                {/* Quick Date Shortcuts for Test Demo */}
-                <div className="flex items-center gap-1.5 pt-1 overflow-x-auto">
+                {/* Quick Date Shortcuts (Today + Next 5 Days) */}
+                <div className="flex items-center gap-1.5 pt-1 overflow-x-auto pb-1">
                   <span className="text-[10px] text-gray-400 font-semibold mr-1">Quick:</span>
-                  {[
-                    { label: 'Sep 28', date: '2026-09-28' },
-                    { label: 'Sep 29', date: '2026-09-29' },
-                    { label: 'Sep 30', date: '2026-09-30' },
-                    { label: 'Oct 01', date: '2026-10-01' },
-                    { label: 'Oct 02', date: '2026-10-02' },
-                  ].map((item) => (
+                  {datePresets.map((item) => (
                     <button
                       key={item.date}
                       type="button"
@@ -499,6 +563,7 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
                           ? 'bg-accent text-navy-950 shadow-sm'
                           : 'bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10'
                       }`}
+                      title={item.fullLabel}
                     >
                       {item.label}
                     </button>
@@ -789,7 +854,9 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
                           id={`btn-reschedule-${appt.id}`}
                           onClick={() => {
                             setRescheduleTarget(appt);
-                            setRescheduleDate(appt.date);
+                            const initialRescheduleDate =
+                              appt.date >= minDateStr && appt.date <= maxDateStr ? appt.date : minDateStr;
+                            setRescheduleDate(initialRescheduleDate);
                             setRescheduleSlot(appt.time);
                           }}
                           className="flex-1 py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/15 text-xs font-bold transition-all text-center"
@@ -963,13 +1030,30 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
               </div>
 
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-gray-300">
-                  Select New Date
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-gray-300">
+                    Select New Date
+                  </label>
+                  <span className="text-[10px] text-accent font-semibold">
+                    Today to next 5 days
+                  </span>
+                </div>
                 <input
                   type="date"
                   value={rescheduleDate}
-                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    if (val < minDateStr) {
+                      setRescheduleDate(minDateStr);
+                    } else if (val > maxDateStr) {
+                      setRescheduleDate(maxDateStr);
+                    } else {
+                      setRescheduleDate(val);
+                    }
+                  }}
+                  min={minDateStr}
+                  max={maxDateStr}
                   className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-accent"
                 />
               </div>
