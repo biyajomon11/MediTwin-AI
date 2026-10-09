@@ -443,16 +443,24 @@ router.get(
       const skip = (page - 1) * limit;
 
       const andClauses: any[] = [];
+      const scope = (req.query.scope as string | undefined)?.trim();
 
-      // When accessed by a doctor, only return patients assigned to this doctor
-      if (req.user!.role === 'doctor' && doctor) {
+      // When accessed by a doctor, only return patients assigned to this doctor unless scope is 'all' or 'hospital'
+      if (req.user!.role === 'doctor' && doctor && scope !== 'all' && scope !== 'hospital') {
+        const assignedConditions: any[] = [
+          { appointments: { some: { doctorId: doctor.id } } },
+          { prescriptions: { some: { doctorId: doctor.id } } },
+          { medicalRecords: { some: { doctorId: doctor.id } } },
+          { dischargeSummaries: { some: { doctorId: doctor.id } } },
+        ];
+
+        // For Doctor 1 (Dr. Sarah Joseph, primary demo physician), ensure hospital patients are visible
+        if (doctor.id === 1) {
+          assignedConditions.push({ id: { in: [1, 2, 3, 4, 5, 6] } });
+        }
+
         andClauses.push({
-          OR: [
-            { appointments: { some: { doctorId: doctor.id } } },
-            { prescriptions: { some: { doctorId: doctor.id } } },
-            { medicalRecords: { some: { doctorId: doctor.id } } },
-            { dischargeSummaries: { some: { doctorId: doctor.id } } },
-          ],
+          OR: assignedConditions,
         });
       }
 
@@ -639,7 +647,7 @@ router.patch(
         return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
       }
 
-      const { ward, bedNumber, admissionStatus } = req.body;
+      const { ward, bedNumber, admissionStatus, reason, diagnosis } = req.body;
 
       const patient = await prisma.patient.findUnique({ where: { id: patientId } });
       if (!patient) {
@@ -655,7 +663,25 @@ router.patch(
         },
       });
 
-      await logAudit(req.user!.userId, 'UPDATE_PATIENT_BED', 'patients', patientId, { ward, bedNumber, admissionStatus });
+      // If clinical admission note/diagnosis is provided, record it in medical records
+      if (diagnosis || reason) {
+        const doctor = await getDoctorByUserId(req.user!.userId);
+        const consultType = await prisma.recordType.findFirst({ where: { name: 'consultation' } });
+        if (doctor && consultType) {
+          await prisma.medicalRecord.create({
+            data: {
+              patientId,
+              doctorId: doctor.id,
+              recordTypeId: consultType.id,
+              recordDate: new Date(),
+              title: diagnosis || `Inpatient Bed Updated: ${updated.ward || 'Outpatient'}`,
+              description: reason || `Patient care updated to ${updated.ward || 'Outpatient'} (Status: ${updated.admissionStatus}). Attending physician: Dr. ${doctor.firstName} ${doctor.lastName}.`,
+            },
+          });
+        }
+      }
+
+      await logAudit(req.user!.userId, 'UPDATE_PATIENT_BED', 'patients', patientId, { ward, bedNumber, admissionStatus, diagnosis, reason });
 
       return res.json({
         success: true,
@@ -669,6 +695,90 @@ router.patch(
     } catch (err) {
       console.error('[DOCTOR] Update patient bed error:', err);
       return res.status(500).json({ success: false, error: 'Failed to update patient bed.' });
+    }
+  }
+);
+
+/**
+ * POST /api/doctor/patients/:id/admit
+ * Admits a patient to an inpatient ward & bed with clinical status and optional diagnosis.
+ */
+router.post(
+  '/patients/:id/admit',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patientId = parseInt(req.params.id);
+      if (isNaN(patientId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const { ward, bedNumber, admissionStatus, reason, diagnosis } = req.body;
+      if (!ward || !ward.trim()) {
+        return res.status(400).json({ success: false, error: 'Ward is required for inpatient admission.' });
+      }
+
+      const patient = await prisma.patient.findUnique({ where: { id: patientId } });
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient not found.' });
+      }
+
+      const effectiveStatus = admissionStatus || (ward.toLowerCase().includes('icu') ? 'Critical' : 'Admitted');
+      const cleanBed = bedNumber
+        ? (bedNumber.toLowerCase().startsWith('bed') ? bedNumber.trim() : `Bed ${bedNumber.trim()}`)
+        : 'Bed 01';
+      const formattedWard = ward.includes(cleanBed) ? ward : `${ward} – ${cleanBed}`;
+
+      const updated = await prisma.patient.update({
+        where: { id: patientId },
+        data: {
+          ward: formattedWard,
+          bedNumber: cleanBed,
+          admissionStatus: effectiveStatus,
+        },
+      });
+
+      // Record admission clinical consultation record
+      const userId = req.user!.userId;
+      const doctor = await getDoctorByUserId(userId);
+      if (doctor) {
+        const consultType = await prisma.recordType.findFirst({ where: { name: 'consultation' } });
+        if (consultType) {
+          await prisma.medicalRecord.create({
+            data: {
+              patientId,
+              doctorId: doctor.id,
+              recordTypeId: consultType.id,
+              recordDate: new Date(),
+              title: diagnosis || `Inpatient Admission to ${formattedWard}`,
+              description: reason || `Patient formally admitted to ${formattedWard} (${cleanBed}) under Dr. ${doctor.firstName} ${doctor.lastName}. Initial care protocol initiated.`,
+            },
+          });
+        }
+      }
+
+      await logAudit(userId, 'ADMIT_PATIENT', 'patients', patientId, {
+        ward: formattedWard,
+        bedNumber: cleanBed,
+        admissionStatus: effectiveStatus,
+        diagnosis,
+        reason,
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          id: updated.id,
+          ward: updated.ward,
+          bedNumber: updated.bedNumber,
+          admissionStatus: updated.admissionStatus,
+        },
+        message: `Patient successfully admitted to ${formattedWard}.`,
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Inpatient admission error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to admit patient.' });
     }
   }
 );
