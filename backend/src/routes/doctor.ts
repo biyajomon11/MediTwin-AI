@@ -407,7 +407,8 @@ router.get(
       const doctor = await getDoctorByUserId(userId);
 
       if (!doctor && req.user!.role === 'doctor') {
-        return res.status(404).json({ success: false, error: 'Doctor profile not found for authenticated user.' });
+        // Newly registered or unlinked doctor has zero patients assigned yet
+        return res.json({ success: true, data: [] });
       }
 
       const search = (req.query.search as string | undefined)?.trim();
@@ -419,15 +420,31 @@ router.get(
       const limit = Math.min(50, parseInt((req.query.limit as string) || '20'));
       const skip = (page - 1) * limit;
 
-      const where: any = {};
+      const andClauses: any[] = [];
+
+      // When accessed by a doctor, only return patients assigned to this doctor
+      if (req.user!.role === 'doctor' && doctor) {
+        andClauses.push({
+          OR: [
+            { appointments: { some: { doctorId: doctor.id } } },
+            { prescriptions: { some: { doctorId: doctor.id } } },
+            { medicalRecords: { some: { doctorId: doctor.id } } },
+            { dischargeSummaries: { some: { doctorId: doctor.id } } },
+          ],
+        });
+      }
 
       if (search) {
-        where.OR = [
-          { firstName: { contains: search, mode: 'insensitive' } },
-          { lastName: { contains: search, mode: 'insensitive' } },
-          { user: { email: { contains: search, mode: 'insensitive' } } },
-        ];
+        andClauses.push({
+          OR: [
+            { firstName: { contains: search, mode: 'insensitive' } },
+            { lastName: { contains: search, mode: 'insensitive' } },
+            { user: { email: { contains: search, mode: 'insensitive' } } },
+          ],
+        });
       }
+
+      const where: any = andClauses.length > 0 ? { AND: andClauses } : {};
 
       const allPatients = await prisma.patient.findMany({
         where,
@@ -1610,68 +1627,55 @@ router.get(
         include: { department: true, specialization: true },
       });
 
-      const doctorId = doctor ? doctor.id : 1;
+      const doctorId = doctor?.id ?? null;
 
-      // 1. Fetch appointments for this doctor (or all hospital appointments if none)
-      let appointments = await prisma.appointment.findMany({
-        where: { doctorId },
-        include: {
-          patient: {
+      // 1. Fetch appointments for this doctor only (never leak other doctors' appointments)
+      const appointments = doctorId
+        ? await prisma.appointment.findMany({
+            where: { doctorId },
             include: {
-              gender: true,
-              bloodGroup: true,
-              user: { select: { email: true } },
-              observations: { orderBy: { observationDate: 'desc' }, take: 1 },
-              prescriptions: {
-                include: { items: { include: { medicine: true } } },
-                orderBy: { prescribedDate: 'desc' },
-                take: 2,
-              },
-              medicalRecords: {
-                include: { recordType: true },
-                orderBy: { recordDate: 'desc' },
-                take: 3,
-              },
-            },
-          },
-          status: true,
-        },
-        orderBy: [{ appointmentDate: 'desc' }, { appointmentTime: 'asc' }, { id: 'asc' }],
-      });
-
-      if (appointments.length === 0) {
-        appointments = await prisma.appointment.findMany({
-          include: {
-            patient: {
-              include: {
-                gender: true,
-                bloodGroup: true,
-                user: { select: { email: true } },
-                observations: { orderBy: { observationDate: 'desc' }, take: 1 },
-                prescriptions: {
-                  include: { items: { include: { medicine: true } } },
-                  orderBy: { prescribedDate: 'desc' },
-                  take: 2,
-                },
-                medicalRecords: {
-                  include: { recordType: true },
-                  orderBy: { recordDate: 'desc' },
-                  take: 3,
+              patient: {
+                include: {
+                  gender: true,
+                  bloodGroup: true,
+                  user: { select: { email: true } },
+                  observations: { orderBy: { observationDate: 'desc' }, take: 1 },
+                  prescriptions: {
+                    include: { items: { include: { medicine: true } } },
+                    orderBy: { prescribedDate: 'desc' },
+                    take: 2,
+                  },
+                  medicalRecords: {
+                    include: { recordType: true },
+                    orderBy: { recordDate: 'desc' },
+                    take: 3,
+                  },
                 },
               },
+              status: true,
             },
-            status: true,
-          },
-          orderBy: [{ appointmentDate: 'desc' }, { appointmentTime: 'asc' }, { id: 'asc' }],
-        });
-      }
+            orderBy: [{ appointmentDate: 'desc' }, { appointmentTime: 'asc' }, { id: 'asc' }],
+          })
+        : [];
 
-      // 2. Real Database Counts
-      const [totalPatientsCount, totalPrescriptionsCount, allPatients] = await Promise.all([
-        prisma.patient.count(),
-        prisma.prescription.count({ where: { doctorId } }),
-        prisma.patient.findMany({ include: { gender: true } }),
-      ]);
+      // 2. Real Database Counts scoped specifically to this doctor
+      const [allPatients, totalPrescriptionsCount] = doctorId
+        ? await Promise.all([
+            prisma.patient.findMany({
+              where: {
+                OR: [
+                  { appointments: { some: { doctorId } } },
+                  { prescriptions: { some: { doctorId } } },
+                  { medicalRecords: { some: { doctorId } } },
+                  { dischargeSummaries: { some: { doctorId } } },
+                ],
+              },
+              include: { gender: true },
+            }),
+            prisma.prescription.count({ where: { doctorId } }),
+          ])
+        : [[], 0];
+      const totalPatientsCount = allPatients.length;
 
       const totalAppointments = appointments.length;
       const pendingAppointments = appointments.filter(
@@ -1770,15 +1774,15 @@ router.get(
         };
       });
 
-      // 6. Real Patient Demographics (Computed from actual patients in database)
-      const femaleCount = allPatients.filter((p) => p.gender?.name === 'Female').length;
-      const maleCount = allPatients.filter((p) => p.gender?.name === 'Male').length;
+      // 6. Real Patient Demographics (Computed from actual patients assigned to this doctor)
+      const femaleCount = allPatients.filter((p: any) => p.gender?.name === 'Female').length;
+      const maleCount = allPatients.filter((p: any) => p.gender?.name === 'Male').length;
       const otherGenderCount = allPatients.length - femaleCount - maleCount;
 
-      const totalPatients = allPatients.length || 1;
-      const femalePercent = Math.round((femaleCount / totalPatients) * 100);
-      const malePercent = Math.round((maleCount / totalPatients) * 100);
-      const otherPercent = 100 - femalePercent - malePercent;
+      const totalDemographics = allPatients.length;
+      const femalePercent = totalDemographics > 0 ? Math.round((femaleCount / totalDemographics) * 100) : 0;
+      const malePercent = totalDemographics > 0 ? Math.round((maleCount / totalDemographics) * 100) : 0;
+      const otherPercent = totalDemographics > 0 ? 100 - femalePercent - malePercent : 0;
 
       // 7. Real Patient Activity Trends from database records
       const daysMap: Record<string, number> = {
@@ -1796,11 +1800,11 @@ router.get(
       });
 
       const activityTrends = [
-        { day: '12. Mo', label: 'Mon', count: daysMap['Mon'] || 1 },
-        { day: '13. Tue', label: 'Tue', count: daysMap['Tue'] || 2 },
-        { day: '14. Wed', label: 'Wed', count: daysMap['Wed'] || 3 },
+        { day: '12. Mo', label: 'Mon', count: daysMap['Mon'] || 0 },
+        { day: '13. Tue', label: 'Tue', count: daysMap['Tue'] || 0 },
+        { day: '14. Wed', label: 'Wed', count: daysMap['Wed'] || 0 },
         { day: '15. Thu', label: 'Thu', count: daysMap['Thu'] || totalAppointments },
-        { day: '16. Fri', label: 'Fri', count: daysMap['Fri'] || 2 },
+        { day: '16. Fri', label: 'Fri', count: daysMap['Fri'] || 0 },
       ];
 
       return res.json({
@@ -1808,15 +1812,15 @@ router.get(
         data: {
           doctor: {
             id: doctorId,
-            fullName: doctor ? `Dr. ${doctor.firstName} ${doctor.lastName}` : 'Dr. Biya Jomon',
-            specialization: doctor?.specialization?.name || 'General Medicine & Digital Twin',
+            fullName: doctor ? `Dr. ${doctor.firstName} ${doctor.lastName}` : 'Dr. Attending Physician',
+            specialization: doctor?.specialization?.name || 'General Medicine',
             department: doctor?.department?.name || 'General Medicine',
           },
           stats: {
             appointmentsCount: totalAppointments,
             activePatientsCount: totalPatientsCount,
             pendingRequestsCount: pendingAppointments,
-            prescriptionsCount: Math.max(totalPrescriptionsCount, 3),
+            prescriptionsCount: totalPrescriptionsCount,
             completedCount: completedAppointments,
           },
           todaysAppointments: mappedAppointments,
@@ -2128,9 +2132,6 @@ router.get(
 
       const userId = req.user!.userId;
       const doctor = await getDoctorByUserId(userId);
-      if (!doctor && req.user!.role === 'doctor') {
-        return res.status(403).json({ success: false, error: 'Doctor profile not found for authenticated session.' });
-      }
 
       const patient = await prisma.patient.findUnique({
         where: { id: patientId },

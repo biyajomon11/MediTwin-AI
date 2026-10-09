@@ -431,8 +431,13 @@ export const AIPatientSummaryPage: React.FC = () => {
                 }}
                 className="glass-input w-full pl-10 pr-10 py-3 text-sm text-white appearance-none rounded-xl border border-white/15 focus:border-accent shadow-inner bg-slate-900/60"
               >
-                <option value="" className="bg-[#0F172A]">— Choose patient to synthesize —</option>
-                {patientsLoading && <option disabled className="bg-[#0F172A]">Loading patients from database...</option>}
+                <option value="" className="bg-[#0F172A]">
+                  {patientsLoading
+                    ? 'Loading patients from database...'
+                    : patients.length === 0
+                    ? 'No patients currently assigned to your care'
+                    : '— Choose patient to synthesize —'}
+                </option>
                 {patients.map((p) => {
                   const isCrit = p.status === 'Critical';
                   return (

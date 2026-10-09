@@ -139,17 +139,31 @@ export interface GuidelineFilters {
   sortOrder?: 'asc' | 'desc';
 }
 
+/** Helper to retrieve the active doctor session object from storage */
+function getCurrentDoctorSession(): any {
+  try {
+    const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Helper to retrieve the active JWT token from storage */
 function getAuthToken(): string | null {
   return localStorage.getItem('meditwin_token') || sessionStorage.getItem('meditwin_token');
 }
 
-/** Constructs headers with Bearer authentication */
+/** Constructs headers with Bearer authentication and session user scoping */
 function getAuthHeaders(): HeadersInit {
   const token = getAuthToken();
+  const user = getCurrentDoctorSession();
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(user?.role ? { 'x-user-role': user.role } : {}),
+    ...(user?.userId || user?.id ? { 'x-user-id': String(user.userId || user.id) } : {}),
+    ...(user?.email ? { 'x-user-email': user.email } : {}),
   };
 }
 
@@ -189,7 +203,20 @@ export async function getPatients(
     console.warn('[DOCTOR_SERVICE] Backend unreachable, using fallback dataset:', e);
   }
 
-  // Fallback if backend offline
+  // Fallback if backend offline:
+  // ONLY return demo patients if logged in as the built-in demo doctor (Dr. Sarah Joseph).
+  // A newly created doctor (like Dr. Jolda) has zero assigned patients and must NOT see unassociated data!
+  const currentUser = getCurrentDoctorSession();
+  const currentDoctorName = `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim().toLowerCase();
+  const isDefaultDemoDoctor =
+    currentDoctorName.includes('sarah') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('sarah')) ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('test.doctor'));
+
+  if (!isDefaultDemoDoctor) {
+    return [];
+  }
+
   let patients = [...MOCK_PATIENTS];
   if (filters.search) {
     const q = filters.search.toLowerCase();
@@ -237,6 +264,17 @@ export async function getPatientById(
   } catch (err: any) {
     if (err.message && err.message.includes('Access denied')) throw err;
     console.warn('[DOCTOR_SERVICE] Backend fetch failed, trying local fallback:', err);
+  }
+
+  const currentUser = getCurrentDoctorSession();
+  const currentDoctorName = `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim().toLowerCase();
+  const isDefaultDemoDoctor =
+    currentDoctorName.includes('sarah') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('sarah')) ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('test.doctor'));
+
+  if (!isDefaultDemoDoctor) {
+    throw new Error('Patient record not found or not assigned to your clinical care.');
   }
 
   const patient = MOCK_PATIENTS.find((p) => p.id === patientId);
@@ -722,33 +760,62 @@ export async function getDoctorProfile(): Promise<DoctorProfile> {
     }
   }
 
-  // Fallback demo profile
-  let storedUser: any = null;
-  try {
-    const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
-    if (raw) storedUser = JSON.parse(raw);
-  } catch {
-    // ignore
+  // Fallback demo/stored profile
+  let storedUser: any = getCurrentDoctorSession();
+
+  const isDemoSarah =
+    !storedUser ||
+    (storedUser.firstName?.toLowerCase() === 'sarah' && storedUser.lastName?.toLowerCase() === 'joseph') ||
+    storedUser.email?.toLowerCase().includes('sarah') ||
+    storedUser.username === 'doctor_demo';
+
+  if (isDemoSarah) {
+    return {
+      id: String(storedUser?.id || MOCK_DOCTOR_ID),
+      doctorId: `DOC-001`,
+      userId: String(storedUser?.userId || storedUser?.id || 2),
+      firstName: 'Sarah',
+      lastName: 'Joseph',
+      fullName: 'Dr. Sarah Joseph',
+      email: storedUser?.email || 'sarah01@gmail.com',
+      phone: '+91 7558913457',
+      specialization: 'Cardiology',
+      department: 'Cardiology',
+      hospital: 'MediTwin General Hospital',
+      licenseNumber: 'MID-123D-456',
+      yearsOfExperience: 5,
+      qualification: 'MBBS, MD (Cardiology)',
+      accountStatus: 'Active',
+      createdAt: '2024-01-15',
+      joiningDate: '2024-01-15',
+      role: 'DOCTOR',
+      authMethod: 'JWT Bearer Authentication (RBAC)',
+    };
   }
 
+  // Real newly registered doctor (e.g. Dr. Jolda)
+  const docFirstName = storedUser?.firstName || 'Doctor';
+  const docLastName = storedUser?.lastName || '';
+  const docFullName = `Dr. ${docFirstName} ${docLastName}`.trim();
+
   return {
-    id: String(storedUser?.id || MOCK_DOCTOR_ID),
-    doctorId: `DOC-${String(storedUser?.id || 1).padStart(3, '0')}`,
-    userId: String(storedUser?.id || 2),
-    firstName: storedUser?.firstName || 'Sarah',
-    lastName: storedUser?.lastName || 'Joseph',
-    fullName: storedUser?.firstName ? `Dr. ${storedUser.firstName} ${storedUser.lastName || ''}`.trim() : 'Dr. Sarah Joseph',
-    email: storedUser?.email || 'sarah01@gmail.com',
-    phone: '+91 7558913457',
-    specialization: 'Cardiology',
-    department: 'Cardiology',
-    hospital: 'MediTwin General Hospital',
-    licenseNumber: 'MID-123D-456',
-    yearsOfExperience: 5,
-    qualification: 'MBBS, MD (Cardiology)',
+    id: String(storedUser?.id || storedUser?.userId || 'DOC-REG'),
+    doctorId: storedUser?.licenseNumber ? `DOC-${storedUser.licenseNumber}` : `DOC-${String(storedUser?.id || 'NEW')}`,
+    userId: String(storedUser?.userId || storedUser?.id || 'USR-REG'),
+    firstName: docFirstName,
+    lastName: docLastName,
+    fullName: docFullName,
+    email: storedUser?.email || '',
+    phone: storedUser?.phone || 'Not provided',
+    specialization: storedUser?.specialization || 'General Medicine',
+    department: storedUser?.department || 'General Medicine',
+    hospital: storedUser?.hospital || 'MediTwin General Hospital',
+    licenseNumber: storedUser?.licenseNumber || storedUser?.medicalRegNo || 'DOC-PENDING',
+    yearsOfExperience: storedUser?.yearsOfExperience || storedUser?.experienceYears || 0,
+    qualification: storedUser?.qualification || 'MBBS',
     accountStatus: 'Active',
-    createdAt: '2024-01-15',
-    joiningDate: '2024-01-15',
+    createdAt: storedUser?.registeredAt || new Date().toISOString().split('T')[0],
+    joiningDate: storedUser?.registeredAt || new Date().toISOString().split('T')[0],
     role: 'DOCTOR',
     authMethod: 'JWT Bearer Authentication (RBAC)',
   };

@@ -2134,11 +2134,19 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
       {!loading && !error && patients.length === 0 && (
         <motion.div
           initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-center"
+          className="flex flex-col items-center justify-center min-h-[300px] gap-3 text-center p-8 glass-card border border-white/10 rounded-2xl max-w-lg mx-auto my-8"
         >
-          <Users className="w-12 h-12 text-gray-600" />
-          <h3 className="text-lg font-bold text-white">No patients found</h3>
-          <p className="text-sm text-gray-400">Try adjusting your search or filter criteria.</p>
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Users className="w-8 h-8 text-accent" />
+          </div>
+          <h3 className="text-lg font-bold text-white">
+            {allPatients.length === 0 ? 'No Patients Assigned Yet' : 'No patients match your filter'}
+          </h3>
+          <p className="text-sm text-gray-400 max-w-md">
+            {allPatients.length === 0
+              ? 'There are currently no patients assigned to your clinical care. Newly admitted patients or OPD appointments assigned to you will automatically appear here.'
+              : 'Try clearing your search or filter criteria to see your assigned patient list.'}
+          </p>
         </motion.div>
       )}
 
