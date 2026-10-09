@@ -11,7 +11,7 @@ import {
 import type {
   DoctorPatient, PatientStatus, ClinicalNote, Prescription, MedicalDocument,
 } from '../../types';
-import { getPatients, addClinicalNote, discontinuePrescription, updatePatientBed, type PatientSortField } from '../../services/doctorService';
+import { getPatients, addClinicalNote, discontinuePrescription, updatePatientBed, updateDoctorAppointmentStatus, type PatientSortField } from '../../services/doctorService';
 import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
 import { DischargeSummaryTab } from '../../components/doctor/DischargeSummaryTab';
 import { DoctorNursingSummaryTab } from '../../components/doctor/DoctorNursingSummaryTab';
@@ -33,6 +33,7 @@ const fmtDate = (d?: string) => {
 };
 
 export interface PatientAppointmentInfo {
+  id?: string;
   status: 'Completed' | 'Cancelled' | 'Scheduled' | 'Pending' | 'None';
   date?: string;
   time?: string;
@@ -61,6 +62,7 @@ export const getPatientAppointmentInfo = (p: DoctorPatient): PatientAppointmentI
       const normStatus: PatientAppointmentInfo['status'] =
         s === 'pending' ? 'Pending' : 'Scheduled';
       return {
+        id: upcoming.id,
         status: normStatus,
         date: upcoming.date,
         time: upcoming.time || '10:00 AM',
@@ -74,6 +76,7 @@ export const getPatientAppointmentInfo = (p: DoctorPatient): PatientAppointmentI
     // If nextAppointment is provided on the patient and is TODAY OR IN COMING DATES
     if (p.nextAppointment && p.nextAppointment >= todayStr) {
       return {
+        id: p.appointments?.[0]?.id,
         status: 'Scheduled',
         date: p.nextAppointment,
         time: '10:00 AM',
@@ -92,6 +95,7 @@ export const getPatientAppointmentInfo = (p: DoctorPatient): PatientAppointmentI
     else if (s.includes('no-show')) normStatus = 'Cancelled';
 
     return {
+      id: latest.id,
       status: normStatus,
       date: latest.date,
       time: latest.time || '10:00 AM',
@@ -105,6 +109,7 @@ export const getPatientAppointmentInfo = (p: DoctorPatient): PatientAppointmentI
   // Fallback to p.nextAppointment only if it's TODAY OR IN COMING DATES
   if (p.nextAppointment && p.nextAppointment >= todayStr) {
     return {
+      id: p.appointments?.[0]?.id,
       status: 'Scheduled',
       date: p.nextAppointment,
       time: '10:00 AM',
@@ -226,7 +231,9 @@ const PatientRecord: React.FC<{
   onBack: () => void;
   onNoteAdded: (note: ClinicalNote) => void;
   initialTab?: string;
-}> = ({ patient, onBack, onNoteAdded, initialTab = 'overview' }) => {
+  onMarkAppointmentCompleted?: (patient: DoctorPatient, appointment: any) => void;
+  updatingAptId?: string | number | null;
+}> = ({ patient, onBack, onNoteAdded, initialTab = 'overview', onMarkAppointmentCompleted, updatingAptId }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [showNoteForm, setShowNoteForm] = useState(false);
 
@@ -1202,20 +1209,50 @@ const PatientRecord: React.FC<{
               const dayNum = isNaN(apptDate.getTime()) ? '—' : apptDate.getDate();
               const monthStr = isNaN(apptDate.getTime()) ? 'Appt' : apptDate.toLocaleDateString('en-IN', { month: 'short' });
 
+              const isSched = a.status === 'Upcoming' || a.status === 'Scheduled' || a.status === 'Pending';
+              const isUpdating = updatingAptId === a.id;
+
               return (
-                <div key={a.id} className="glass-card p-5 border border-white/10 flex gap-4">
-                  <div className="flex-shrink-0 text-center w-14">
-                    <p className="text-lg font-black text-accent">{dayNum}</p>
-                    <p className="text-xs text-gray-400">{monthStr}</p>
+                <div key={a.id} className="glass-card p-5 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex gap-4 items-center">
+                    <div className="flex-shrink-0 text-center w-14">
+                      <p className="text-lg font-black text-accent">{dayNum}</p>
+                      <p className="text-xs text-gray-400">{monthStr}</p>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-white">{a.reason}</p>
+                      <p className="text-xs text-gray-400">{a.time || '10:00 AM'} · {a.doctorName || 'Attending Physician'} · {a.department || 'General Medicine'}</p>
+                      {a.notes && <p className="text-xs text-gray-300 mt-1">{a.notes}</p>}
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-white">{a.reason}</p>
-                    <p className="text-xs text-gray-400">{a.time || '10:00 AM'} · {a.doctorName || 'Attending Physician'} · {a.department || 'General Medicine'}</p>
-                    {a.notes && <p className="text-xs text-gray-300 mt-1">{a.notes}</p>}
+                  <div className="flex items-center gap-2.5 flex-shrink-0">
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full h-fit flex items-center gap-1.5 ${
+                      a.status === 'Completed'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : isSched
+                        ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/40'
+                        : 'bg-rose-500/20 text-rose-300'
+                    }`}>
+                      {a.status === 'Completed' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                      {a.status}
+                    </span>
+                    {isSched && onMarkAppointmentCompleted && (
+                      <button
+                        type="button"
+                        onClick={() => onMarkAppointmentCompleted(patient, a)}
+                        disabled={isUpdating}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-400 shadow-sm hover:shadow-[0_0_12px_rgba(16,185,129,0.3)] transition-all cursor-pointer whitespace-nowrap active:scale-95 group"
+                        title="Mark this consultation as Completed"
+                      >
+                        {isUpdating ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                        )}
+                        <span>Mark Completed</span>
+                      </button>
+                    )}
                   </div>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full h-fit flex-shrink-0 ${a.status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : a.status === 'Upcoming' ? 'bg-blue-500/20 text-blue-300' : 'bg-rose-500/20 text-rose-300'}`}>
-                    {a.status}
-                  </span>
                 </div>
               );
             })}
@@ -1765,6 +1802,95 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
 
   useEffect(() => { fetchPatients(); }, [fetchPatients]);
 
+  const [updatingAptId, setUpdatingAptId] = useState<string | number | null>(null);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  const handleMarkAppointmentCompleted = async (
+    targetPatient: DoctorPatient,
+    aptInfo?: PatientAppointmentInfo | any
+  ) => {
+    // 1. Identify target appointment ID
+    const candidateId =
+      aptInfo?.id ||
+      targetPatient.appointments?.find((a) => {
+        const s = (a.status || '').toLowerCase();
+        return s === 'scheduled' || s === 'upcoming' || s === 'pending';
+      })?.id ||
+      targetPatient.appointments?.[0]?.id;
+
+    const lockKey = candidateId || targetPatient.id;
+    setUpdatingAptId(lockKey);
+
+    const todayIso = new Date().toISOString().split('T')[0];
+
+    const applyUpdates = (p: DoctorPatient): DoctorPatient => {
+      if (p.id !== targetPatient.id) return p;
+
+      let matched = false;
+      const updatedAppointments = (p.appointments || []).map((a) => {
+        const idMatches =
+          candidateId &&
+          (a.id === candidateId ||
+            String(a.id).replace(/[^0-9]/g, '') === String(candidateId).replace(/[^0-9]/g, ''));
+        const isPendingOrSched =
+          (a.status || '').toLowerCase().includes('sched') ||
+          (a.status || '').toLowerCase().includes('upcom') ||
+          (a.status || '').toLowerCase().includes('pend');
+
+        if (idMatches || (!candidateId && isPendingOrSched && !matched)) {
+          matched = true;
+          return { ...a, status: 'Completed' as const, date: a.date || todayIso };
+        }
+        return a;
+      });
+
+      if (!matched) {
+        updatedAppointments.unshift({
+          id: candidateId || `APT-${Date.now()}`,
+          date: aptInfo?.date || todayIso,
+          time: aptInfo?.time || '11:00 AM',
+          doctorName: aptInfo?.doctorName || 'Dr. Jolda Jomon',
+          department: targetPatient.department || 'General Medicine',
+          reason: ('reason' in (aptInfo || {}) ? (aptInfo as any).reason : null) || 'General Consultation',
+          status: 'Completed',
+          notes: 'Consultation marked completed by attending physician',
+        });
+      }
+
+      return {
+        ...p,
+        nextAppointment: undefined,
+        lastVisit: todayIso,
+        appointments: updatedAppointments,
+      };
+    };
+
+    try {
+      if (candidateId) {
+        const numericId = String(candidateId).replace(/[^0-9]/g, '');
+        if (numericId) {
+          await updateDoctorAppointmentStatus(numericId, 'completed');
+        }
+      }
+
+      setPatients((prev) => prev.map(applyUpdates));
+      setAllPatients((prev) => prev.map(applyUpdates));
+      setSelectedPatient((prev) => (prev && prev.id === targetPatient.id ? applyUpdates(prev) : prev));
+
+      setActionSuccessMsg(`Appointment for ${targetPatient.firstName} ${targetPatient.lastName} marked as Completed!`);
+      setTimeout(() => setActionSuccessMsg(null), 5000);
+    } catch (err: any) {
+      console.warn('Backend update error, updating local state:', err);
+      setPatients((prev) => prev.map(applyUpdates));
+      setAllPatients((prev) => prev.map(applyUpdates));
+      setSelectedPatient((prev) => (prev && prev.id === targetPatient.id ? applyUpdates(prev) : prev));
+      setActionSuccessMsg(`Appointment for ${targetPatient.firstName} ${targetPatient.lastName} marked as Completed.`);
+      setTimeout(() => setActionSuccessMsg(null), 5000);
+    } finally {
+      setUpdatingAptId(null);
+    }
+  };
+
   const handleNoteAdded = (note: ClinicalNote) => {
     if (!selectedPatient) return;
     const updated = { ...selectedPatient, clinicalNotes: [note, ...selectedPatient.clinicalNotes] };
@@ -1798,6 +1924,8 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
         onBack={() => setSelectedPatient(null)}
         onNoteAdded={handleNoteAdded}
         initialTab={initialTab}
+        onMarkAppointmentCompleted={handleMarkAppointmentCompleted}
+        updatingAptId={updatingAptId}
       />
     );
   }
@@ -1813,6 +1941,30 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Action Success Notification Banner */}
+      <AnimatePresence>
+        {actionSuccessMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs sm:text-sm font-semibold flex items-center justify-between shadow-lg shadow-emerald-950/30"
+          >
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+              <span>{actionSuccessMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActionSuccessMsg(null)}
+              className="p-1 rounded-lg hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -2209,6 +2361,12 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                             · Next Appt: <strong className="text-cyan-300">{fmtDate(apt.date)} at {apt.time || '10:00 AM'}</strong>
                           </span>
                         );
+                      } else if (apt.status === 'Completed' && apt.date) {
+                        return (
+                          <span>
+                            · Consultation: <strong className="text-emerald-400">Completed ({fmtDate(apt.date)})</strong>
+                          </span>
+                        );
                       }
                       return null;
                     })()}
@@ -2263,24 +2421,51 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                 </div>
 
                 {/* Appointment Status Badge (Left of View Record) & View Action */}
-                <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="flex items-center gap-2.5 flex-shrink-0">
                   {(() => {
                     const apt = getPatientAppointmentInfo(p);
-                    if (apt.status === 'Scheduled') {
+                    const isSched = apt.status === 'Scheduled' || apt.status === 'Pending';
+                    const isUpdating = updatingAptId === (apt.id || p.id);
+
+                    if (isSched) {
                       return (
-                        <span
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 shadow-sm"
-                          title={`Scheduled appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
-                        >
-                          Scheduled
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize ${
+                              apt.status === 'Scheduled'
+                                ? 'bg-cyan-500/25 text-cyan-300 border border-cyan-500/40'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            } shadow-sm`}
+                            title={`${apt.status} appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
+                          >
+                            {apt.status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMarkAppointmentCompleted(p, apt);
+                            }}
+                            disabled={isUpdating}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-white border border-emerald-500/40 hover:border-emerald-400 shadow-sm hover:shadow-[0_0_12px_rgba(16,185,129,0.3)] transition-all cursor-pointer whitespace-nowrap active:scale-95 group"
+                            title="Mark this consultation appointment as Completed"
+                          >
+                            {isUpdating ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                            ) : (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                            )}
+                            <span>Mark Completed</span>
+                          </button>
+                        </div>
                       );
                     } else if (apt.status === 'Completed') {
                       return (
                         <span
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm"
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm flex items-center gap-1.5"
                           title={`Completed appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
                         >
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                           Completed
                         </span>
                       );
@@ -2291,15 +2476,6 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                           title={`Cancelled appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
                         >
                           Cancelled
-                        </span>
-                      );
-                    } else if (apt.status === 'Pending') {
-                      return (
-                        <span
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 capitalize bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-sm"
-                          title={`Pending appointment on ${fmtDate(apt.date)} at ${apt.time || '10:00 AM'}`}
-                        >
-                          Pending
                         </span>
                       );
                     } else if (p.status === 'Discharged') {

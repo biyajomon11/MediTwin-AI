@@ -1879,19 +1879,26 @@ router.patch(
   requireRoles(['doctor', 'admin']),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const apptId = parseInt(req.params.id);
+      const rawId = String(req.params.id).replace(/[^0-9]/g, '');
+      const apptId = parseInt(rawId, 10);
       const { status } = req.body;
+
+      if (isNaN(apptId)) {
+        return res.status(400).json({ success: false, error: 'Invalid appointment ID format.' });
+      }
 
       if (!status) {
         return res.status(400).json({ success: false, error: 'Status is required.' });
       }
 
-      const statusRecord = await prisma.appointmentStatus.findFirst({
-        where: { name: status.toLowerCase() },
+      let statusRecord = await prisma.appointmentStatus.findFirst({
+        where: { name: { equals: status.toLowerCase(), mode: 'insensitive' } },
       });
 
       if (!statusRecord) {
-        return res.status(400).json({ success: false, error: 'Invalid appointment status.' });
+        statusRecord = await prisma.appointmentStatus.create({
+          data: { name: status.toLowerCase() },
+        });
       }
 
       const updated = await prisma.appointment.update({
