@@ -68,6 +68,9 @@ app.get('/api/schema-summary', (_req: Request, res: Response) => {
   });
 });
 
-app.listen(PORT, () => {
+import { ensureInpatientJoldaAndAngel } from './init-inpatient';
+
+app.listen(PORT, async () => {
   console.log(`🚀 MediTwin AI Backend API running on http://localhost:${PORT}`);
+  await ensureInpatientJoldaAndAngel();
 });

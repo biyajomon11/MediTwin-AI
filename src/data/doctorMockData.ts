@@ -5,6 +5,176 @@ import type {
 // The mock "current doctor" ID. In production this comes from the JWT.
 export const MOCK_DOCTOR_ID = 1;
 
+/**
+ * Dedicated Inpatient allocated to Dr. Jolda Jomon (Attending Physician)
+ * and Staff Nurse Angel Renoy (Ward: General Ward 2B, Bed: Bed 08).
+ */
+export const JOLDA_INPATIENT_MOCK: DoctorPatient = {
+  id: 104,
+  assignedDoctorId: 101,
+  firstName: 'Thomas',
+  lastName: 'Varghese',
+  dateOfBirth: '1978-04-12',
+  age: 48,
+  phone: '+91 98471 23456',
+  email: 'thomas.varghese@gmail.com',
+  gender: { name: 'Male' },
+  bloodGroup: { name: 'O+' },
+  department: 'General Medicine',
+  ward: 'General Ward 2B – Bed 08',
+  bedNumber: 'Bed 08',
+  address: 'Varghese Villa, Kottayam, Kerala',
+  status: 'Active',
+  lastVisit: '2026-10-08',
+  admissionDate: '2026-10-08',
+  nextAppointment: '2026-10-10',
+  primaryCondition: 'Acute Bronchitis & Type 2 Diabetes Monitoring',
+  emergencyContactName: 'Annamma Varghese (Wife)',
+  emergencyContactPhone: '+91 98471 99887',
+  allergies: [
+    {
+      substance: 'Sulfa Drugs (Sulfonamides)',
+      reaction: 'Maculopapular Rash',
+      severity: 'Moderate',
+      verificationStatus: 'Verified by Doctor',
+      verifiedBy: 'Dr. Jolda Jomon',
+      verifiedDate: '2026-10-08',
+      reactionType: 'True IgE Allergy',
+      notes: 'Avoid sulfonamide antibiotics.',
+    },
+  ],
+  currentMedications: [
+    {
+      name: 'Ceftriaxone IV',
+      dosage: '1 g',
+      frequency: 'Once daily (IV Infusion)',
+      startDate: '2026-10-08',
+      prescribedBy: 'Dr. Jolda Jomon',
+    },
+    {
+      name: 'Metformin Hydrochloride',
+      dosage: '500 mg',
+      frequency: 'Twice daily after meals',
+      startDate: '2026-10-08',
+      prescribedBy: 'Dr. Jolda Jomon',
+    },
+    {
+      name: 'Normal Saline 0.9%',
+      dosage: '500 ml',
+      frequency: 'IV Infusion at 75 ml/hr',
+      startDate: '2026-10-08',
+      prescribedBy: 'Dr. Jolda Jomon',
+    },
+  ],
+  medicalHistory: [
+    {
+      condition: 'Type 2 Diabetes Mellitus',
+      diagnosedDate: '2019-06-14',
+      diagnosedBy: 'Dr. Jolda Jomon (General Medicine)',
+      status: 'Active',
+      notes: 'Maintained on oral hypoglycemic agents and diet.',
+    },
+    {
+      condition: 'Acute Infectious Bronchitis (Inpatient)',
+      diagnosedDate: '2026-10-08',
+      diagnosedBy: 'Dr. Jolda Jomon (Attending Physician)',
+      status: 'Active',
+      notes: 'Admitted to General Ward 2B (Bed 08). Primary care nurse: Staff Nurse Angel Renoy.',
+    },
+  ],
+  labReports: [
+    {
+      id: 'LAB-104-1',
+      testName: 'Complete Blood Count (CBC)',
+      date: '2026-10-08',
+      result: '11.2',
+      unit: 'x10^3/uL',
+      referenceRange: '4.5 - 11.0',
+      status: 'Abnormal',
+      orderedBy: 'Dr. Jolda Jomon',
+      notes: 'Mild leukocytosis consistent with acute bronchitis.',
+    },
+    {
+      id: 'LAB-104-2',
+      testName: 'Fasting Blood Sugar (FBS)',
+      date: '2026-10-09',
+      result: '128',
+      unit: 'mg/dL',
+      referenceRange: '70 - 100',
+      status: 'Abnormal',
+      orderedBy: 'Dr. Jolda Jomon',
+      notes: 'Controlled diabetes under inpatient monitoring.',
+    },
+  ],
+  appointments: [
+    {
+      id: 'APT-104-1',
+      date: '2026-10-08',
+      time: '09:30',
+      doctorName: 'Dr. Jolda Jomon',
+      department: 'General Medicine',
+      reason: 'Emergency OPD Evaluation & Inpatient Admission',
+      status: 'Completed',
+      notes: 'Admitted to General Ward 2B, Bed 08. Ward handover to Staff Nurse Angel Renoy.',
+    },
+    {
+      id: 'APT-104-2',
+      date: '2026-10-10',
+      time: '10:00',
+      doctorName: 'Dr. Jolda Jomon',
+      department: 'General Medicine',
+      reason: 'Inpatient Clinical Ward Rounds & Antibiotic Response Check',
+      status: 'Upcoming',
+    },
+  ],
+  prescriptions: [
+    {
+      id: 'RX-104-1',
+      date: '2026-10-08',
+      doctorName: 'Dr. Jolda Jomon',
+      notes: 'Inpatient Admission Protocol — General Ward 2B Bed 08',
+      status: 'Active',
+      medications: [
+        {
+          name: 'Ceftriaxone IV',
+          dosage: '1 g',
+          frequency: 'Once daily (IV)',
+          startDate: '2026-10-08',
+          prescribedBy: 'Dr. Jolda Jomon',
+        },
+        {
+          name: 'Metformin Hydrochloride',
+          dosage: '500 mg',
+          frequency: 'Twice daily',
+          startDate: '2026-10-08',
+          prescribedBy: 'Dr. Jolda Jomon',
+        },
+      ],
+    },
+  ],
+  clinicalNotes: [
+    {
+      id: 'CN-104-1',
+      date: '2026-10-08',
+      time: '10:00 AM',
+      authorName: 'Dr. Jolda Jomon',
+      authorRole: 'Doctor',
+      content: 'Patient admitted with productive cough, mild dyspnea, and low-grade pyrexia. Chest auscultation revealed coarse bilateral rhonchi. Admitted to General Ward 2B, Bed 08. Nursing care coordinated with Staff Nurse Angel Renoy.',
+      type: 'Consultation',
+    },
+    {
+      id: 'CN-104-2',
+      date: '2026-10-09',
+      time: '08:45 AM',
+      authorName: 'Staff Nurse Angel Renoy',
+      authorRole: 'Nurse',
+      content: 'Morning nursing handover: Patient vital signs stable (BP 124/82, HR 76, SpO2 98%). IV Ceftriaxone 1g administered on schedule. Patient rested comfortably overnight in Bed 08.',
+      type: 'Progress Note',
+    },
+  ],
+  documents: [],
+};
+
 export const MOCK_PATIENTS: DoctorPatient[] = [
   {
     id: 1,

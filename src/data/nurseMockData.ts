@@ -23,6 +23,38 @@ export const MOCK_NURSE_SECONDARY_ID = 2;    // second nurse on ward
 
 export const MOCK_NURSE_PATIENTS: NursePatient[] = [
   {
+    id: 204,
+    patientId: 'PAT-2024-204',
+    assignedNurseId: 1, // Staff Nurse Angel Renoy
+    firstName: 'Thomas',
+    lastName: 'Varghese',
+    dateOfBirth: '1978-04-12',
+    age: 48,
+    gender: { name: 'Male' },
+    bloodGroup: { name: 'O+' },
+    department: 'General Medicine',
+    ward: 'General Ward 2B – Bed 08',
+    assignedDoctor: 'Dr. Jolda Jomon',
+    phone: '+91 98471 23456',
+    email: 'thomas.varghese@gmail.com',
+    address: 'Varghese Villa, Kottayam, Kerala',
+    emergencyContactName: 'Annamma Varghese (Wife)',
+    emergencyContactPhone: '+91 98471 99887',
+    allergies: [
+      {
+        substance: 'Sulfa Drugs (Sulfonamides)',
+        reaction: 'Maculopapular Rash',
+        severity: 'Moderate',
+        verificationStatus: 'Verified by Doctor',
+        verifiedBy: 'Dr. Jolda Jomon',
+        reactionType: 'True IgE Allergy',
+      },
+    ],
+    status: 'Active',
+    primaryCondition: 'Acute Bronchitis & Type 2 Diabetes Monitoring',
+    admissionDate: '2026-10-08',
+  },
+  {
     id: 1,
     patientId: 'PAT-2024-001',
     assignedNurseId: 1,
@@ -349,6 +381,29 @@ export const MOCK_NURSE_PATIENTS: NursePatient[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 export const MOCK_OBSERVATIONS: PatientObservation[] = [
   {
+    id: 2004,
+    patientId: 204,
+    nurseId: 1,
+    observationDate: '2026-10-09',
+    observationTime: '08:30',
+    temperature: 37.0,
+    pulseRate: 76,
+    respiratoryRate: 16,
+    systolicBp: 124,
+    diastolicBp: 82,
+    spo2: 98,
+    bloodGlucose: 128,
+    weight: 74,
+    painScore: 2,
+    consciousnessLevel: 'Alert',
+    generalObservation: 'Inpatient Thomas Varghese in Bed 08. Awake, alert, breathing comfortably on room air. Morning ward rounds completed with Dr. Jolda Jomon.',
+    additionalNotes: 'IV Ceftriaxone 1g administered on schedule. IV line patent without phlebitis. Continue diabetic inpatient protocol.',
+    createdAt: '2026-10-09T08:30:00Z',
+    updatedAt: '2026-10-09T08:30:00Z',
+    patient: { id: 204, firstName: 'Thomas', lastName: 'Varghese', gender: { name: 'Male' } },
+    nurse: { id: 1, firstName: 'Angel', lastName: 'Renoy', department: { name: 'General Medicine' } },
+  },
+  {
     id: 1001,
     patientId: 101,
     nurseId: 1,
@@ -446,6 +501,19 @@ export const MOCK_OBSERVATIONS: PatientObservation[] = [
 // Mock Nursing Notes
 // ─────────────────────────────────────────────────────────────────────────────
 export const MOCK_NURSING_NOTES: NursingNote[] = [
+  {
+    id: 'NN-204-1',
+    patientId: 204,
+    date: '2026-10-09',
+    time: '08:45',
+    nurseName: 'Staff Nurse Angel Renoy',
+    noteType: 'General Nursing Note',
+    nursingObservation: 'Patient Thomas Varghese admitted to General Ward 2B (Bed 08) under Dr. Jolda Jomon. Vital signs stable, afebrile, chest clear with mild cough. Blood glucose monitored.',
+    patientResponse: 'Patient reports improved breathing following nebulization. Cooperating well with nursing staff.',
+    treatmentCareProvided: 'Administered IV Ceftriaxone 1g and oral Metformin 500mg as charted by Dr. Jolda Jomon. IV cannula dressing intact.',
+    additionalNotes: 'Dr. Jolda Jomon completed morning clinical review.',
+    createdAt: '2026-10-09T08:45:00Z',
+  },
   {
     id: 'NN-001',
     patientId: 101,
@@ -1098,6 +1166,23 @@ export interface AuthorizedPrescription {
 }
 
 export const MOCK_NURSE_ACTIVE_PRESCRIPTIONS: AuthorizedPrescription[] = [
+  {
+    id: 'rx-item-204-1',
+    prescriptionId: 'RX-2026-104',
+    patientId: 204,
+    patientName: 'Thomas Varghese',
+    doctorName: 'Dr. Jolda Jomon',
+    medicineName: 'Ceftriaxone IV',
+    strength: '1 g',
+    dose: '1 g (IV infusion in 100ml NS)',
+    route: 'Intravenous',
+    frequency: 'Once Daily (09:00 AM)',
+    duration: '5 Days',
+    prescribedDate: '2026-10-08',
+    validUntil: '2026-10-13',
+    status: 'Active',
+    instructions: 'Infuse over 30 mins. Check IV cannula site before infusion. Prescribed by Dr. Jolda Jomon.',
+  },
   {
     id: 'rx-item-1',
     prescriptionId: 'RX-2024-881',

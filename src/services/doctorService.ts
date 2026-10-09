@@ -23,7 +23,7 @@ import type {
   DischargeSummary,
   CreateDischargeSummaryInput,
 } from '../types';
-import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID } from '../data/doctorMockData';
+import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID, JOLDA_INPATIENT_MOCK } from '../data/doctorMockData';
 import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from './patientService';
 
 export { MOCK_DOCTOR_ID };
@@ -213,6 +213,31 @@ export async function getPatients(
     (currentUser?.email && currentUser.email.toLowerCase().includes('sarah')) ||
     (currentUser?.email && currentUser.email.toLowerCase().includes('test.doctor'));
 
+  const isJoldaDoctor =
+    currentDoctorName.includes('jolda') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('jolda'));
+
+  if (isJoldaDoctor) {
+    let patients = [JOLDA_INPATIENT_MOCK];
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      patients = patients.filter(
+        (p) =>
+          p.firstName.toLowerCase().includes(q) ||
+          p.lastName.toLowerCase().includes(q) ||
+          String(p.id).includes(q) ||
+          p.email?.toLowerCase().includes(q)
+      );
+    }
+    if (filters.department) {
+      patients = patients.filter((p) => p.department?.toLowerCase() === filters.department?.toLowerCase());
+    }
+    if (filters.status) {
+      patients = patients.filter((p) => p.status === filters.status);
+    }
+    return patients;
+  }
+
   if (!isDefaultDemoDoctor) {
     return [];
   }
@@ -272,6 +297,17 @@ export async function getPatientById(
     currentDoctorName.includes('sarah') ||
     (currentUser?.email && currentUser.email.toLowerCase().includes('sarah')) ||
     (currentUser?.email && currentUser.email.toLowerCase().includes('test.doctor'));
+
+  const isJoldaDoctor =
+    currentDoctorName.includes('jolda') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('jolda'));
+
+  if (isJoldaDoctor) {
+    if (patientId === JOLDA_INPATIENT_MOCK.id || String(patientId) === String(JOLDA_INPATIENT_MOCK.id)) {
+      return JOLDA_INPATIENT_MOCK;
+    }
+    throw new Error('Patient record not found or not assigned to your clinical care.');
+  }
 
   if (!isDefaultDemoDoctor) {
     throw new Error('Patient record not found or not assigned to your clinical care.');
