@@ -19,6 +19,20 @@ interface InpatientAdmissionDetailsModalProps {
   onOpenPatientChart?: (patientId: number) => void;
 }
 
+const formatGender = (g: any): string => {
+  if (!g) return 'Unspecified';
+  if (typeof g === 'string') return g;
+  if (typeof g === 'object' && g.name) return String(g.name);
+  return 'Unspecified';
+};
+
+const formatBloodGroup = (bg: any): string => {
+  if (!bg) return 'Unknown';
+  if (typeof bg === 'string') return bg;
+  if (typeof bg === 'object' && bg.name) return String(bg.name);
+  return 'Unknown';
+};
+
 export const InpatientAdmissionDetailsModal: React.FC<InpatientAdmissionDetailsModalProps> = ({
   admission,
   onClose,
@@ -39,14 +53,18 @@ export const InpatientAdmissionDetailsModal: React.FC<InpatientAdmissionDetailsM
     DISCHARGED: 'bg-slate-500/20 text-gray-400 border-slate-500/40',
   };
 
-  const admissionDateFormatted = new Date(admission.admissionDateTime).toLocaleDateString('en-US', {
-    weekday: 'short',
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const admissionDateFormatted = admission.admissionDateTime
+    ? new Date(admission.admissionDateTime).toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'Recent Admission';
+
+  const patientInitials = (admission.patientName || 'PT').slice(0, 2).toUpperCase();
 
   return (
     <AnimatePresence>
@@ -69,7 +87,7 @@ export const InpatientAdmissionDetailsModal: React.FC<InpatientAdmissionDetailsM
                     Inpatient Admission Record
                   </h3>
                   <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-accent/20 text-accent border border-accent/40 font-bold">
-                    {admission.admissionNumber}
+                    {admission.admissionNumber || 'ADM'}
                   </span>
                 </div>
                 <p className="text-xs text-gray-400">
@@ -91,27 +109,27 @@ export const InpatientAdmissionDetailsModal: React.FC<InpatientAdmissionDetailsM
             <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent font-bold text-sm">
-                  {admission.patientName.slice(0, 2).toUpperCase()}
+                  {patientInitials}
                 </div>
                 <div>
                   <h4 className="font-bold text-white text-sm flex items-center gap-2">
-                    <span>{admission.patientName}</span>
+                    <span>{admission.patientName || 'Patient'}</span>
                     <span className="text-xs font-mono text-gray-400 font-normal">
                       ({admission.patientCode || `PT-${admission.patientId}`})
                     </span>
                   </h4>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Age: {admission.age} • Gender: {admission.gender} • Blood Group: {admission.bloodGroup} • Phone: {admission.phone || 'N/A'}
+                    Age: {admission.age ?? (admission as any).patientAge ?? '—'} • Gender: {formatGender(admission.gender || (admission as any).patientGender)} • Blood Group: {formatBloodGroup(admission.bloodGroup)} • Phone: {admission.phone || (admission as any).patientPhone || 'N/A'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <span className={`text-xs px-2.5 py-1 rounded-lg border font-semibold ${statusColors[admission.admissionStatus] || 'bg-slate-500/20 text-gray-300'}`}>
-                  {admission.admissionStatus}
+                  {(admission.admissionStatus || 'ADMITTED').replace('_', ' ')}
                 </span>
                 <span className={`text-xs px-2.5 py-1 rounded-lg border font-semibold ${acuityColors[admission.acuityLevel] || 'bg-slate-500/20 text-gray-300'}`}>
-                  {admission.acuityLevel} Acuity
+                  {admission.acuityLevel || 'MODERATE'} Acuity
                 </span>
               </div>
             </div>

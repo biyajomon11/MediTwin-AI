@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -13,29 +14,31 @@ import { NurseProfilePage } from './pages/nurse/NurseProfilePage';
 
 export const App: React.FC = () => {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/register/doctor" element={<DoctorRegisterPage />} />
-        <Route path="/doctor-register" element={<DoctorRegisterPage />} />
-        <Route path="/register/nurse" element={<NurseRegisterPage />} />
-        <Route path="/nurse-register" element={<NurseRegisterPage />} />
-        <Route path="/register/patient" element={<PatientRegisterPage />} />
-        <Route path="/patient-register" element={<PatientRegisterPage />} />
-        <Route path="/register/admin" element={<AdminRegisterPage />} />
-        <Route path="/admin-register" element={<AdminRegisterPage />} />
-        <Route path="/doctor/profile" element={<DoctorProfilePage />} />
-        <Route path="/nurse/profile" element={<NurseProfilePage />} />
-        <Route path="/admin/profile" element={<Navigate to="/dashboard/admin?tab=profile" replace />} />
-        <Route path="/admin/department-analytics" element={<Navigate to="/dashboard/admin?tab=departments" replace />} />
-        <Route path="/department-analytics" element={<Navigate to="/dashboard/admin?tab=departments" replace />} />
-        <Route path="/dashboard/:role" element={<DashboardPage />} />
-        <Route path="/dashboard" element={<Navigate to="/dashboard/doctor" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+    <ErrorBoundary fallbackTitle="MediTwin AI Health Platform">
+      <Router>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/register/doctor" element={<DoctorRegisterPage />} />
+          <Route path="/doctor-register" element={<DoctorRegisterPage />} />
+          <Route path="/register/nurse" element={<NurseRegisterPage />} />
+          <Route path="/nurse-register" element={<NurseRegisterPage />} />
+          <Route path="/register/patient" element={<PatientRegisterPage />} />
+          <Route path="/patient-register" element={<PatientRegisterPage />} />
+          <Route path="/register/admin" element={<AdminRegisterPage />} />
+          <Route path="/admin-register" element={<AdminRegisterPage />} />
+          <Route path="/doctor/profile" element={<DoctorProfilePage />} />
+          <Route path="/nurse/profile" element={<NurseProfilePage />} />
+          <Route path="/admin/profile" element={<Navigate to="/dashboard/admin?tab=profile" replace />} />
+          <Route path="/admin/department-analytics" element={<Navigate to="/dashboard/admin?tab=departments" replace />} />
+          <Route path="/department-analytics" element={<Navigate to="/dashboard/admin?tab=departments" replace />} />
+          <Route path="/dashboard/:role" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<Navigate to="/dashboard/doctor" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Router>
+    </ErrorBoundary>
   );
 };
 

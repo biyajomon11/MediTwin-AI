@@ -1835,10 +1835,11 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
         page: inpatientPage,
         limit: 15,
       });
-      setInpatientAdmissions(res.data);
-      setInpatientPagination(res.pagination);
+      setInpatientAdmissions(Array.isArray(res?.data) ? res.data : []);
+      setInpatientPagination(res?.pagination || { page: 1, limit: 15, total: 0, totalPages: 1 });
     } catch (e) {
       console.error('Failed to load inpatient admissions:', e);
+      setInpatientAdmissions([]);
     } finally {
       setInpatientLoading(false);
     }
@@ -1970,19 +1971,25 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
   useEffect(() => {
     if (initialTab !== lastTabRef.current) {
       lastTabRef.current = initialTab;
-      if (initialTab !== 'overview' && !selectedPatient && patients.length > 0) {
+      if (
+        initialTab !== 'overview' &&
+        initialTab !== 'inpatient-admissions' &&
+        viewMode !== 'inpatient_admissions' &&
+        !selectedPatient &&
+        patients.length > 0
+      ) {
         setSelectedPatient(patients[0]);
       }
     }
-  }, [initialTab, patients, selectedPatient]);
+  }, [initialTab, patients, selectedPatient, viewMode]);
 
-  if (selectedPatient) {
+  if (selectedPatient && viewMode !== 'inpatient_admissions') {
     return (
       <PatientRecord
         patient={selectedPatient}
         onBack={() => setSelectedPatient(null)}
         onNoteAdded={handleNoteAdded}
-        initialTab={initialTab}
+        initialTab={initialTab === 'inpatient-admissions' ? 'overview' : initialTab}
         onMarkAppointmentCompleted={handleMarkAppointmentCompleted}
         updatingAptId={updatingAptId}
       />
@@ -2643,7 +2650,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                 <span>Total Admissions</span>
                 <Bed className="w-4 h-4 text-accent" />
               </div>
-              <div className="text-xl font-black text-white">{inpatientPagination.total}</div>
+              <div className="text-xl font-black text-white">{inpatientPagination?.total ?? (inpatientAdmissions || []).length}</div>
             </div>
 
             <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
@@ -2652,7 +2659,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                 <Activity className="w-4 h-4 text-emerald-400" />
               </div>
               <div className="text-xl font-black text-emerald-400">
-                {inpatientAdmissions.filter((a) => a.admissionStatus === 'ADMITTED').length}
+                {(inpatientAdmissions || []).filter((a) => a?.admissionStatus === 'ADMITTED').length}
               </div>
             </div>
 
@@ -2662,7 +2669,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                 <Clock className="w-4 h-4 text-amber-400" />
               </div>
               <div className="text-xl font-black text-amber-400">
-                {inpatientAdmissions.filter((a) => a.admissionStatus === 'UNDER_OBSERVATION').length}
+                {(inpatientAdmissions || []).filter((a) => a?.admissionStatus === 'UNDER_OBSERVATION').length}
               </div>
             </div>
 
@@ -2672,7 +2679,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                 <FileCheck className="w-4 h-4 text-gray-400" />
               </div>
               <div className="text-xl font-black text-gray-300">
-                {inpatientAdmissions.filter((a) => a.admissionStatus === 'DISCHARGED').length}
+                {(inpatientAdmissions || []).filter((a) => a?.admissionStatus === 'DISCHARGED').length}
               </div>
             </div>
           </div>
@@ -2730,7 +2737,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                 Retrieving inpatient admissions and real-time bed inventory...
               </p>
             </div>
-          ) : inpatientAdmissions.length === 0 ? (
+          ) : (inpatientAdmissions || []).length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-white/[0.02] border border-white/10 space-y-4">
               <div className="w-14 h-14 rounded-2xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent mx-auto">
                 <Bed className="w-7 h-7" />
@@ -2756,30 +2763,48 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {inpatientAdmissions.map((adm) => {
+              {(inpatientAdmissions || []).map((adm) => {
                 const acuityBadgeColor =
-                  adm.acuityLevel === 'CRITICAL'
+                  adm?.acuityLevel === 'CRITICAL'
                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
-                    : adm.acuityLevel === 'HIGH'
+                    : adm?.acuityLevel === 'HIGH'
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                    : adm.acuityLevel === 'MODERATE'
+                    : adm?.acuityLevel === 'MODERATE'
                     ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
                     : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
 
                 const statusBadgeColor =
-                  adm.admissionStatus === 'ADMITTED'
+                  adm?.admissionStatus === 'ADMITTED'
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : adm.admissionStatus === 'UNDER_OBSERVATION'
+                    : adm?.admissionStatus === 'UNDER_OBSERVATION'
                     ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                     : 'bg-slate-500/20 text-gray-400 border-slate-500/40';
 
-                const admDateFormatted = new Date(adm.admissionDateTime).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
+                const admDateFormatted = adm?.admissionDateTime
+                  ? new Date(adm.admissionDateTime).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : 'Recent Admission';
+
+                const patientInitials = (adm?.patientName || 'PT').slice(0, 2).toUpperCase();
+
+                const formatGender = (g: any): string => {
+                  if (!g) return 'Unspecified';
+                  if (typeof g === 'string') return g;
+                  if (typeof g === 'object' && g.name) return String(g.name);
+                  return 'Unspecified';
+                };
+
+                const formatBloodGroup = (bg: any): string => {
+                  if (!bg) return 'Unknown';
+                  if (typeof bg === 'string') return bg;
+                  if (typeof bg === 'object' && bg.name) return String(bg.name);
+                  return 'Unknown';
+                };
 
                 return (
                   <motion.div
@@ -2791,30 +2816,30 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-white/5">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent font-bold text-sm flex-shrink-0">
-                          {adm.patientName.slice(0, 2).toUpperCase()}
+                          {patientInitials}
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-white text-sm">{adm.patientName}</span>
+                            <span className="font-bold text-white text-sm">{adm.patientName || 'Patient'}</span>
                             <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-gray-400 border border-white/10">
-                              {adm.patientCode}
+                              {adm.patientCode || `PT-${adm.patientId}`}
                             </span>
                             <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-accent/15 text-accent border border-accent/30 font-semibold">
-                              {adm.admissionNumber}
+                              {adm.admissionNumber || 'ADM'}
                             </span>
                           </div>
                           <p className="text-xs text-gray-400">
-                            {adm.age} yrs • {adm.gender} • Blood Group {adm.bloodGroup} • Admitted {admDateFormatted}
+                            {adm.age ?? (adm as any).patientAge ?? '—'} yrs • {formatGender(adm.gender || (adm as any).patientGender)} • Blood Group {formatBloodGroup(adm.bloodGroup)} • Admitted {admDateFormatted}
                           </p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${acuityBadgeColor}`}>
-                          {adm.acuityLevel} ACUITY
+                          {adm.acuityLevel || 'MODERATE'} ACUITY
                         </span>
                         <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusBadgeColor}`}>
-                          {adm.admissionStatus.replace('_', ' ')}
+                          {(adm.admissionStatus || 'ADMITTED').replace('_', ' ')}
                         </span>
                       </div>
                     </div>
@@ -2825,9 +2850,9 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                           <Building2 className="w-3.5 h-3.5 text-accent" /> Ward & Bed Assignment
                         </span>
                         <div className="font-semibold text-white flex items-center gap-2">
-                          <span>{adm.wardName}</span>
+                          <span>{adm.wardName || 'Inpatient Ward'}</span>
                           <span className="px-2 py-0.5 rounded-md bg-teal-500/20 text-teal-300 border border-teal-500/40 font-bold font-mono text-[11px]">
-                            {adm.bedNumber}
+                            {adm.bedNumber || 'Bed Assigned'}
                           </span>
                         </div>
                         <p className="text-gray-400 text-[10px]">{adm.wardDepartment || 'Inpatient Service'}</p>
@@ -2837,16 +2862,16 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                         <span className="text-gray-400 text-[11px] flex items-center gap-1.5">
                           <Stethoscope className="w-3.5 h-3.5 text-accent" /> Clinical Diagnosis
                         </span>
-                        <p className="font-semibold text-white truncate">{adm.admissionDiagnosis}</p>
-                        <p className="text-gray-400 text-[10px] truncate">CC: {adm.chiefComplaint}</p>
+                        <p className="font-semibold text-white truncate">{adm.admissionDiagnosis || 'Clinical Inpatient'}</p>
+                        <p className="text-gray-400 text-[10px] truncate">CC: {adm.chiefComplaint || 'Under Inpatient Observation'}</p>
                       </div>
 
                       <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
                         <span className="text-gray-400 text-[11px] flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-accent" /> Admitting Physician
                         </span>
-                        <p className="font-semibold text-white">{adm.doctorName}</p>
-                        <p className="text-gray-400 text-[10px]">{adm.doctorSpecialization} • {adm.doctorDepartment}</p>
+                        <p className="font-semibold text-white">{adm.doctorName || 'Attending Physician'}</p>
+                        <p className="text-gray-400 text-[10px]">{adm.doctorSpecialization || 'Physician'} • {adm.doctorDepartment || 'General Medicine'}</p>
                       </div>
                     </div>
 

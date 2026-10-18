@@ -19,6 +19,7 @@ import { PatientRecordsPage } from './doctor/PatientRecordsPage';
 import { AIPatientSummaryPage } from './doctor/AIPatientSummaryPage';
 import { ClinicalGuidelinesPage } from './doctor/ClinicalGuidelinesPage';
 import { DoctorProfilePage } from './doctor/DoctorProfilePage';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { getPatients as getDoctorPatients } from '../services/doctorService';
 import * as doctorService from '../services/doctorService';
 import type { DoctorPatient, PatientStatus } from '../types';
@@ -870,39 +871,43 @@ export const DashboardPage: React.FC = () => {
   };
 
   // ── Main content renderer for Doctor ───────────────────────────
-  const renderDoctorContent = () => {
-    switch (activeView) {
-      case 'patient-records':
-        return (
-          <PatientRecordsPage
-            initialTab={doctorRecordTab}
-            initialStatusFilter={doctorInitialStatus}
-            initialPatientId={doctorInitialPatientId}
-            initialViewMode={doctorRecordTab === 'inpatient-admissions' ? 'inpatient_admissions' : undefined}
-          />
-        );
-      case 'inpatient-admissions':
-        return <PatientRecordsPage initialViewMode="inpatient_admissions" initialTab="inpatient-admissions" />;
-      case 'ai-summaries':
-        return <AIPatientSummaryPage />;
-      case 'medical-history':
-        return <PatientMedicalHistoryPage />;
-      case 'guidelines':
-        return <ClinicalGuidelinesPage />;
-      case 'appointments':
-        return <PatientRecordsPage initialTab="appointments" />;
-      case 'discharge-summary':
-        return <PatientRecordsPage initialTab="discharge-summary" />;
-      case 'prescriptions':
-        return <PatientRecordsPage initialTab="prescriptions" />;
-      case 'notifications':
-        return <NotificationsPage onNavigateTab={(tab) => setActiveView(tab)} />;
-      case 'profile':
-        return <DoctorProfilePage embedded onNavigateTab={(tab) => setActiveView(tab)} />;
-      default:
-        return renderDefaultDashboard();
-    }
-  };
+  const renderDoctorContent = () => (
+    <ErrorBoundary fallbackTitle="Doctor Clinical Workstation">
+      {(() => {
+        switch (activeView) {
+          case 'patient-records':
+            return (
+              <PatientRecordsPage
+                initialTab={doctorRecordTab}
+                initialStatusFilter={doctorInitialStatus}
+                initialPatientId={doctorInitialPatientId}
+                initialViewMode={doctorRecordTab === 'inpatient-admissions' ? 'inpatient_admissions' : undefined}
+              />
+            );
+          case 'inpatient-admissions':
+            return <PatientRecordsPage initialViewMode="inpatient_admissions" initialTab="inpatient-admissions" />;
+          case 'ai-summaries':
+            return <AIPatientSummaryPage />;
+          case 'medical-history':
+            return <PatientMedicalHistoryPage />;
+          case 'guidelines':
+            return <ClinicalGuidelinesPage />;
+          case 'appointments':
+            return <PatientRecordsPage initialTab="appointments" />;
+          case 'discharge-summary':
+            return <PatientRecordsPage initialTab="discharge-summary" />;
+          case 'prescriptions':
+            return <PatientRecordsPage initialTab="prescriptions" />;
+          case 'notifications':
+            return <NotificationsPage onNavigateTab={(tab) => setActiveView(tab)} />;
+          case 'profile':
+            return <DoctorProfilePage embedded onNavigateTab={(tab) => setActiveView(tab)} />;
+          default:
+            return renderDefaultDashboard();
+        }
+      })()}
+    </ErrorBoundary>
+  );
 
   // ── Sidebar nav for nurses ─────────────────────────────────────
   const renderNurseSidebar = (mobile = false) => (

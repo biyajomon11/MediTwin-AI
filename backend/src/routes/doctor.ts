@@ -796,41 +796,61 @@ router.patch(
 
 /** Formats an InpatientAdmission model into a client-safe DTO */
 function formatInpatientAdmissionDTO(admission: any) {
+  const patientGender = typeof admission.patient?.gender === 'object'
+    ? (admission.patient.gender?.name || 'Unspecified')
+    : (admission.patient?.gender || admission.gender || 'Unspecified');
+
+  const patientBloodGroup = typeof admission.patient?.bloodGroup === 'object'
+    ? (admission.patient.bloodGroup?.name || 'Unknown')
+    : (admission.patient?.bloodGroup || admission.bloodGroup || 'Unknown');
+
+  const age = admission.patient?.dateOfBirth ? calculateAge(admission.patient.dateOfBirth) : (admission.age ?? 0);
+
   return {
     id: admission.id,
     admissionNumber: admission.admissionNumber,
     patientId: admission.patientId,
-    patientName: admission.patient ? `${admission.patient.firstName} ${admission.patient.lastName}` : undefined,
-    patientCode: admission.patient ? `IP-${String(admission.patient.id).padStart(3, '0')}` : undefined,
-    patientAge: admission.patient?.dateOfBirth ? calculateAge(admission.patient.dateOfBirth) : undefined,
-    patientGender: admission.patient?.gender?.name || 'Unspecified',
-    patientPhone: admission.patient?.phone || undefined,
+    patientName: admission.patient ? `${admission.patient.firstName} ${admission.patient.lastName}` : (admission.patientName || 'Unknown Patient'),
+    patientCode: admission.patient ? `IP-${String(admission.patient.id).padStart(3, '0')}` : `IP-${String(admission.patientId || 0).padStart(3, '0')}`,
+    age,
+    patientAge: age,
+    gender: patientGender,
+    patientGender,
+    bloodGroup: patientBloodGroup,
+    phone: admission.patient?.phone || admission.phone || 'N/A',
+    patientPhone: admission.patient?.phone || admission.phone || 'N/A',
+    email: admission.patient?.user?.email || admission.email || '',
     admittingDoctorId: admission.admittingDoctorId,
     admittingDoctorName: admission.admittingDoctor
       ? `Dr. ${admission.admittingDoctor.firstName} ${admission.admittingDoctor.lastName}`
-      : undefined,
-    admittingDoctorSpecialization: admission.admittingDoctor?.specialization?.name || undefined,
+      : (admission.doctorName || 'Attending Physician'),
+    doctorName: admission.admittingDoctor
+      ? `Dr. ${admission.admittingDoctor.firstName} ${admission.admittingDoctor.lastName}`
+      : (admission.doctorName || 'Attending Physician'),
+    doctorSpecialization: admission.admittingDoctor?.specialization?.name || admission.doctorSpecialization || 'General Medicine',
+    admittingDoctorSpecialization: admission.admittingDoctor?.specialization?.name || admission.doctorSpecialization || 'General Medicine',
+    doctorDepartment: admission.admittingDoctor?.department?.name || admission.doctorDepartment || 'General Medicine',
     wardId: admission.wardId,
-    wardNumber: admission.ward?.wardNumber || undefined,
-    wardName: admission.ward?.name || undefined,
-    wardDepartment: admission.ward?.department || undefined,
+    wardNumber: admission.ward?.wardNumber || admission.wardNumber || 'Ward',
+    wardName: admission.ward?.name || admission.wardName || 'Inpatient Ward',
+    wardDepartment: admission.ward?.department || admission.wardDepartment || 'Inpatient Service',
     bedId: admission.bedId,
-    bedNumber: admission.bed?.bedNumber || undefined,
+    bedNumber: admission.bed?.bedNumber || admission.bedNumber || 'Bed Assigned',
     admissionDateTime: admission.admissionDateTime instanceof Date
       ? admission.admissionDateTime.toISOString()
-      : admission.admissionDateTime,
-    admissionDiagnosis: admission.admissionDiagnosis,
-    chiefComplaint: admission.chiefComplaint,
+      : (admission.admissionDateTime || new Date().toISOString()),
+    admissionDiagnosis: admission.admissionDiagnosis || 'Clinical Inpatient',
+    chiefComplaint: admission.chiefComplaint || 'Under Inpatient Observation',
     nursingHandoverInstructions: admission.nursingHandoverInstructions || null,
-    admissionStatus: admission.admissionStatus,
-    acuityLevel: admission.acuityLevel,
+    admissionStatus: admission.admissionStatus || 'ADMITTED',
+    acuityLevel: admission.acuityLevel || 'MODERATE',
     sourceAppointmentId: admission.sourceAppointmentId || null,
     dischargeDate: admission.dischargeDate instanceof Date
       ? admission.dischargeDate.toISOString()
       : admission.dischargeDate,
     createdAt: admission.createdAt instanceof Date
       ? admission.createdAt.toISOString()
-      : admission.createdAt,
+      : (admission.createdAt || new Date().toISOString()),
   };
 }
 

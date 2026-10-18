@@ -35,10 +35,25 @@ interface InpatientAdmissionModalProps {
   onAdmitted: (admission: InpatientAdmissionRecord) => void;
 }
 
+// Safe clinical helpers to guarantee strings for JSX rendering
+const formatGender = (g: any): string => {
+  if (!g) return 'Unspecified';
+  if (typeof g === 'string') return g;
+  if (typeof g === 'object' && g.name) return String(g.name);
+  return 'Unspecified';
+};
+
+const formatBloodGroup = (bg: any): string => {
+  if (!bg) return 'Unknown';
+  if (typeof bg === 'string') return bg;
+  if (typeof bg === 'object' && bg.name) return String(bg.name);
+  return 'Unknown';
+};
+
 export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = ({
   isOpen,
   onClose,
-  patients,
+  patients = [],
   initialPatientId,
   onAdmitted,
 }) => {
@@ -78,12 +93,14 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
       setLoadingWards(true);
       try {
         const fetchedWards = await getHospitalWards();
-        setWards(fetchedWards);
-        if (fetchedWards.length > 0) {
-          setSelectedWardId(fetchedWards[0].id);
+        const wardList = Array.isArray(fetchedWards) ? fetchedWards : [];
+        setWards(wardList);
+        if (wardList.length > 0) {
+          setSelectedWardId(wardList[0].id);
         }
       } catch (err) {
         console.error('Failed to load hospital wards:', err);
+        setWards([]);
       } finally {
         setLoadingWards(false);
       }
@@ -104,12 +121,14 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
       setLoadingBeds(true);
       try {
         const res = await getWardBeds(selectedWardId);
-        setBeds(res.beds || []);
+        const bedList = Array.isArray(res?.beds) ? res.beds : [];
+        setBeds(bedList);
         // Automatically select first available bed if none selected
-        const firstAvail = res.beds?.find((b) => b.isAvailable || b.status === 'AVAILABLE');
+        const firstAvail = bedList.find((b) => b.isAvailable || b.status === 'AVAILABLE');
         setSelectedBedId(firstAvail ? firstAvail.id : null);
       } catch (err) {
         console.error('Failed to load beds for ward:', err);
+        setBeds([]);
       } finally {
         setLoadingBeds(false);
       }
@@ -122,18 +141,20 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
   useEffect(() => {
     if (!isOpen) return;
 
+    const patientList = Array.isArray(patients) ? patients : [];
+
     if (initialPatientId) {
-      const match = patients.find((p) => p.id === initialPatientId);
+      const match = patientList.find((p) => p.id === initialPatientId);
       if (match) {
         setSelectedPatient({
           id: match.id,
-          name: (match as any).name || `${match.firstName || ''} ${match.lastName || ''}`.trim(),
-          age: match.age,
-          gender: match.gender,
-          bloodGroup: match.bloodGroup,
-          email: match.email,
-          phone: match.phone,
-          patientCode: `PT-${String(match.id).padStart(3, '0')}`,
+          name: (match as any).name || `${match.firstName || ''} ${match.lastName || ''}`.trim() || 'Selected Patient',
+          age: match.age ?? 0,
+          gender: formatGender(match.gender),
+          bloodGroup: formatBloodGroup(match.bloodGroup),
+          email: match.email || '',
+          phone: match.phone || '',
+          patientCode: (match as any).patientCode || `PT-${String(match.id).padStart(3, '0')}`,
           isAdmitted: ['Admitted', 'Critical', 'Under Observation'].includes(match.status || ''),
           ward: match.ward,
           bedNumber: match.bedNumber,
@@ -144,20 +165,28 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
       } else {
         // Search server
         searchPatientsForAdmission(String(initialPatientId)).then((res) => {
-          if (res.length > 0) setSelectedPatient(res[0]);
-        });
+          if (Array.isArray(res) && res.length > 0) {
+            const r = res[0];
+            setSelectedPatient({
+              ...r,
+              name: r.name || `${r.firstName || ''} ${r.lastName || ''}`.trim() || 'Selected Patient',
+              gender: formatGender(r.gender),
+              bloodGroup: formatBloodGroup(r.bloodGroup),
+            });
+          }
+        }).catch(() => {});
       }
-    } else if (!selectedPatient && patients.length > 0) {
-      const first = patients[0];
+    } else if (!selectedPatient && patientList.length > 0) {
+      const first = patientList[0];
       setSelectedPatient({
         id: first.id,
-        name: (first as any).name || `${first.firstName || ''} ${first.lastName || ''}`.trim(),
-        age: first.age,
-        gender: first.gender,
-        bloodGroup: first.bloodGroup,
-        email: first.email,
-        phone: first.phone,
-        patientCode: `PT-${String(first.id).padStart(3, '0')}`,
+        name: (first as any).name || `${first.firstName || ''} ${first.lastName || ''}`.trim() || 'Selected Patient',
+        age: first.age ?? 0,
+        gender: formatGender(first.gender),
+        bloodGroup: formatBloodGroup(first.bloodGroup),
+        email: first.email || '',
+        phone: first.phone || '',
+        patientCode: (first as any).patientCode || `PT-${String(first.id).padStart(3, '0')}`,
         isAdmitted: ['Admitted', 'Critical', 'Under Observation'].includes(first.status || ''),
         ward: first.ward,
         bedNumber: first.bedNumber,
@@ -176,9 +205,17 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
       setSearching(true);
       try {
         const results = await searchPatientsForAdmission(searchTerm.trim());
-        setSearchResults(results);
+        setSearchResults(
+          (Array.isArray(results) ? results : []).map((p) => ({
+            ...p,
+            name: p.name || `${p.firstName || ''} ${p.lastName || ''}`.trim() || 'Patient',
+            gender: formatGender(p.gender),
+            bloodGroup: formatBloodGroup(p.bloodGroup),
+          }))
+        );
       } catch (err) {
         console.error('Patient search error:', err);
+        setSearchResults([]);
       } finally {
         setSearching(false);
       }
@@ -188,11 +225,11 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
   }, [searchTerm]);
 
   const activeWard = useMemo(() => {
-    return wards.find((w) => w.id === selectedWardId);
+    return (wards || []).find((w) => w.id === selectedWardId);
   }, [wards, selectedWardId]);
 
   const availableBeds = useMemo(() => {
-    return beds.filter((b) => b.isAvailable || b.status === 'AVAILABLE');
+    return (beds || []).filter((b) => b.isAvailable || b.status === 'AVAILABLE');
   }, [beds]);
 
   const isPatientAlreadyAdmitted = Boolean(selectedPatient?.isAdmitted);
@@ -354,7 +391,7 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-white">{p.name}</span>
                         <span className="text-[10px] text-gray-400">
-                          (Age {p.age}, {p.gender}, {p.bloodGroup})
+                          (Age {p.age ?? '—'}, {formatGender(p.gender)}, {formatBloodGroup(p.bloodGroup)})
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -385,7 +422,7 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
                       </span>
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      Age: {selectedPatient.age || 'N/A'} • Gender: {selectedPatient.gender || 'N/A'} • Blood: {selectedPatient.bloodGroup || 'N/A'} • Phone: {selectedPatient.phone || 'N/A'}
+                      Age: {selectedPatient.age ?? 'N/A'} • Gender: {formatGender(selectedPatient.gender)} • Blood: {formatBloodGroup(selectedPatient.bloodGroup)} • Phone: {selectedPatient.phone || 'N/A'}
                     </p>
                   </div>
                   <div>
@@ -436,11 +473,17 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
                   disabled={loadingWards}
                   className="w-full bg-slate-900/90 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-accent outline-none"
                 >
-                  {wards.map((w) => (
-                    <option key={w.id} value={w.id} className="bg-slate-900 text-white">
-                      {w.name} ({w.availableBeds} free)
+                  {(wards || []).length === 0 ? (
+                    <option value="" disabled className="bg-slate-900 text-gray-400">
+                      {loadingWards ? 'Loading hospital wards...' : 'No wards available'}
                     </option>
-                  ))}
+                  ) : (
+                    wards.map((w) => (
+                      <option key={w.id} value={w.id} className="bg-slate-900 text-white">
+                        {w.name} ({w.availableBeds} free)
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -465,16 +508,22 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
                     disabled={loadingBeds || availableBeds.length === 0}
                     className="w-full bg-slate-900/90 border border-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white focus:border-accent outline-none"
                   >
-                    {beds.map((b) => (
-                      <option
-                        key={b.id}
-                        value={b.id}
-                        disabled={!b.isAvailable && b.status !== 'AVAILABLE'}
-                        className="bg-slate-900 text-white"
-                      >
-                        {b.bedNumber} — {b.status === 'AVAILABLE' ? 'Available' : 'Occupied'}
+                    {(beds || []).length === 0 ? (
+                      <option value="" disabled className="bg-slate-900 text-gray-400">
+                        {loadingBeds ? 'Loading ward beds...' : 'No beds in selected ward'}
                       </option>
-                    ))}
+                    ) : (
+                      beds.map((b) => (
+                        <option
+                          key={b.id}
+                          value={b.id}
+                          disabled={!b.isAvailable && b.status !== 'AVAILABLE'}
+                          className="bg-slate-900 text-white"
+                        >
+                          {b.bedNumber} — {b.status === 'AVAILABLE' ? 'Available' : 'Occupied'}
+                        </option>
+                      ))
+                    )}
                   </select>
                 )}
 
