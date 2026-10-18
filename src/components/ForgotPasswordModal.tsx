@@ -389,15 +389,12 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                     setIdentifier(e.target.value);
                     if (error) setError(null);
                   }}
-                  placeholder="e.g. Jolda00, doctor.jolda@meditwin.ai, or license ID"
+                  placeholder="Enter registered email, username, or license ID"
                   disabled={isLoading}
                   autoFocus
                   className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all"
                 />
               </div>
-              <p className="text-[11px] text-gray-400 mt-1.5">
-                Enter your username (e.g. <span className="text-accent font-medium">Jolda00</span>), registered email, or physician/nurse ID.
-              </p>
             </div>
 
             <div className="pt-2 flex items-center justify-between gap-3">
