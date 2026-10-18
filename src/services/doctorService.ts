@@ -367,15 +367,16 @@ export async function updatePatientBed(
 }
 
 const FALLBACK_HOSPITAL_WARDS: HospitalWardDTO[] = [
-  { id: 1, wardNumber: 'GW-2B', name: 'General Ward 2B', department: 'General Medicine', totalBeds: 12, availableBeds: 8, occupiedBeds: 4, occupancyPercentage: 33, isActive: true },
-  { id: 2, wardNumber: 'ICU-1', name: 'Intensive Care Unit (ICU)', department: 'Critical Care', totalBeds: 6, availableBeds: 2, occupiedBeds: 4, occupancyPercentage: 67, isActive: true },
-  { id: 3, wardNumber: 'CW-3A', name: 'Cardiology Ward 3A', department: 'Cardiology', totalBeds: 10, availableBeds: 5, occupiedBeds: 5, occupancyPercentage: 50, isActive: true },
-  { id: 4, wardNumber: 'NW-4B', name: 'Neurology Ward 4B', department: 'Neurology', totalBeds: 8, availableBeds: 4, occupiedBeds: 4, occupancyPercentage: 50, isActive: true },
-  { id: 5, wardNumber: 'PW-1A', name: 'Pediatric Ward 1A', department: 'Pediatrics', totalBeds: 10, availableBeds: 6, occupiedBeds: 4, occupancyPercentage: 40, isActive: true },
+  { id: 1, wardNumber: 'GW-2B', name: 'General Ward 2B', department: 'General Medicine', totalBeds: 50, availableBeds: 46, occupiedBeds: 4, occupancyPercentage: 8, isActive: true },
+  { id: 2, wardNumber: 'ICU-1', name: 'Intensive Care Unit (ICU)', department: 'Critical Care', totalBeds: 50, availableBeds: 46, occupiedBeds: 4, occupancyPercentage: 8, isActive: true },
+  { id: 3, wardNumber: 'CW-3A', name: 'Cardiology Ward 3A', department: 'Cardiology', totalBeds: 50, availableBeds: 45, occupiedBeds: 5, occupancyPercentage: 10, isActive: true },
+  { id: 4, wardNumber: 'NW-4B', name: 'Neurology Ward 4B', department: 'Neurology', totalBeds: 50, availableBeds: 46, occupiedBeds: 4, occupancyPercentage: 8, isActive: true },
+  { id: 5, wardNumber: 'PW-1A', name: 'Pediatric Ward 1A', department: 'Pediatrics', totalBeds: 50, availableBeds: 46, occupiedBeds: 4, occupancyPercentage: 8, isActive: true },
+  { id: 6, wardNumber: 'SW-1', name: 'Surgical Ward', department: 'Surgery', totalBeds: 50, availableBeds: 50, occupiedBeds: 0, occupancyPercentage: 0, isActive: true },
 ];
 
 function generateFallbackBeds(wardId: number): WardBedDTO[] {
-  const count = wardId === 2 ? 6 : 10;
+  const count = 50;
   return Array.from({ length: count }, (_, i) => {
     const num = String(i + 1).padStart(2, '0');
     const isAvailable = i >= 3;
@@ -1052,11 +1053,11 @@ export async function getBedAllocationSummary(): Promise<BedAllocationSummaryDTO
   );
 
   return {
-    totalHospitalBeds: Math.max(totalHospitalBeds, 46),
-    totalOccupiedBeds: Math.max(totalOccupiedBeds, localAdmissions.length, 19),
-    totalAvailableBeds: Math.max(totalAvailableBeds, 27),
+    totalHospitalBeds: Math.max(totalHospitalBeds, 300),
+    totalOccupiedBeds: Math.max(totalOccupiedBeds, localAdmissions.length, 21),
+    totalAvailableBeds: Math.max(totalAvailableBeds, 279),
     totalMaintenanceBeds: 0,
-    overallOccupancyPercentage: Math.round((Math.max(totalOccupiedBeds, 19) / Math.max(totalHospitalBeds, 46)) * 100),
+    overallOccupancyPercentage: Math.round((Math.max(totalOccupiedBeds, 21) / Math.max(totalHospitalBeds, 300)) * 100),
     currentInpatientCount: Math.max(localAdmissions.length, 1),
     criticalInpatientsCount: localAdmissions.filter((a) => a.acuityLevel === 'CRITICAL').length,
     wards: wardSummaries,

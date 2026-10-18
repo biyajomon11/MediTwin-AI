@@ -1613,6 +1613,7 @@ export interface HospitalWardDTO {
   totalBeds: number;
   occupiedBeds: number;
   availableBeds: number;
+  maintenanceBeds?: number;
   occupancyPercentage: number;
   isActive: boolean;
 }

@@ -15,6 +15,7 @@ import {
   Layers,
   Wrench,
   Percent,
+  ArrowUpDown,
 } from 'lucide-react';
 import type {
   HospitalWardDTO,
@@ -55,10 +56,11 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters & Search
+  // Filters, Search & Sorting across 50 beds
   const [selectedWardFilter, setSelectedWardFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
+  const [bedSortBy, setBedSortBy] = useState<'number-asc' | 'number-desc' | 'status'>('number-asc');
 
   // Modals state
   const [quickAllocateModal, setQuickAllocateModal] = useState<{
@@ -210,15 +212,15 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
         const filteredBeds = w.beds.filter((b) => {
           // Status filter
           if (statusFilter !== 'ALL') {
-            if (statusFilter === 'AVAILABLE' && b.status !== 'AVAILABLE') return false;
-            if (statusFilter === 'OCCUPIED' && b.status !== 'OCCUPIED') return false;
+            if (statusFilter === 'AVAILABLE' && (b.status !== 'AVAILABLE' || !b.isAvailable)) return false;
+            if (statusFilter === 'OCCUPIED' && (b.status !== 'OCCUPIED' && b.isAvailable)) return false;
             if (statusFilter === 'MAINTENANCE' && b.status !== 'MAINTENANCE') return false;
           }
 
-          // Search term filter (bed number or patient name)
+          // Search term filter (bed number, bed ID, or patient name/admission number)
           if (searchTerm.trim()) {
             const q = searchTerm.toLowerCase();
-            const matchBed = b.bedNumber.toLowerCase().includes(q);
+            const matchBed = b.bedNumber.toLowerCase().includes(q) || String(b.id).includes(q);
             const matchPatient = (b.currentAdmission?.patientName || '').toLowerCase().includes(q);
             const matchAdm = (b.currentAdmission?.admissionNumber || '').toLowerCase().includes(q);
             if (!matchBed && !matchPatient && !matchAdm) return false;
@@ -227,12 +229,28 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
           return true;
         });
 
+        // Sort beds according to selected sort criteria
+        const sortedBeds = [...filteredBeds].sort((a, b) => {
+          if (bedSortBy === 'number-asc') {
+            return a.bedNumber.localeCompare(b.bedNumber, undefined, { numeric: true });
+          } else if (bedSortBy === 'number-desc') {
+            return b.bedNumber.localeCompare(a.bedNumber, undefined, { numeric: true });
+          } else if (bedSortBy === 'status') {
+            const priority: Record<string, number> = { OCCUPIED: 1, AVAILABLE: 2, MAINTENANCE: 3 };
+            const pA = priority[a.status] || 9;
+            const pB = priority[b.status] || 9;
+            if (pA !== pB) return pA - pB;
+            return a.bedNumber.localeCompare(b.bedNumber, undefined, { numeric: true });
+          }
+          return 0;
+        });
+
         return {
           ...w,
-          beds: filteredBeds,
+          beds: sortedBeds,
         };
       });
-  }, [wardsWithBeds, selectedWardFilter, statusFilter, searchTerm]);
+  }, [wardsWithBeds, selectedWardFilter, statusFilter, searchTerm, bedSortBy]);
 
   // Handle Quick Allocate button click
   const handleQuickAllocate = (wardId: number, bedId: number) => {
@@ -322,7 +340,7 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
       )}
 
       {/* Aggregate Bed Status Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* Total Beds */}
         <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg">
           <div className="flex items-center justify-between mb-2">
@@ -332,9 +350,9 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             </div>
           </div>
           <div className="text-2xl font-bold text-white tracking-tight">
-            {summary?.totalHospitalBeds ?? 46}
+            {summary?.totalHospitalBeds ?? 300}
           </div>
-          <p className="text-[11px] text-gray-400 mt-1">Across all hospital wards</p>
+          <p className="text-[11px] text-gray-400 mt-1">50 beds per ward configured</p>
         </div>
 
         {/* Available Beds */}
@@ -346,7 +364,7 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             </div>
           </div>
           <div className="text-2xl font-bold text-emerald-400 tracking-tight">
-            {summary?.totalAvailableBeds ?? 27}
+            {summary?.totalAvailableBeds ?? 292}
           </div>
           <p className="text-[11px] text-emerald-300/80 mt-1">Ready for immediate admission</p>
         </div>
@@ -360,13 +378,27 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             </div>
           </div>
           <div className="text-2xl font-bold text-accent tracking-tight">
-            {summary?.totalOccupiedBeds ?? 19}
+            {summary?.totalOccupiedBeds ?? 8}
           </div>
-          <p className="text-[11px] text-accent/80 mt-1">Active patient care</p>
+          <p className="text-[11px] text-accent/80 mt-1">Active inpatient care</p>
+        </div>
+
+        {/* Maintenance Beds */}
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-400">Maintenance Beds</span>
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <Wrench className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-300 tracking-tight">
+            {summary?.totalMaintenanceBeds ?? 0}
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1">Unavailable for clinical use</p>
         </div>
 
         {/* Overall Occupancy Percentage */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg">
+        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-400">Hospital Occupancy</span>
             <div className="p-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30">
@@ -374,24 +406,26 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             </div>
           </div>
           <div className="text-2xl font-bold text-white tracking-tight">
-            {summary?.overallOccupancyPercentage ?? 41}%
+            {summary?.overallOccupancyPercentage ?? 3}%
           </div>
           <div className="w-full bg-white/10 h-1.5 rounded-full mt-2 overflow-hidden">
             <div
               className="bg-accent h-full rounded-full transition-all duration-500"
-              style={{ width: `${summary?.overallOccupancyPercentage ?? 41}%` }}
+              style={{ width: `${summary?.overallOccupancyPercentage ?? 3}%` }}
             />
           </div>
         </div>
       </div>
 
       {/* Ward Capacity Overview Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         {wardsWithBeds.map((ward) => {
-          const total = ward.totalBeds || ward.beds.length || 1;
-          const occupied = ward.occupiedBeds || ward.beds.filter((b) => b.status === 'OCCUPIED').length;
-          const available = ward.availableBeds || ward.beds.filter((b) => b.isAvailable || b.status === 'AVAILABLE').length;
-          const occupancyRate = Math.round((occupied / total) * 100);
+          const total = ward.totalBeds || ward.beds.length || 50;
+          const occupied = ward.beds.filter((b) => b.status === 'OCCUPIED' || !b.isAvailable).length;
+          const maintenance = ward.beds.filter((b) => b.status === 'MAINTENANCE').length;
+          const available = ward.beds.filter((b) => b.status === 'AVAILABLE' && b.isAvailable).length;
+          const occupiable = Math.max(0, total - maintenance);
+          const occupancyRate = occupiable > 0 ? Math.round((occupied / occupiable) * 100) : 0;
 
           return (
             <div
@@ -448,7 +482,7 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search beds (e.g., Bed 04) or patient name..."
+            placeholder="Search all 50 beds (e.g., Bed 04, Bed 42) or patient name..."
             className="w-full bg-navy-950/80 border border-white/15 rounded-xl pl-10 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-accent"
           />
         </div>
@@ -463,7 +497,7 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             <option value="ALL">All Hospital Wards</option>
             {wardsWithBeds.map((w) => (
               <option key={w.id} value={String(w.id)}>
-                {w.name}
+                {w.name} ({w.beds.length} beds)
               </option>
             ))}
           </select>
@@ -480,12 +514,27 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             <option value="MAINTENANCE">Under Maintenance</option>
           </select>
 
-          {(searchTerm || selectedWardFilter !== 'ALL' || statusFilter !== 'ALL') && (
+          {/* Sort Selector */}
+          <div className="flex items-center gap-1.5 bg-navy-950/80 border border-white/15 rounded-xl px-2.5 py-1.5">
+            <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+            <select
+              value={bedSortBy}
+              onChange={(e) => setBedSortBy(e.target.value as any)}
+              className="bg-transparent text-xs text-white focus:outline-none cursor-pointer"
+            >
+              <option value="number-asc" className="bg-navy-950 text-white">Bed 01 → Bed 50</option>
+              <option value="number-desc" className="bg-navy-950 text-white">Bed 50 → Bed 01</option>
+              <option value="status" className="bg-navy-950 text-white">By Status</option>
+            </select>
+          </div>
+
+          {(searchTerm || selectedWardFilter !== 'ALL' || statusFilter !== 'ALL' || bedSortBy !== 'number-asc') && (
             <button
               onClick={() => {
                 setSearchTerm('');
                 setSelectedWardFilter('ALL');
                 setStatusFilter('ALL');
+                setBedSortBy('number-asc');
               }}
               className="text-xs text-accent hover:underline px-2 py-1 cursor-pointer font-semibold"
             >
@@ -509,45 +558,70 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
             <p className="text-sm font-semibold text-white">No wards match the selected filters</p>
           </div>
         ) : (
-          filteredWards.map((ward) => (
-            <div
-              key={ward.id}
-              className="rounded-2xl bg-gradient-to-b from-navy-900 to-navy-950 border border-white/10 p-5 shadow-xl space-y-4"
-            >
-              {/* Ward Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-xl bg-accent/15 border border-accent/30 text-accent">
-                    <Building2 className="w-4 h-4" />
+          filteredWards.map((ward) => {
+            const wardTotal = ward.totalBeds || ward.beds.length || 50;
+            const wardOccupied = ward.beds.filter((b) => b.status === 'OCCUPIED' || !b.isAvailable).length;
+            const wardMaintenance = ward.beds.filter((b) => b.status === 'MAINTENANCE').length;
+            const wardAvailable = ward.beds.filter((b) => b.status === 'AVAILABLE' && b.isAvailable).length;
+            const wardOccupiable = Math.max(0, wardTotal - wardMaintenance);
+            const wardOccupancyRate = wardOccupiable > 0 ? Math.round((wardOccupied / wardOccupiable) * 100) : 0;
+
+            return (
+              <div
+                key={ward.id}
+                className="rounded-2xl bg-gradient-to-b from-navy-900 to-navy-950 border border-white/10 p-5 shadow-xl space-y-4"
+              >
+                {/* Ward Header & Capacity Summary */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3.5 border-b border-white/10">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-accent/15 border border-accent/30 text-accent">
+                      <Building2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>{ward.name}</span>
+                        <span className="font-mono text-[11px] font-normal text-gray-400">({ward.wardNumber})</span>
+                      </h3>
+                      <p className="text-[11px] text-gray-400">
+                        Department: <strong className="text-gray-300">{ward.department || 'Inpatient Services'}</strong>
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span>{ward.name}</span>
-                      <span className="font-mono text-[11px] font-normal text-gray-400">({ward.wardNumber})</span>
-                    </h3>
-                    <p className="text-[11px] text-gray-400">
-                      Department: <strong className="text-gray-300">{ward.department || 'Inpatient Services'}</strong>
-                    </p>
+
+                  {/* Ward Summary Badges: Total 50, Available, Occupied, Maintenance, Occupancy % */}
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="px-2.5 py-1 rounded-lg bg-white/[0.06] text-gray-300 border border-white/10 font-semibold text-[11px] flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-gray-400" />
+                      <span>Total: <strong className="text-white">{wardTotal} Beds</strong></span>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold text-[11px] flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Available: <strong className="text-emerald-200">{wardAvailable}</strong></span>
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-accent/15 text-accent border border-accent/30 font-semibold text-[11px] flex items-center gap-1.5">
+                      <Bed className="w-3.5 h-3.5 text-accent" />
+                      <span>Occupied: <strong className="text-accent">{wardOccupied}</strong></span>
+                    </span>
+                    {wardMaintenance > 0 && (
+                      <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 font-semibold text-[11px] flex items-center gap-1.5">
+                        <Wrench className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Maintenance: <strong className="text-amber-200">{wardMaintenance}</strong></span>
+                      </span>
+                    )}
+                    <span className="px-2.5 py-1 rounded-lg bg-blue-500/15 text-blue-300 border border-blue-500/30 font-semibold text-[11px] flex items-center gap-1.5">
+                      <Percent className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Occupancy: <strong className="text-blue-200">{wardOccupancyRate}%</strong></span>
+                    </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold text-[11px]">
-                    {ward.beds.filter((b) => b.isAvailable || b.status === 'AVAILABLE').length} Available
-                  </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-accent/15 text-accent border border-accent/30 font-semibold text-[11px]">
-                    {ward.beds.filter((b) => b.status === 'OCCUPIED').length} Occupied
-                  </span>
-                </div>
-              </div>
-
-              {/* Beds Grid */}
-              {ward.beds.length === 0 ? (
-                <div className="p-6 text-center text-xs text-gray-500 italic">
-                  No beds match filter criteria in this ward.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {/* Beds Grid: 50 beds displayed in responsive CSS grid (5-6 columns on desktop) */}
+                {ward.beds.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-gray-500 italic">
+                    No beds match filter criteria in this ward.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                   {ward.beds.map((bed) => {
                     const isOccupied = bed.status === 'OCCUPIED' || !bed.isAvailable;
                     const isMaintenance = bed.status === 'MAINTENANCE';
@@ -686,9 +760,10 @@ export const BedAllocationPage: React.FC<BedAllocationPageProps> = ({
                 </div>
               )}
             </div>
-          ))
-        )}
-      </div>
+          );
+        })
+      )}
+    </div>
 
       {/* Modals */}
       <InpatientAdmissionModal

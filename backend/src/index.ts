@@ -84,3 +84,6 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
     console.warn('[SEED_WARDS_BEDS] Bed inventory seed note:', err);
   }
 });
+
+export { app };
+

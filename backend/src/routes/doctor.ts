@@ -1451,7 +1451,9 @@ router.get(
         const totalBeds = w.beds.length;
         const occupiedBeds = w.beds.filter((b) => b.status === 'OCCUPIED').length;
         const availableBeds = w.beds.filter((b) => b.status === 'AVAILABLE').length;
-        const occupancyPercentage = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+        const maintenanceBeds = w.beds.filter((b) => b.status === 'MAINTENANCE').length;
+        const occupiableBeds = Math.max(0, totalBeds - maintenanceBeds);
+        const occupancyPercentage = occupiableBeds > 0 ? Math.round((occupiedBeds / occupiableBeds) * 100) : 0;
         return {
           id: w.id,
           wardNumber: w.wardNumber,
@@ -1460,6 +1462,7 @@ router.get(
           totalBeds,
           occupiedBeds,
           availableBeds,
+          maintenanceBeds,
           occupancyPercentage,
           isActive: w.isActive,
         };
@@ -1524,13 +1527,23 @@ router.get(
         };
       });
 
+      const total = beds.length;
+      const occupied = formattedBeds.filter((b) => b.status === 'OCCUPIED').length;
+      const available = formattedBeds.filter((b) => b.isAvailable).length;
+      const maintenance = formattedBeds.filter((b) => b.status === 'MAINTENANCE').length;
+      const occupiable = Math.max(0, total - maintenance);
+      const occupancyPercentage = occupiable > 0 ? Math.round((occupied / occupiable) * 100) : 0;
+
       return res.json({
         success: true,
         data: {
           ward: { id: ward.id, name: ward.name, wardNumber: ward.wardNumber, department: ward.department },
           beds: formattedBeds,
-          total: beds.length,
-          available: formattedBeds.filter((b) => b.isAvailable).length,
+          total,
+          available,
+          occupied,
+          maintenance,
+          occupancyPercentage,
         },
       });
     } catch (err) {
@@ -1575,7 +1588,8 @@ router.get(
         const occupied = w.beds.filter((b) => b.status === 'OCCUPIED').length;
         const available = w.beds.filter((b) => b.status === 'AVAILABLE').length;
         const maintenance = w.beds.filter((b) => b.status === 'MAINTENANCE').length;
-        const occupancyPercentage = total > 0 ? Math.round((occupied / total) * 100) : 0;
+        const occupiable = Math.max(0, total - maintenance);
+        const occupancyPercentage = occupiable > 0 ? Math.round((occupied / occupiable) * 100) : 0;
 
         totalHospitalBeds += total;
         totalOccupiedBeds += occupied;
@@ -1607,8 +1621,9 @@ router.get(
         },
       });
 
+      const hospitalOccupiable = Math.max(0, totalHospitalBeds - totalMaintenanceBeds);
       const overallOccupancyPercentage =
-        totalHospitalBeds > 0 ? Math.round((totalOccupiedBeds / totalHospitalBeds) * 100) : 0;
+        hospitalOccupiable > 0 ? Math.round((totalOccupiedBeds / hospitalOccupiable) * 100) : 0;
 
       return res.json({
         success: true,
