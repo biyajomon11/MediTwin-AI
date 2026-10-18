@@ -1632,13 +1632,18 @@ export interface InpatientAdmissionRecord {
   patientName: string;
   patientCode: string;
   age: number;
+  patientAge?: number;
   gender: string;
+  patientGender?: string;
   bloodGroup: string;
   email: string;
   phone: string;
+  patientPhone?: string;
   admittingDoctorId: number;
   doctorName: string;
+  admittingDoctorName?: string;
   doctorSpecialization: string;
+  admittingDoctorSpecialization?: string;
   doctorDepartment: string;
   wardId: number;
   wardNumber: string;
@@ -1650,10 +1655,10 @@ export interface InpatientAdmissionRecord {
   admissionDiagnosis: string;
   chiefComplaint: string;
   nursingHandoverInstructions: string | null;
-  admissionStatus: 'ADMITTED' | 'UNDER_OBSERVATION' | 'DISCHARGED';
-  acuityLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
-  sourceAppointmentId: number | null;
-  dischargeDate: string | null;
+  admissionStatus: 'ADMITTED' | 'UNDER_OBSERVATION' | 'DISCHARGED' | string;
+  acuityLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL' | string;
+  sourceAppointmentId?: number | null;
+  dischargeDate?: string | null;
   createdAt: string;
 }
 

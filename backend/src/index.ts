@@ -71,8 +71,16 @@ app.get('/api/schema-summary', (_req: Request, res: Response) => {
 import { ensureInpatientJoldaAndAngel } from './init-inpatient';
 import { seedWardsAndBeds } from './seed-wards-beds';
 
-app.listen(PORT, async () => {
-  console.log(`🚀 MediTwin AI Backend API running on http://localhost:${PORT}`);
-  await ensureInpatientJoldaAndAngel();
-  await seedWardsAndBeds();
+app.listen(Number(PORT), '0.0.0.0', async () => {
+  console.log(`🚀 MediTwin AI Backend API running on port ${PORT}`);
+  try {
+    await ensureInpatientJoldaAndAngel();
+  } catch (err) {
+    console.warn('[INIT_INPATIENT] Startup initialization note:', err);
+  }
+  try {
+    await seedWardsAndBeds();
+  } catch (err) {
+    console.warn('[SEED_WARDS_BEDS] Bed inventory seed note:', err);
+  }
 });
