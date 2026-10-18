@@ -111,14 +111,13 @@ const NURSE_NAV: NavItem[] = [
 ];
 
 const PATIENT_RECORD_SUBITEMS = [
-  { id: 'overview',             label: 'Overview',                   icon: User         },
-  { id: 'inpatient-admissions', label: 'Inpatient Admissions & Beds', icon: Bed         },
-  { id: 'discharge-summary',    label: 'Discharge Summary',          icon: FileCheck    },
-  { id: 'labs',                 label: 'Lab Reports',                icon: FlaskConical },
-  { id: 'appointments',         label: 'Appointments',               icon: Calendar     },
-  { id: 'prescriptions',        label: 'Prescriptions',              icon: Pill         },
-  { id: 'notes',                label: 'Clinical Notes',             icon: FileText     },
-  { id: 'documents',            label: 'Medical Documents',          icon: FolderOpen   },
+  { id: 'overview',          label: 'Overview',          icon: User         },
+  { id: 'discharge-summary', label: 'Discharge Summary', icon: FileCheck    },
+  { id: 'labs',              label: 'Lab Reports',       icon: FlaskConical },
+  { id: 'appointments',      label: 'Appointments',      icon: Calendar     },
+  { id: 'prescriptions',     label: 'Prescriptions',     icon: Pill         },
+  { id: 'notes',             label: 'Clinical Notes',    icon: FileText     },
+  { id: 'documents',         label: 'Medical Documents', icon: FolderOpen   },
 ];
 
 const DOCTOR_NAV: NavItem[] = [
