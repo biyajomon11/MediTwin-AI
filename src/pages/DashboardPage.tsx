@@ -71,7 +71,6 @@ const PATIENT_NAV: NavItem[] = [
   { id: 'prescriptions',     label: 'My Prescriptions',      icon: Pill            },
   { id: 'documents',         label: 'Medical Documents',     icon: FileText        },
   { id: 'reminders',         label: 'Medicine Reminders',    icon: Clock           },
-  { id: 'notifications',     label: 'Notifications',         icon: Bell            },
   { id: 'appointments',      label: 'Appointments',          icon: Calendar        },
   { id: 'ai-health-summary', label: 'AI Health Summary',     icon: Brain },
 ];
