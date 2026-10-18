@@ -1963,7 +1963,7 @@ router.post(
 
 /**
  * PATCH /api/patient/appointments/:id/cancel
- * Cancels a patient appointment.
+ * Cancels an eligible upcoming appointment owned by the authenticated patient.
  */
 router.patch(
   '/appointments/:id/cancel',
@@ -1971,37 +1971,127 @@ router.patch(
   requireRoles(['patient', 'doctor', 'nurse', 'admin']),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
-      const patient = await getPatientFromRequest(req);
+      const requestingUserId = req.user?.userId;
+      if (!requestingUserId) {
+        return res.status(401).json({ success: false, error: 'Authentication required.' });
+      }
+
+      // 1. Authoritative Patient Resolution from verified JWT session
+      let patient = await getPatientForUser(requestingUserId);
+      if (!patient && req.user?.role !== 'patient') {
+        // Staff override (doctor, nurse, admin acting on patient request)
+        patient = await getPatientFromRequest(req);
+      }
+
       if (!patient) {
         return res.status(404).json({ success: false, error: 'Patient profile not found.' });
       }
 
-      const apptId = parseInt(req.params.id, 10);
-      if (isNaN(apptId)) {
+      // 2. Parse & Validate Appointment ID (supports numeric ID or APT- prefix)
+      const rawId = req.params.id || (req.params as any).appointmentId;
+      const cleanNumericId = String(rawId).replace(/[^0-9]/g, '');
+      const apptId = parseInt(cleanNumericId, 10);
+      if (isNaN(apptId) || apptId <= 0) {
         return res.status(400).json({ success: false, error: 'Invalid appointment ID.' });
       }
 
-      const appointment = await prisma.appointment.findFirst({
-        where: { id: apptId, patientId: patient.id },
-        include: { doctor: true, status: true },
+      // 3. Find target appointment with doctor and status details
+      const appointment = await prisma.appointment.findUnique({
+        where: { id: apptId },
+        include: {
+          doctor: {
+            include: {
+              specialization: true,
+              department: { include: { hospital: true } },
+            },
+          },
+          status: true,
+          patient: true,
+        },
       });
 
       if (!appointment) {
-        return res.status(404).json({ success: false, error: 'Appointment not found or not owned by patient.' });
+        return res.status(404).json({ success: false, error: 'Appointment not found.' });
       }
 
-      let cancelledStatus = await prisma.appointmentStatus.findFirst({ where: { name: 'cancelled' } });
+      // 4. Role-based Authorization: Patient role can ONLY cancel their own appointment
+      if (req.user?.role === 'patient' && appointment.patientId !== patient.id) {
+        return res.status(403).json({
+          success: false,
+          error: "Access denied: You are not authorized to cancel another patient's appointment.",
+        });
+      }
+
+      // 5. Status Validation: Prevent repeated or conflicting cancellation requests
+      const currentStatus = (appointment.status?.name || '').toLowerCase();
+      if (currentStatus === 'cancelled') {
+        return res.status(400).json({
+          success: false,
+          error: 'This appointment has already been cancelled.',
+        });
+      }
+
+      if (currentStatus === 'completed') {
+        return res.status(400).json({
+          success: false,
+          error: 'Completed consultations cannot be cancelled.',
+        });
+      }
+
+      // 6. Hospital Policy & Past Visit Validation
+      const apptDate = new Date(appointment.appointmentDate);
+      const apptTime = new Date(appointment.appointmentTime);
+      const appointmentDateTime = new Date(
+        apptDate.getUTCFullYear(),
+        apptDate.getUTCMonth(),
+        apptDate.getUTCDate(),
+        apptTime.getUTCHours(),
+        apptTime.getUTCMinutes(),
+        0
+      );
+
+      const now = new Date();
+      if (appointmentDateTime.getTime() < now.getTime()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Past appointments cannot be cancelled online. If you need assistance regarding a past visit, please contact hospital administration.',
+        });
+      }
+
+      // 7. Validate optional cancellation reason
+      const rawReason = req.body?.reason ?? req.body?.cancellationReason;
+      let cancellationReason = '';
+      if (rawReason && typeof rawReason === 'string') {
+        cancellationReason = rawReason.trim().slice(0, 500);
+      }
+
+      const cancellationEntry = `[CANCELLED ${new Date().toISOString()}] ${cancellationReason ? `Reason: ${cancellationReason}` : 'Cancelled by patient online'}`;
+      const updatedNotes = appointment.notes ? `${appointment.notes}\n${cancellationEntry}` : cancellationEntry;
+
+      // 8. Update status atomically in PostgreSQL
+      let cancelledStatus = await prisma.appointmentStatus.findFirst({
+        where: { name: { equals: 'cancelled', mode: 'insensitive' } },
+      });
       if (!cancelledStatus) {
         cancelledStatus = await prisma.appointmentStatus.create({ data: { name: 'cancelled' } });
       }
 
       const updated = await prisma.appointment.update({
         where: { id: apptId },
-        data: { statusId: cancelledStatus.id },
-        include: { status: true, doctor: true },
+        data: {
+          statusId: cancelledStatus.id,
+          notes: updatedNotes,
+          updatedAt: new Date(),
+        },
+        include: {
+          status: true,
+          doctor: {
+            include: { specialization: true, department: { include: { hospital: true } } },
+          },
+        },
       });
 
-      // Notify patient
+      // 9. Notify Patient
       try {
         const notifType = await prisma.notificationType.findFirst({
           where: { name: { contains: 'appoint', mode: 'insensitive' } },
@@ -2012,7 +2102,7 @@ router.patch(
             userId: patient.userId,
             notificationTypeId: notifType?.id || 1,
             title: 'Appointment Cancelled',
-            message: `Your appointment with Dr. ${updated.doctor.firstName} ${updated.doctor.lastName} on ${updated.appointmentDate.toISOString().split('T')[0]} has been cancelled.`,
+            message: `Your appointment with Dr. ${updated.doctor.firstName} ${updated.doctor.lastName} (${updated.doctor.specialization?.name || 'General'}) scheduled for ${updated.appointmentDate.toISOString().split('T')[0]} at ${formatTime12h(updated.appointmentTime)} has been cancelled.`,
             isRead: false,
           },
         });
@@ -2020,14 +2110,33 @@ router.patch(
         console.warn('[PATIENT] Non-critical notification error:', nErr);
       }
 
+      // 10. Audit Logging (Zero sensitive credentials logged)
       await logAudit(req.user!.userId, 'CANCEL_PATIENT_APPOINTMENT', 'appointments', apptId, {
         patientId: patient.id,
+        doctorId: updated.doctorId,
+        appointmentDate: updated.appointmentDate.toISOString().split('T')[0],
+        appointmentTime: formatTime12h(updated.appointmentTime),
+        cancellationReason: cancellationReason || 'No reason provided',
+        cancelledAt: new Date().toISOString(),
       });
 
       return res.json({
         success: true,
         message: 'Appointment has been cancelled successfully.',
-        data: updated,
+        data: {
+          id: updated.id,
+          appointmentId: `APT-${String(updated.id).padStart(4, '0')}`,
+          status: 'cancelled',
+          date: updated.appointmentDate.toISOString().split('T')[0],
+          time: formatTime12h(updated.appointmentTime),
+          doctor: {
+            id: updated.doctor.id,
+            name: `Dr. ${updated.doctor.firstName} ${updated.doctor.lastName}`,
+            specialization: updated.doctor.specialization?.name || 'General Medicine',
+            department: updated.doctor.department?.name || 'Outpatient Clinic',
+          },
+          cancellationReason: cancellationReason || null,
+        },
       });
     } catch (err) {
       console.error('[PATIENT] Cancel appointment error:', err);

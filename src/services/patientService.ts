@@ -1437,10 +1437,15 @@ export async function bookPatientAppointment(payload: {
   return appt;
 }
 
-export async function cancelPatientAppointment(appointmentId: number): Promise<{ success: boolean; message: string }> {
+export async function cancelPatientAppointment(
+  appointmentId: number,
+  reason?: string
+): Promise<{ success: boolean; message: string; data?: any }> {
+  const headers = getAuthHeaders();
   const res = await fetch(`/api/patient/appointments/${appointmentId}/cancel`, {
     method: 'PATCH',
-    headers: getAuthHeaders(),
+    headers,
+    body: JSON.stringify({ reason }),
   });
 
   const json = await res.json();

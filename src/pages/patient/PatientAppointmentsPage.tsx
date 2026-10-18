@@ -109,6 +109,8 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
 
   // Cancel Modal state
   const [cancelTarget, setCancelTarget] = useState<PatientBookedAppointment | null>(null);
+  const [cancelReason, setCancelReason] = useState<string>('');
+  const [cancelModalError, setCancelModalError] = useState<string | null>(null);
 
   // 1. Initial Load: Departments, Doctors, Appointments
   useEffect(() => {
@@ -240,18 +242,33 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
   const handleConfirmCancel = async () => {
     if (!cancelTarget) return;
     setSubmitting(true);
+    setCancelModalError(null);
     try {
-      await cancelPatientAppointment(cancelTarget.id);
+      const res = await cancelPatientAppointment(cancelTarget.id, cancelReason);
       setAppointments((prev) =>
         prev.map((a) => (a.id === cancelTarget.id ? { ...a, status: 'cancelled' } : a))
       );
-      setSuccessMsg('Appointment cancelled successfully.');
+      setSuccessMsg(
+        res.message ||
+        `Appointment with Dr. ${cancelTarget.doctor.name} on ${cancelTarget.date} at ${cancelTarget.time} was cancelled successfully.`
+      );
       setCancelTarget(null);
-      if (selectedDoctor) {
+      setCancelReason('');
+
+      // Refresh appointments from server to ensure database sync
+      try {
+        const freshAppts = await getPatientAppointments();
+        setAppointments(freshAppts);
+      } catch (rErr) {
+        console.warn('[PatientAppointmentsPage] Background appointments reload warning:', rErr);
+      }
+
+      // Refresh doctor availability slot for current calendar
+      if (selectedDoctor && selectedDate) {
         fetchDoctorSchedule(selectedDoctor.id, selectedDate);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to cancel appointment.');
+      setCancelModalError(err.message || 'Failed to cancel appointment. Please check hospital policy.');
     } finally {
       setSubmitting(false);
     }
@@ -773,6 +790,31 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
                 const isCompleted = appt.status === 'completed';
                 const isCancelled = appt.status === 'cancelled';
 
+                // Check if appointment is in the past
+                const isPastAppointment = (() => {
+                  try {
+                    const [year, month, day] = appt.date.split('-').map(Number);
+                    let hours = 0;
+                    let minutes = 0;
+                    if (appt.time) {
+                      const match = appt.time.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+                      if (match) {
+                        hours = parseInt(match[1], 10);
+                        minutes = parseInt(match[2], 10);
+                        const meridiem = (match[3] || '').toUpperCase();
+                        if (meridiem === 'PM' && hours < 12) hours += 12;
+                        if (meridiem === 'AM' && hours === 12) hours = 0;
+                      }
+                    }
+                    const apptDateTime = new Date(year, month - 1, day, hours, minutes, 0);
+                    return apptDateTime.getTime() < Date.now();
+                  } catch {
+                    return false;
+                  }
+                })();
+
+                const isEligibleToCancel = isScheduled && !isPastAppointment;
+
                 return (
                   <motion.div
                     key={appt.id}
@@ -850,26 +892,41 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
                     {/* Actions */}
                     {isScheduled && (
                       <div className="pt-4 mt-4 border-t border-white/10 flex items-center gap-2">
-                        <button
-                          id={`btn-reschedule-${appt.id}`}
-                          onClick={() => {
-                            setRescheduleTarget(appt);
-                            const initialRescheduleDate =
-                              appt.date >= minDateStr && appt.date <= maxDateStr ? appt.date : minDateStr;
-                            setRescheduleDate(initialRescheduleDate);
-                            setRescheduleSlot(appt.time);
-                          }}
-                          className="flex-1 py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/15 text-xs font-bold transition-all text-center"
-                        >
-                          Reschedule
-                        </button>
-                        <button
-                          id={`btn-cancel-${appt.id}`}
-                          onClick={() => setCancelTarget(appt)}
-                          className="py-1.5 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all text-center"
-                        >
-                          Cancel
-                        </button>
+                        {isEligibleToCancel ? (
+                          <>
+                            <button
+                              id={`btn-reschedule-${appt.id}`}
+                              onClick={() => {
+                                setRescheduleTarget(appt);
+                                const initialRescheduleDate =
+                                  appt.date >= minDateStr && appt.date <= maxDateStr ? appt.date : minDateStr;
+                                setRescheduleDate(initialRescheduleDate);
+                                setRescheduleSlot(appt.time);
+                              }}
+                              className="flex-1 py-1.5 px-2 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/15 text-xs font-bold transition-all text-center cursor-pointer"
+                            >
+                              Reschedule
+                            </button>
+                            <button
+                              id={`btn-cancel-${appt.id}`}
+                              onClick={() => {
+                                setCancelTarget(appt);
+                                setCancelReason('');
+                                setCancelModalError(null);
+                              }}
+                              className="py-1.5 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all text-center cursor-pointer flex items-center gap-1.5"
+                              title="Cancel this appointment"
+                              aria-label={`Cancel appointment with ${appt.doctor.name}`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Cancel Appointment</span>
+                            </button>
+                          </>
+                        ) : (
+                          <div className="w-full text-center py-1 text-[11px] text-gray-400 font-medium italic">
+                            Past appointment (cancellation closed)
+                          </div>
+                        )}
                       </div>
                     )}
                   </motion.div>
@@ -964,37 +1021,166 @@ export const PatientAppointmentsPage: React.FC<PatientAppointmentsPageProps> = (
         {cancelTarget && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/80 backdrop-blur-md">
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-card p-6 max-w-sm w-full border border-rose-500/40 rounded-3xl text-center space-y-4"
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="glass-card p-6 sm:p-7 max-w-md w-full border border-rose-500/30 rounded-3xl shadow-2xl text-left space-y-4 relative overflow-hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="cancel-appointment-title"
             >
-              <div className="w-12 h-12 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
-                <AlertTriangle className="w-6 h-6" />
+              {/* Top Accent Strip */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-amber-500 to-rose-500" />
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!submitting) {
+                    setCancelTarget(null);
+                    setCancelReason('');
+                    setCancelModalError(null);
+                  }
+                }}
+                disabled={submitting}
+                className="absolute top-4 right-4 p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Header */}
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-glow-rose/20 flex-shrink-0">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 id="cancel-appointment-title" className="text-lg font-bold text-white tracking-tight">
+                    Cancel Appointment
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    Review your consultation details before confirming cancellation.
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <h3 className="text-lg font-bold text-white">Cancel Appointment?</h3>
-                <p className="text-xs text-gray-300 mt-1">
-                  Are you sure you want to cancel your consultation with <span className="font-bold text-white">{cancelTarget.doctor.name}</span> on <span className="font-bold text-white">{cancelTarget.date} at {cancelTarget.time}</span>?
-                </p>
+              {/* Error Message inside modal */}
+              {cancelModalError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{cancelModalError}</span>
+                </div>
+              )}
+
+              {/* Structured Appointment Details */}
+              <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <span className="text-[11px] font-mono font-bold text-accent px-2 py-0.5 rounded bg-accent/10 border border-accent/20">
+                    {cancelTarget.appointmentId}
+                  </span>
+                  <span className="text-[11px] text-gray-400">
+                    {cancelTarget.type === 'video' ? 'Virtual Video Consultation' : 'Hospital OPD Visit'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary to-accent flex items-center justify-center text-white text-xs font-black flex-shrink-0">
+                    {cancelTarget.doctor.firstName ? cancelTarget.doctor.firstName[0] : 'D'}
+                    {cancelTarget.doctor.lastName ? cancelTarget.doctor.lastName[0] : 'R'}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="font-extrabold text-white text-sm truncate">{cancelTarget.doctor.name}</h4>
+                    <p className="text-[11px] text-accent font-medium truncate">{cancelTarget.doctor.specialization}</p>
+                    <p className="text-[10px] text-gray-400 truncate">{cancelTarget.doctor.department}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-gray-300">
+                    <Calendar className="w-3.5 h-3.5 text-accent" />
+                    <span className="font-semibold text-white">{cancelTarget.date}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-gray-300">
+                    <Clock className="w-3.5 h-3.5 text-accent" />
+                    <span className="font-semibold text-white">{cancelTarget.time}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
+              {/* Optional Cancellation Reason */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                  Reason for Cancellation (Optional)
+                </label>
+
+                {/* Quick Selection Pills */}
+                <div className="flex flex-wrap gap-1.5 pb-1">
+                  {[
+                    'Schedule conflict',
+                    'Feeling better / resolved',
+                    'Need different specialist',
+                    'Personal emergency',
+                  ].map((quick) => (
+                    <button
+                      key={quick}
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => setCancelReason(quick)}
+                      className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                        cancelReason === quick
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 font-bold'
+                          : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {quick}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Provide additional details or notes for the clinical team..."
+                  rows={2}
+                  maxLength={300}
+                  disabled={submitting}
+                  className="w-full p-2.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all resize-none"
+                />
+              </div>
+
+              {/* Hospital Policy Notice */}
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2 text-[11px] text-amber-200/90 leading-relaxed">
+                <ShieldCheck className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <span>
+                  Cancelling will immediately release this slot for other patients. You may reschedule or book a new appointment at any time.
+                </span>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center gap-3 pt-2">
                 <Button
+                  type="button"
                   variant="outline"
                   className="w-1/2 py-2 text-xs font-bold"
-                  onClick={() => setCancelTarget(null)}
+                  disabled={submitting}
+                  onClick={() => {
+                    setCancelTarget(null);
+                    setCancelReason('');
+                    setCancelModalError(null);
+                  }}
                 >
                   Keep Appointment
                 </Button>
                 <Button
-                  variant="outline"
-                  className="w-1/2 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white border-rose-600"
+                  type="button"
+                  variant="primary"
+                  className="w-1/2 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-glow-rose/20"
                   disabled={submitting}
                   onClick={handleConfirmCancel}
+                  icon={submitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                  iconPosition="left"
                 >
-                  {submitting ? 'Cancelling...' : 'Yes, Cancel'}
+                  {submitting ? 'Cancelling...' : 'Confirm Cancellation'}
                 </Button>
               </div>
             </motion.div>
