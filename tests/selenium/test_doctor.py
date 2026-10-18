@@ -96,3 +96,17 @@ class TestDoctorModule:
         assert profile_page.is_prescription_modal_displayed(), "Prescription modal failed to open."
         profile_page.close_prescription_modal()
     pytest_item_metadata(test_doc_008_appointment_request_and_prescription_ui, "DOC-008", "Doctor", "High", "Appointment requests and prescription modal operate smoothly")
+
+    def test_doc_009_inpatient_management_navigation(self, driver):
+        """DOC-009: Verify doctor can access Inpatient Management workspace and view admitted patients"""
+        dashboard = self.login_doctor(driver)
+        dashboard.click_inpatient_management()
+        assert dashboard.is_inpatient_management_loaded(), "Inpatient Management page failed to display."
+    pytest_item_metadata(test_doc_009_inpatient_management_navigation, "DOC-009", "Doctor", "Critical", "Inpatient Management workspace loads with live registry and metrics")
+
+    def test_doc_010_bed_allocation_navigation(self, driver):
+        """DOC-010: Verify doctor can access Bed Allocation & Ward Inventory workspace"""
+        dashboard = self.login_doctor(driver)
+        dashboard.click_bed_allocation()
+        assert dashboard.is_bed_allocation_loaded(), "Bed Allocation page failed to display."
+    pytest_item_metadata(test_doc_010_bed_allocation_navigation, "DOC-010", "Doctor", "Critical", "Bed Allocation & Ward Inventory workspace renders interactive bed grid")

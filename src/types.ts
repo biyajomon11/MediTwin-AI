@@ -1623,6 +1623,13 @@ export interface WardBedDTO {
   bedNumber: string;
   status: 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE';
   isAvailable: boolean;
+  currentAdmission?: {
+    id: number;
+    admissionNumber: string;
+    patientId: number;
+    patientName: string;
+    acuityLevel: string;
+  } | null;
 }
 
 export interface InpatientAdmissionRecord {
@@ -1672,6 +1679,71 @@ export interface CreateInpatientAdmissionInput {
   admissionStatus?: 'ADMITTED' | 'UNDER_OBSERVATION';
   acuityLevel?: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
   sourceAppointmentId?: number | null;
+}
+
+export interface BedTransferInput {
+  destinationWardId: number;
+  destinationBedId: number;
+  transferReason?: string;
+}
+
+export interface BedTransferHistoryRecord {
+  id: number;
+  admissionId: number;
+  fromWardId: number;
+  fromWardName?: string;
+  fromBedId: number;
+  fromBedNumber?: string;
+  toWardId: number;
+  toBedId: number;
+  toWardName?: string;
+  toBedNumber?: string;
+  transferReason?: string;
+  transferredById?: number;
+  transferredByEmail?: string;
+  transferredAt: string;
+}
+
+export interface AdmissionTimelineEvent {
+  id: string;
+  eventType: 'ADMISSION_CREATED' | 'BED_TRANSFERRED' | 'DISCHARGE_COMPLETED' | string;
+  timestamp: string;
+  title: string;
+  description: string;
+  diagnosis?: string;
+  chiefComplaint?: string;
+  acuityLevel?: string;
+  reason?: string;
+  performedBy?: string;
+}
+
+export interface AdmissionHistoryResponse {
+  admissionId: number;
+  admissionNumber: string;
+  patientName: string;
+  timeline: AdmissionTimelineEvent[];
+}
+
+export interface BedAllocationSummaryDTO {
+  totalHospitalBeds: number;
+  totalOccupiedBeds: number;
+  totalAvailableBeds: number;
+  totalMaintenanceBeds: number;
+  overallOccupancyPercentage: number;
+  currentInpatientCount: number;
+  criticalInpatientsCount: number;
+  wards: {
+    id: number;
+    wardNumber: string;
+    name: string;
+    department: string;
+    totalBeds: number;
+    occupiedBeds: number;
+    availableBeds: number;
+    maintenanceBeds: number;
+    occupancyPercentage: number;
+    isActive: boolean;
+  }[];
 }
 
 

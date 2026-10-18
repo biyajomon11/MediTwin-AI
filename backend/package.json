@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "seed:master": "ts-node-dev --transpile-only src/seed-master.ts"
+    "seed:master": "ts-node-dev --transpile-only src/seed-master.ts",
+    "test:inpatient": "ts-node-dev --transpile-only src/test-inpatient-management-and-transfer.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.10.0",

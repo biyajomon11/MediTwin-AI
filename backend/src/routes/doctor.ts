@@ -1431,6 +1431,527 @@ router.get(
   }
 );
 
+/**
+ * GET /api/doctor/wards
+ * Retrieves all hospital wards with bed count and occupancy statistics.
+ */
+router.get(
+  '/wards',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (_req: AuthenticatedRequest, res: Response) => {
+    try {
+      const wards = await prisma.ward.findMany({
+        where: { isActive: true },
+        include: { beds: true },
+        orderBy: { id: 'asc' },
+      });
+
+      const formatted = wards.map((w) => {
+        const totalBeds = w.beds.length;
+        const occupiedBeds = w.beds.filter((b) => b.status === 'OCCUPIED').length;
+        const availableBeds = w.beds.filter((b) => b.status === 'AVAILABLE').length;
+        const occupancyPercentage = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+        return {
+          id: w.id,
+          wardNumber: w.wardNumber,
+          name: w.name,
+          department: w.department,
+          totalBeds,
+          occupiedBeds,
+          availableBeds,
+          occupancyPercentage,
+          isActive: w.isActive,
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error('[DOCTOR] List wards error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve hospital wards.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/wards/:wardId/beds
+ * Retrieves bed inventory and occupancy status for a specific ward.
+ */
+router.get(
+  '/wards/:wardId/beds',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const wardId = parseInt(req.params.wardId);
+      if (isNaN(wardId)) {
+        return res.status(400).json({ success: false, error: 'Invalid ward ID.' });
+      }
+
+      const ward = await prisma.ward.findUnique({ where: { id: wardId } });
+      if (!ward) {
+        return res.status(404).json({ success: false, error: 'Ward not found.' });
+      }
+
+      const beds = await prisma.bed.findMany({
+        where: { wardId },
+        orderBy: { bedNumber: 'asc' },
+        include: {
+          admissions: {
+            where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
+            include: { patient: true },
+          },
+        },
+      });
+
+      const formattedBeds = beds.map((b) => {
+        const activeAdm = b.admissions[0];
+        return {
+          id: b.id,
+          wardId: b.wardId,
+          bedNumber: b.bedNumber,
+          status: b.status,
+          isAvailable: b.status === 'AVAILABLE',
+          currentAdmission: activeAdm
+            ? {
+                id: activeAdm.id,
+                admissionNumber: activeAdm.admissionNumber,
+                patientId: activeAdm.patientId,
+                patientName: `${activeAdm.patient.firstName} ${activeAdm.patient.lastName}`,
+                acuityLevel: activeAdm.acuityLevel,
+              }
+            : null,
+        };
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          ward: { id: ward.id, name: ward.name, wardNumber: ward.wardNumber, department: ward.department },
+          beds: formattedBeds,
+          total: beds.length,
+          available: formattedBeds.filter((b) => b.isAvailable).length,
+        },
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Get ward beds error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve ward beds.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/bed-allocation/summary
+ * Returns aggregated statistics for hospital wards, capacity, and bed allocations.
+ */
+router.get(
+  '/bed-allocation/summary',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (_req: AuthenticatedRequest, res: Response) => {
+    try {
+      const wards = await prisma.ward.findMany({
+        where: { isActive: true },
+        include: {
+          beds: {
+            include: {
+              admissions: {
+                where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
+                include: { patient: true },
+              },
+            },
+          },
+        },
+        orderBy: { id: 'asc' },
+      });
+
+      let totalHospitalBeds = 0;
+      let totalOccupiedBeds = 0;
+      let totalAvailableBeds = 0;
+      let totalMaintenanceBeds = 0;
+
+      const wardSummaries = wards.map((w) => {
+        const total = w.beds.length;
+        const occupied = w.beds.filter((b) => b.status === 'OCCUPIED').length;
+        const available = w.beds.filter((b) => b.status === 'AVAILABLE').length;
+        const maintenance = w.beds.filter((b) => b.status === 'MAINTENANCE').length;
+        const occupancyPercentage = total > 0 ? Math.round((occupied / total) * 100) : 0;
+
+        totalHospitalBeds += total;
+        totalOccupiedBeds += occupied;
+        totalAvailableBeds += available;
+        totalMaintenanceBeds += maintenance;
+
+        return {
+          id: w.id,
+          wardNumber: w.wardNumber,
+          name: w.name,
+          department: w.department || 'General Medicine',
+          totalBeds: total,
+          occupiedBeds: occupied,
+          availableBeds: available,
+          maintenanceBeds: maintenance,
+          occupancyPercentage,
+          isActive: w.isActive,
+        };
+      });
+
+      const currentInpatientCount = await prisma.inpatientAdmission.count({
+        where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
+      });
+
+      const criticalInpatientsCount = await prisma.inpatientAdmission.count({
+        where: {
+          admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+          acuityLevel: 'CRITICAL',
+        },
+      });
+
+      const overallOccupancyPercentage =
+        totalHospitalBeds > 0 ? Math.round((totalOccupiedBeds / totalHospitalBeds) * 100) : 0;
+
+      return res.json({
+        success: true,
+        data: {
+          totalHospitalBeds,
+          totalOccupiedBeds,
+          totalAvailableBeds,
+          totalMaintenanceBeds,
+          overallOccupancyPercentage,
+          currentInpatientCount,
+          criticalInpatientsCount,
+          wards: wardSummaries,
+        },
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Bed allocation summary error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve bed allocation summary.' });
+    }
+  }
+);
+
+const transferAdmissionSchema = z.object({
+  destinationWardId: z.number().int().positive({ message: 'Destination ward ID is required.' }),
+  destinationBedId: z.number().int().positive({ message: 'Destination bed ID is required.' }),
+  transferReason: z.string().optional(),
+});
+
+/**
+ * POST /api/doctor/inpatient-admissions/:id/transfer
+ * Atomically transfers a patient to a new ward/bed, updates records, records transfer history, and logs audit event.
+ */
+router.post(
+  '/inpatient-admissions/:id/transfer',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid admission ID.' });
+      }
+
+      const parsed = transferAdmissionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed.',
+          details: parsed.error.flatten().fieldErrors,
+        });
+      }
+
+      const { destinationWardId, destinationBedId, transferReason } = parsed.data;
+      const userId = req.user!.userId;
+
+      // 1. Fetch current admission
+      const admission = await prisma.inpatientAdmission.findUnique({
+        where: { id },
+        include: { patient: true, ward: true, bed: true },
+      });
+
+      if (!admission) {
+        return res.status(404).json({ success: false, error: 'Inpatient admission not found.' });
+      }
+
+      if (admission.admissionStatus === 'DISCHARGED') {
+        return res.status(400).json({ success: false, error: 'Cannot transfer a discharged patient.' });
+      }
+
+      if (admission.bedId === destinationBedId) {
+        return res.status(400).json({ success: false, error: 'Patient is already assigned to this bed.' });
+      }
+
+      // 2. Validate destination ward and bed
+      const destWard = await prisma.ward.findUnique({ where: { id: destinationWardId } });
+      if (!destWard || !destWard.isActive) {
+        return res.status(404).json({ success: false, error: 'Destination ward not found or inactive.' });
+      }
+
+      const destBed = await prisma.bed.findUnique({ where: { id: destinationBedId } });
+      if (!destBed || destBed.wardId !== destWard.id) {
+        return res.status(400).json({ success: false, error: 'Destination bed does not belong to the selected ward.' });
+      }
+
+      if (destBed.status !== 'AVAILABLE') {
+        return res.status(409).json({ success: false, error: `Destination ${destBed.bedNumber} is not available (Current status: ${destBed.status}).` });
+      }
+
+      // 3. Transactional Transfer: release old bed, acquire new bed, log history, update admission & patient
+      const updated = await prisma.$transaction(async (tx) => {
+        // Double check destination bed availability inside transaction
+        const freshDestBed = await tx.bed.findUnique({ where: { id: destBed.id } });
+        if (!freshDestBed || freshDestBed.status !== 'AVAILABLE') {
+          throw new Error('DEST_BED_CONFLICT');
+        }
+
+        // Lock destination bed
+        await tx.bed.update({
+          where: { id: destBed.id },
+          data: { status: 'OCCUPIED' },
+        });
+
+        // Release previous bed
+        await tx.bed.update({
+          where: { id: admission.bedId },
+          data: { status: 'AVAILABLE' },
+        });
+
+        // Record Transfer History
+        await tx.bedTransferHistory.create({
+          data: {
+            admissionId: admission.id,
+            fromWardId: admission.wardId,
+            fromBedId: admission.bedId,
+            toWardId: destWard.id,
+            toBedId: destBed.id,
+            transferReason: transferReason?.trim() || 'Clinical relocation / care step',
+            transferredById: userId,
+            transferredAt: new Date(),
+          },
+        });
+
+        // Update Admission
+        const updatedAdm = await tx.inpatientAdmission.update({
+          where: { id: admission.id },
+          data: {
+            wardId: destWard.id,
+            bedId: destBed.id,
+            updatedAt: new Date(),
+          },
+          include: {
+            patient: { include: { gender: true, bloodGroup: true, user: { select: { email: true } } } },
+            admittingDoctor: { include: { specialization: true, department: true } },
+            ward: true,
+            bed: true,
+          },
+        });
+
+        // Update Patient current location
+        await tx.patient.update({
+          where: { id: admission.patientId },
+          data: {
+            ward: destWard.name,
+            bedNumber: destBed.bedNumber,
+          },
+        });
+
+        return updatedAdm;
+      });
+
+      // 4. Audit Logging
+      await logAudit(userId, 'BED_TRANSFERRED', 'inpatient_admissions', admission.id, {
+        fromWard: admission.ward.wardNumber,
+        fromBed: admission.bed.bedNumber,
+        toWard: destWard.wardNumber,
+        toBed: destBed.bedNumber,
+        reason: transferReason,
+      });
+
+      return res.json({
+        success: true,
+        message: `Successfully transferred ${admission.patient.firstName} to ${destWard.name} (${destBed.bedNumber}).`,
+        data: formatInpatientAdmissionDTO(updated),
+      });
+    } catch (err: any) {
+      if (err.message === 'DEST_BED_CONFLICT') {
+        return res.status(409).json({ success: false, error: 'Destination bed was just allocated to another patient. Please select a different bed.' });
+      }
+      console.error('[DOCTOR] Transfer error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to transfer patient to destination bed.' });
+    }
+  }
+);
+
+/**
+ * POST /api/doctor/inpatient-admissions/:id/discharge
+ * Atomically marks admission as discharged, releases the hospital bed, and clears patient active inpatient status.
+ */
+router.post(
+  '/inpatient-admissions/:id/discharge',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid admission ID.' });
+      }
+
+      const admission = await prisma.inpatientAdmission.findUnique({
+        where: { id },
+        include: { patient: true, bed: true, ward: true },
+      });
+
+      if (!admission) {
+        return res.status(404).json({ success: false, error: 'Inpatient admission not found.' });
+      }
+
+      if (admission.admissionStatus === 'DISCHARGED') {
+        return res.status(400).json({ success: false, error: 'Admission has already been discharged.' });
+      }
+
+      const dischargeDate = new Date();
+
+      await prisma.$transaction(async (tx) => {
+        // Release bed
+        await tx.bed.update({
+          where: { id: admission.bedId },
+          data: { status: 'AVAILABLE' },
+        });
+
+        // Update Admission
+        await tx.inpatientAdmission.update({
+          where: { id: admission.id },
+          data: {
+            admissionStatus: 'DISCHARGED',
+            dischargeDate,
+            updatedAt: dischargeDate,
+          },
+        });
+
+        // Update Patient
+        await tx.patient.update({
+          where: { id: admission.patientId },
+          data: {
+            admissionStatus: 'Discharged',
+            ward: null,
+            bedNumber: null,
+          },
+        });
+      });
+
+      await logAudit(req.user!.userId, 'DISCHARGE_COMPLETED', 'inpatient_admissions', admission.id, {
+        patientId: admission.patientId,
+        wardId: admission.wardId,
+        bedNumber: admission.bed.bedNumber,
+        dischargeDate,
+      });
+
+      return res.json({
+        success: true,
+        message: `Patient ${admission.patient.firstName} ${admission.patient.lastName} discharged successfully. Bed ${admission.bed.bedNumber} is now available.`,
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Discharge error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to complete inpatient discharge.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/inpatient-admissions/:id/history
+ * Returns the chronological audit and bed movement timeline for an admission.
+ */
+router.get(
+  '/inpatient-admissions/:id/history',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid admission ID.' });
+      }
+
+      const admission = await prisma.inpatientAdmission.findUnique({
+        where: { id },
+        include: {
+          patient: true,
+          admittingDoctor: true,
+          ward: true,
+          bed: true,
+          transferHistory: {
+            include: {
+              fromWard: true,
+              fromBed: true,
+              toWard: true,
+              toBed: true,
+              transferredBy: { select: { email: true } },
+            },
+            orderBy: { transferredAt: 'asc' },
+          },
+        },
+      });
+
+      if (!admission) {
+        return res.status(404).json({ success: false, error: 'Admission not found.' });
+      }
+
+      const timeline: any[] = [];
+
+      // Initial Admission Event
+      timeline.push({
+        id: `adm-created-${admission.id}`,
+        eventType: 'ADMISSION_CREATED',
+        timestamp: admission.admissionDateTime,
+        title: 'Patient Admitted to Hospital',
+        description: `Admitted under Dr. ${admission.admittingDoctor?.firstName || 'Attending'} ${admission.admittingDoctor?.lastName || 'Physician'} to ${admission.ward?.name || 'Ward'} (${admission.bed?.bedNumber || 'Bed'})`,
+        diagnosis: admission.admissionDiagnosis,
+        chiefComplaint: admission.chiefComplaint,
+        acuityLevel: admission.acuityLevel,
+      });
+
+      // Bed Transfer Events
+      for (const t of admission.transferHistory) {
+        timeline.push({
+          id: `transfer-${t.id}`,
+          eventType: 'BED_TRANSFERRED',
+          timestamp: t.transferredAt,
+          title: 'Bed & Ward Relocation',
+          description: `Transferred from ${t.fromWard.name} (${t.fromBed.bedNumber}) to ${t.toWard.name} (${t.toBed.bedNumber})`,
+          reason: t.transferReason,
+          performedBy: t.transferredBy?.email || 'Attending Clinical Staff',
+        });
+      }
+
+      // Discharge Event
+      if (admission.dischargeDate) {
+        timeline.push({
+          id: `discharge-${admission.id}`,
+          eventType: 'DISCHARGE_COMPLETED',
+          timestamp: admission.dischargeDate,
+          title: 'Inpatient Discharged',
+          description: `Patient clinical discharge completed. Bed ${admission.bed?.bedNumber} released back to inventory.`,
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          admissionId: admission.id,
+          admissionNumber: admission.admissionNumber,
+          patientName: `${admission.patient.firstName} ${admission.patient.lastName}`,
+          timeline,
+        },
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Admission history error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve admission history.' });
+    }
+  }
+);
+
+
 const noteSchema = z.object({
   content: z.string().min(3, { message: 'Clinical note content must be at least 3 characters.' }),
   type: z.enum(['Progress Note', 'Consultation', 'Discharge Summary', 'Referral', 'General']).default('Progress Note'),

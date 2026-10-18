@@ -31,6 +31,7 @@ model User {
   nurse            Nurse?
   patient          Patient?
   role             Role              @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  bedTransfers     BedTransferHistory[]
 
   @@map("users")
 }
@@ -563,29 +564,33 @@ model HospitalProcedure {
 }
 
 model Ward {
-  id          Int                  @id @default(autoincrement())
-  wardNumber  String               @unique @map("ward_number") @db.VarChar(50)
-  name        String               @db.VarChar(150)
-  department  String?              @db.VarChar(150)
-  totalBeds   Int                  @default(15) @map("total_beds")
-  isActive    Boolean              @default(true) @map("is_active")
-  createdAt   DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt   DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  beds        Bed[]
-  admissions  InpatientAdmission[]
+  id            Int                  @id @default(autoincrement())
+  wardNumber    String               @unique @map("ward_number") @db.VarChar(50)
+  name          String               @db.VarChar(150)
+  department    String?              @db.VarChar(150)
+  totalBeds     Int                  @default(15) @map("total_beds")
+  isActive      Boolean              @default(true) @map("is_active")
+  createdAt     DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  beds          Bed[]
+  admissions    InpatientAdmission[]
+  transfersFrom BedTransferHistory[] @relation("TransferFromWard")
+  transfersTo   BedTransferHistory[] @relation("TransferToWard")
 
   @@map("wards")
 }
 
 model Bed {
-  id         Int                  @id @default(autoincrement())
-  wardId     Int                  @map("ward_id")
-  bedNumber  String               @map("bed_number") @db.VarChar(50)
-  status     String               @default("AVAILABLE") @db.VarChar(50)
-  createdAt  DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt  DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
-  ward       Ward                 @relation(fields: [wardId], references: [id], onDelete: Cascade)
-  admissions InpatientAdmission[]
+  id            Int                  @id @default(autoincrement())
+  wardId        Int                  @map("ward_id")
+  bedNumber     String               @map("bed_number") @db.VarChar(50)
+  status        String               @default("AVAILABLE") @db.VarChar(50)
+  createdAt     DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt     DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  ward          Ward                 @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  admissions    InpatientAdmission[]
+  transfersFrom BedTransferHistory[] @relation("TransferFromBed")
+  transfersTo   BedTransferHistory[] @relation("TransferToBed")
 
   @@unique([wardId, bedNumber])
   @@index([wardId])
@@ -594,28 +599,29 @@ model Bed {
 }
 
 model InpatientAdmission {
-  id                          Int          @id @default(autoincrement())
-  admissionNumber             String       @unique @map("admission_number") @db.VarChar(50)
-  patientId                   Int          @map("patient_id")
-  admittingDoctorId           Int          @map("admitting_doctor_id")
-  wardId                      Int          @map("ward_id")
-  bedId                       Int          @map("bed_id")
-  admissionDateTime           DateTime     @default(now()) @map("admission_date_time") @db.Timestamp(6)
-  admissionDiagnosis          String       @map("admission_diagnosis") @db.VarChar(255)
-  chiefComplaint              String       @map("chief_complaint")
-  nursingHandoverInstructions String?      @map("nursing_handover_instructions")
-  admissionStatus             String       @default("ADMITTED") @map("admission_status") @db.VarChar(50)
-  acuityLevel                 String       @default("MODERATE") @map("acuity_level") @db.VarChar(50)
-  sourceAppointmentId         Int?         @map("source_appointment_id")
-  dischargeDate               DateTime?    @map("discharge_date") @db.Timestamp(6)
-  createdAt                   DateTime?    @default(now()) @map("created_at") @db.Timestamp(6)
-  updatedAt                   DateTime?    @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  id                          Int                  @id @default(autoincrement())
+  admissionNumber             String               @unique @map("admission_number") @db.VarChar(50)
+  patientId                   Int                  @map("patient_id")
+  admittingDoctorId           Int                  @map("admitting_doctor_id")
+  wardId                      Int                  @map("ward_id")
+  bedId                       Int                  @map("bed_id")
+  admissionDateTime           DateTime             @default(now()) @map("admission_date_time") @db.Timestamp(6)
+  admissionDiagnosis          String               @map("admission_diagnosis") @db.VarChar(255)
+  chiefComplaint              String               @map("chief_complaint")
+  nursingHandoverInstructions String?              @map("nursing_handover_instructions")
+  admissionStatus             String               @default("ADMITTED") @map("admission_status") @db.VarChar(50)
+  acuityLevel                 String               @default("MODERATE") @map("acuity_level") @db.VarChar(50)
+  sourceAppointmentId         Int?                 @map("source_appointment_id")
+  dischargeDate               DateTime?            @map("discharge_date") @db.Timestamp(6)
+  createdAt                   DateTime?            @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt                   DateTime?            @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  patient                     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  admittingDoctor             Doctor       @relation(fields: [admittingDoctorId], references: [id], onDelete: NoAction)
-  ward                        Ward         @relation(fields: [wardId], references: [id], onDelete: NoAction)
-  bed                         Bed          @relation(fields: [bedId], references: [id], onDelete: NoAction)
-  sourceAppointment           Appointment? @relation(fields: [sourceAppointmentId], references: [id], onDelete: SetNull)
+  patient                     Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  admittingDoctor             Doctor               @relation(fields: [admittingDoctorId], references: [id], onDelete: NoAction)
+  ward                        Ward                 @relation(fields: [wardId], references: [id], onDelete: NoAction)
+  bed                         Bed                  @relation(fields: [bedId], references: [id], onDelete: NoAction)
+  sourceAppointment           Appointment?         @relation(fields: [sourceAppointmentId], references: [id], onDelete: SetNull)
+  transferHistory             BedTransferHistory[]
 
   @@index([patientId])
   @@index([admittingDoctorId])
@@ -623,4 +629,28 @@ model InpatientAdmission {
   @@index([bedId])
   @@index([admissionStatus])
   @@map("inpatient_admissions")
+}
+
+model BedTransferHistory {
+  id              Int                @id @default(autoincrement())
+  admissionId     Int                @map("admission_id")
+  fromWardId      Int                @map("from_ward_id")
+  fromBedId       Int                @map("from_bed_id")
+  toWardId        Int                @map("to_ward_id")
+  toBedId         Int                @map("to_bed_id")
+  transferReason  String?            @map("transfer_reason") @db.VarChar(255)
+  transferredById Int?               @map("transferred_by_id")
+  transferredAt   DateTime           @default(now()) @map("transferred_at") @db.Timestamp(6)
+
+  admission       InpatientAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  fromWard        Ward               @relation("TransferFromWard", fields: [fromWardId], references: [id], onDelete: NoAction)
+  fromBed         Bed                @relation("TransferFromBed", fields: [fromBedId], references: [id], onDelete: NoAction)
+  toWard          Ward               @relation("TransferToWard", fields: [toWardId], references: [id], onDelete: NoAction)
+  toBed           Bed                @relation("TransferToBed", fields: [toBedId], references: [id], onDelete: NoAction)
+  transferredBy   User?              @relation(fields: [transferredById], references: [id], onDelete: SetNull)
+
+  @@index([admissionId])
+  @@index([fromBedId])
+  @@index([toBedId])
+  @@map("bed_transfer_history")
 }

@@ -10,10 +10,14 @@ class DoctorDashboardPage(BasePage):
     AI_SUMMARIES_TAB = (By.XPATH, "//nav//button[contains(., 'AI Patient Summaries')]")
     GUIDELINES_TAB = (By.XPATH, "//nav//button[contains(., 'Clinical Guidelines')]")
     PROFILE_TAB = (By.XPATH, "//nav//button[contains(., 'Doctor Profile')]")
+    INPATIENT_MANAGEMENT_TAB = (By.XPATH, "//nav//button[contains(., 'Inpatient Management')]")
+    BED_ALLOCATION_TAB = (By.XPATH, "//nav//button[contains(., 'Bed Allocation')]")
     LOGOUT_BTN = (By.XPATH, "//button[contains(., 'Sign Out') or contains(., 'Logout')]")
 
     # Header and Dashboard Elements
     WORKSTATION_TITLE = (By.XPATH, "//h1[contains(text(), 'Doctor Clinical Workstation')]")
+    INPATIENT_MANAGEMENT_TITLE = (By.XPATH, "//h1[contains(., 'Inpatient Management')]")
+    BED_ALLOCATION_TITLE = (By.XPATH, "//h1[contains(., 'Bed Allocation')]")
     METRIC_CARDS = (By.XPATH, "//div[contains(@class, 'glass-card')]")
     ACCESS_DENIED_HEADER = (By.XPATH, "//h1[contains(text(), 'Access Denied')]")
 
@@ -48,6 +52,20 @@ class DoctorDashboardPage(BasePage):
     def click_profile_tab(self):
         self.safe_click(self.PROFILE_TAB)
         return self
+
+    def click_inpatient_management(self):
+        self.safe_click(self.INPATIENT_MANAGEMENT_TAB)
+        return self
+
+    def click_bed_allocation(self):
+        self.safe_click(self.BED_ALLOCATION_TAB)
+        return self
+
+    def is_inpatient_management_loaded(self) -> bool:
+        return self.is_element_displayed(self.INPATIENT_MANAGEMENT_TITLE, timeout=8)
+
+    def is_bed_allocation_loaded(self) -> bool:
+        return self.is_element_displayed(self.BED_ALLOCATION_TITLE, timeout=8)
 
     def click_logout(self):
         self.safe_click(self.LOGOUT_BTN)

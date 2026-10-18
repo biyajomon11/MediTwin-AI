@@ -19,6 +19,8 @@ import { PatientRecordsPage } from './doctor/PatientRecordsPage';
 import { AIPatientSummaryPage } from './doctor/AIPatientSummaryPage';
 import { ClinicalGuidelinesPage } from './doctor/ClinicalGuidelinesPage';
 import { DoctorProfilePage } from './doctor/DoctorProfilePage';
+import { InpatientManagementPage } from './doctor/InpatientManagementPage';
+import { BedAllocationPage } from './doctor/BedAllocationPage';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { getPatients as getDoctorPatients } from '../services/doctorService';
 import * as doctorService from '../services/doctorService';
@@ -122,7 +124,8 @@ const PATIENT_RECORD_SUBITEMS = [
 const DOCTOR_NAV: NavItem[] = [
   { id: 'dashboard',            label: 'Dashboard',                  icon: LayoutDashboard },
   { id: 'patient-records',      label: 'Patient Records',            icon: Users, hasSubmenu: true },
-  { id: 'inpatient-admissions', label: 'Inpatient & Bed Allocation', icon: Bed },
+  { id: 'inpatient-management', label: 'Inpatient Management',       icon: Bed },
+  { id: 'bed-allocation',       label: 'Bed Allocation',             icon: Building2 },
   { id: 'ai-summaries',         label: 'AI Patient Summaries',       icon: Brain            },
   { id: 'medical-history',      label: 'Medical History',            icon: HeartPulse       },
   { id: 'guidelines',           label: 'Clinical Guidelines',        icon: BookOpen         },
@@ -174,10 +177,13 @@ const AccessDenied: React.FC<{ redirectTo: string; roleName?: string }> = ({ red
 // ─────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────
-export const DashboardPage: React.FC = () => {
-  const { role } = useParams<{ role: string }>();
+export const DashboardPage: React.FC<{ initialRole?: string; defaultTab?: string }> = ({
+  initialRole,
+  defaultTab,
+}) => {
+  const { role, admissionId: routeAdmissionId } = useParams<{ role?: string; admissionId?: string }>();
   const location = useLocation();
-  const activeRole = role || 'doctor';
+  const activeRole = initialRole || role || 'doctor';
 
   const searchParams = new URLSearchParams(location.search);
   const isDeptAnalytics =
@@ -188,10 +194,35 @@ export const DashboardPage: React.FC = () => {
     location.pathname.includes('/profile') ||
     searchParams.get('tab') === 'profile' ||
     searchParams.get('view') === 'profile';
+  const isInpatientsRoute =
+    location.pathname.startsWith('/doctor/inpatients') ||
+    searchParams.get('tab') === 'inpatient-management' ||
+    searchParams.get('tab') === 'inpatients' ||
+    searchParams.get('tab') === 'inpatient-admissions' ||
+    defaultTab === 'inpatient-management';
+  const isBedAllocRoute =
+    location.pathname === '/doctor/bed-allocation' ||
+    searchParams.get('tab') === 'bed-allocation' ||
+    defaultTab === 'bed-allocation';
 
   const [activeView, setActiveView] = useState(
-    isProfileTab ? 'profile' : isDeptAnalytics ? 'departments' : 'dashboard'
+    isProfileTab
+      ? 'profile'
+      : isDeptAnalytics
+      ? 'departments'
+      : isInpatientsRoute
+      ? 'inpatient-management'
+      : isBedAllocRoute
+      ? 'bed-allocation'
+      : 'dashboard'
   );
+
+  const [initialAdmissionId, setInitialAdmissionId] = useState<number | undefined>(() => {
+    if (routeAdmissionId) return parseInt(routeAdmissionId);
+    const sp = new URLSearchParams(location.search);
+    const qAdm = sp.get('admissionId');
+    return qAdm ? parseInt(qAdm) : undefined;
+  });
 
   useEffect(() => {
     const sp = new URLSearchParams(location.search);
@@ -207,8 +238,27 @@ export const DashboardPage: React.FC = () => {
       sp.get('view') === 'profile'
     ) {
       setActiveView('profile');
+    } else if (
+      location.pathname.startsWith('/doctor/inpatients') ||
+      sp.get('tab') === 'inpatient-management' ||
+      sp.get('tab') === 'inpatients' ||
+      sp.get('tab') === 'inpatient-admissions' ||
+      defaultTab === 'inpatient-management'
+    ) {
+      setActiveView('inpatient-management');
+      if (routeAdmissionId) {
+        setInitialAdmissionId(parseInt(routeAdmissionId));
+      } else if (sp.get('admissionId')) {
+        setInitialAdmissionId(parseInt(sp.get('admissionId')!));
+      }
+    } else if (
+      location.pathname === '/doctor/bed-allocation' ||
+      sp.get('tab') === 'bed-allocation' ||
+      defaultTab === 'bed-allocation'
+    ) {
+      setActiveView('bed-allocation');
     }
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, defaultTab, routeAdmissionId]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [doctorRecordTab, setDoctorRecordTab] = useState<string>('overview');
@@ -603,14 +653,16 @@ export const DashboardPage: React.FC = () => {
       } else {
         setActiveView('observations');
       }
-    } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records' || action === 'Inpatient Discharge Summaries' || action === 'Inpatient Admissions & Beds')) {
+    } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records' || action === 'Inpatient Discharge Summaries' || action === 'Inpatient Admissions & Beds' || action === 'Inpatient Management' || action === 'Bed Allocation')) {
       if (action === '🚨 Urgent Critical Triage') {
         setDoctorInitialStatus('Critical');
         setDoctorInitialPatientId(undefined);
         setDoctorRecordTab('overview');
         setActiveView('patient-records');
-      } else if (action === 'Inpatient Admissions & Beds') {
-        setActiveView('inpatient-admissions');
+      } else if (action === 'Inpatient Management' || action === 'Inpatient Admissions & Beds') {
+        setActiveView('inpatient-management');
+      } else if (action === 'Bed Allocation') {
+        setActiveView('bed-allocation');
       } else if (action === 'Inpatient Discharge Summaries') {
         setDoctorInitialStatus('');
         setDoctorInitialPatientId(undefined);
@@ -884,8 +936,30 @@ export const DashboardPage: React.FC = () => {
                 initialViewMode={doctorRecordTab === 'inpatient-admissions' ? 'inpatient_admissions' : undefined}
               />
             );
+          case 'inpatient-management':
           case 'inpatient-admissions':
-            return <PatientRecordsPage initialViewMode="inpatient_admissions" initialTab="inpatient-admissions" />;
+            return (
+              <InpatientManagementPage
+                initialAdmissionId={initialAdmissionId}
+                onNavigateToPatient={(patientId, tab) => {
+                  setDoctorInitialPatientId(patientId);
+                  setDoctorRecordTab(tab || 'overview');
+                  setActiveView('patient-records');
+                }}
+                onNavigateToBedAllocation={() => setActiveView('bed-allocation')}
+              />
+            );
+          case 'bed-allocation':
+            return (
+              <BedAllocationPage
+                onNavigateToPatient={(patientId, tab) => {
+                  setDoctorInitialPatientId(patientId);
+                  setDoctorRecordTab(tab || 'overview');
+                  setActiveView('patient-records');
+                }}
+                onNavigateToInpatients={() => setActiveView('inpatient-management')}
+              />
+            );
           case 'ai-summaries':
             return <AIPatientSummaryPage />;
           case 'medical-history':

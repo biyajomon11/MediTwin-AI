@@ -32,6 +32,8 @@ interface InpatientAdmissionModalProps {
   onClose: () => void;
   patients: DoctorPatient[];
   initialPatientId?: number;
+  initialWardId?: number;
+  initialBedId?: number;
   onAdmitted: (admission: InpatientAdmissionRecord) => void;
 }
 
@@ -55,6 +57,8 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
   onClose,
   patients = [],
   initialPatientId,
+  initialWardId,
+  initialBedId,
   onAdmitted,
 }) => {
   // ── States ───────────────────────────────────────────────────
@@ -96,7 +100,11 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
         const wardList = Array.isArray(fetchedWards) ? fetchedWards : [];
         setWards(wardList);
         if (wardList.length > 0) {
-          setSelectedWardId(wardList[0].id);
+          if (initialWardId && wardList.some((w) => w.id === initialWardId)) {
+            setSelectedWardId(initialWardId);
+          } else {
+            setSelectedWardId(wardList[0].id);
+          }
         }
       } catch (err) {
         console.error('Failed to load hospital wards:', err);
@@ -107,7 +115,7 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
     };
 
     loadWards();
-  }, [isOpen]);
+  }, [isOpen, initialWardId]);
 
   // ── Load Beds when selectedWardId changes ────────────────────
   useEffect(() => {
@@ -123,9 +131,13 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
         const res = await getWardBeds(selectedWardId);
         const bedList = Array.isArray(res?.beds) ? res.beds : [];
         setBeds(bedList);
-        // Automatically select first available bed if none selected
-        const firstAvail = bedList.find((b) => b.isAvailable || b.status === 'AVAILABLE');
-        setSelectedBedId(firstAvail ? firstAvail.id : null);
+        // Automatically select initialBedId or first available bed
+        if (initialBedId && bedList.some((b) => b.id === initialBedId)) {
+          setSelectedBedId(initialBedId);
+        } else {
+          const firstAvail = bedList.find((b) => b.isAvailable || b.status === 'AVAILABLE');
+          setSelectedBedId(firstAvail ? firstAvail.id : null);
+        }
       } catch (err) {
         console.error('Failed to load beds for ward:', err);
         setBeds([]);
@@ -135,7 +147,7 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
     };
 
     loadBeds();
-  }, [selectedWardId]);
+  }, [selectedWardId, initialBedId]);
 
   // ── Handle initialPatientId or fallback selection ────────────
   useEffect(() => {
