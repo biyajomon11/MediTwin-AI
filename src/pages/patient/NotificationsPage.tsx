@@ -43,6 +43,23 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
   const [submittingCancel, setSubmittingCancel] = useState(false);
   const [cancelModalError, setCancelModalError] = useState<string | null>(null);
 
+  // Reschedule Modal State
+  const [rescheduleTarget, setRescheduleTarget] = useState<PatientBookedAppointment | null>(null);
+  const today = new Date();
+  const minDateStr = today.toISOString().split('T')[0];
+  const maxDate = new Date();
+  maxDate.setDate(today.getDate() + 14);
+  const maxDateStr = maxDate.toISOString().split('T')[0];
+
+  const [rescheduleDate, setRescheduleDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [rescheduleSlot, setRescheduleSlot] = useState<string>('11:00 AM');
+  const [submittingReschedule, setSubmittingReschedule] = useState(false);
+  const [rescheduleModalError, setRescheduleModalError] = useState<string | null>(null);
+
   const loadNotifications = async () => {
     try {
       setLoading(true);
@@ -125,7 +142,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
     }
   };
 
-  // Helper: check if appointment is in the future & eligible to cancel
+  // Helper: check if appointment is in the future & eligible to cancel/reschedule
   const isAppointmentEligible = (appt: PatientBookedAppointment): boolean => {
     if (appt.status !== 'scheduled') return false;
     try {
@@ -234,6 +251,58 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
     }
   };
 
+  // Confirm and execute reschedule
+  const handleConfirmReschedule = async () => {
+    if (!rescheduleTarget || !rescheduleDate || !rescheduleSlot) return;
+
+    try {
+      setSubmittingReschedule(true);
+      setRescheduleModalError(null);
+
+      const res = await patientService.reschedulePatientAppointment(
+        rescheduleTarget.id,
+        rescheduleDate,
+        rescheduleSlot
+      );
+
+      // 1. Update appointment in local state
+      setAppointments((prev) =>
+        prev.map((a) =>
+          a.id === rescheduleTarget.id
+            ? { ...a, date: rescheduleDate, time: rescheduleSlot, status: 'scheduled' }
+            : a
+        )
+      );
+
+      // 2. Append rescheduled alert to notifications
+      const rescheduledNotif: PatientNotification = {
+        id: `NOTIF-RESCHED-${Date.now()}`,
+        patientId: rescheduleTarget.doctor?.id || 1,
+        title: 'Appointment Rescheduled',
+        message: `Your appointment with ${rescheduleTarget.doctor.name} has been rescheduled to ${rescheduleDate} at ${rescheduleSlot}.`,
+        dateTime: 'Just now',
+        type: 'appointment',
+        isRead: false,
+        linkTab: 'appointments',
+        appointmentId: rescheduleTarget.id,
+      };
+      setNotifications((prev) => [rescheduledNotif, ...prev]);
+
+      // 3. Show success message & close modal
+      setSuccessMsg(
+        res.message ||
+          `Appointment rescheduled to ${rescheduleDate} at ${rescheduleSlot}.`
+      );
+      setRescheduleTarget(null);
+    } catch (err: any) {
+      setRescheduleModalError(
+        err.message || 'Failed to reschedule appointment. Please try again.'
+      );
+    } finally {
+      setSubmittingReschedule(false);
+    }
+  };
+
   const getNotifIcon = (type: PatientNotificationType | string) => {
     switch (type) {
       case 'announcement':
@@ -279,7 +348,6 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
   );
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
-  const eligibleAppointments = appointments.filter(isAppointmentEligible);
 
   return (
     <div className="space-y-6">
@@ -307,7 +375,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
               </div>
               <h2 className="text-xl sm:text-2xl font-extrabold text-white mt-1">Notification Center</h2>
               <p className="text-xs sm:text-sm text-gray-300">
-                Hospital announcements, appointment reminders, cancellation options, and clinical alerts
+                Hospital announcements, appointment updates, rescheduling, cancellations, and clinical alerts
               </p>
             </div>
           </div>
@@ -401,74 +469,6 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
         })}
       </div>
 
-      {/* ── Active Upcoming Appointments Quick Cancellation Banner (Shown in Appointments filter or when relevant) ── */}
-      {(selectedType === 'appointment' || selectedType === 'All') && eligibleAppointments.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="p-5 rounded-2xl bg-gradient-to-r from-purple-950/40 via-navy-900/60 to-navy-950/80 border border-purple-500/30 space-y-3.5"
-        >
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-purple-400" />
-              <h4 className="text-xs font-extrabold uppercase tracking-wider text-purple-300">
-                Eligible Upcoming Appointments
-              </h4>
-            </div>
-            <span className="text-[11px] text-gray-400">
-              Need to reschedule or cancel? You can cancel your consultation directly from here.
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {eligibleAppointments.map((appt) => (
-              <div
-                key={appt.id}
-                className="p-3.5 rounded-xl bg-black/40 border border-white/10 flex items-center justify-between gap-3 hover:border-purple-500/40 transition-all"
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono font-bold text-accent px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20">
-                      {appt.appointmentId}
-                    </span>
-                    <span className="text-xs font-bold text-white truncate">{appt.doctor.name}</span>
-                  </div>
-                  <p className="text-[11px] text-gray-300 flex items-center gap-2">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-accent" />
-                      {appt.date}
-                    </span>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-accent" />
-                      {appt.time}
-                    </span>
-                  </p>
-                  <p className="text-[10px] text-gray-400 truncate">
-                    {appt.doctor.specialization} · {appt.doctor.department}
-                  </p>
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-rose-500/40 text-rose-300 hover:text-white hover:bg-rose-600/30 text-xs font-bold flex-shrink-0"
-                  icon={<CalendarX className="w-3.5 h-3.5 text-rose-400" />}
-                  onClick={() => {
-                    setCancelTarget(appt);
-                    setCancelReason('');
-                    setCancelModalError(null);
-                  }}
-                >
-                  <span className="hidden sm:inline">Cancel Appointment</span>
-                  <span className="sm:hidden">Cancel</span>
-                </Button>
-              </div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
       {/* ── Notifications List ── */}
       {loading ? (
         <div className="glass-card border border-white/10 p-16 flex flex-col items-center justify-center gap-3 text-gray-400">
@@ -491,7 +491,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
         <div className="space-y-3">
           {filteredNotifs.map((notif) => {
             const associatedAppt = findAssociatedAppointment(notif);
-            const isEligibleToCancel = associatedAppt ? isAppointmentEligible(associatedAppt) : false;
+            const isEligible = associatedAppt ? isAppointmentEligible(associatedAppt) : false;
             const isApptCancelled = associatedAppt?.status === 'cancelled';
             const isApptType =
               notif.type === 'appointment' ||
@@ -536,7 +536,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 flex-shrink-0 self-end sm:self-center">
+                <div className="flex flex-wrap items-center gap-2 flex-shrink-0 self-end sm:self-center">
                   {!notif.isRead && (
                     <button
                       onClick={() => handleMarkRead(notif.id)}
@@ -547,23 +547,44 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
                     </button>
                   )}
 
-                  {/* ── Option to Cancel Appointment from Notification Card ── */}
-                  {isApptType && isEligibleToCancel && associatedAppt && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-rose-500/40 text-rose-300 hover:text-white hover:bg-rose-600/30 text-xs font-bold"
-                      icon={<CalendarX className="w-3.5 h-3.5 text-rose-400" />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setCancelTarget(associatedAppt);
-                        setCancelReason('');
-                        setCancelModalError(null);
-                      }}
-                    >
-                      <span className="hidden sm:inline">Cancel Appointment</span>
-                      <span className="sm:hidden">Cancel</span>
-                    </Button>
+                  {/* ── Reschedule & Cancel Options on Appointment Notifications ── */}
+                  {isApptType && isEligible && associatedAppt && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-sky-500/40 text-sky-300 hover:text-white hover:bg-sky-600/30 text-xs font-bold"
+                        icon={<Calendar className="w-3.5 h-3.5 text-sky-400" />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRescheduleTarget(associatedAppt);
+                          const d = new Date();
+                          d.setDate(d.getDate() + 1);
+                          setRescheduleDate(d.toISOString().split('T')[0]);
+                          setRescheduleSlot(associatedAppt.time || '10:00 AM');
+                          setRescheduleModalError(null);
+                        }}
+                      >
+                        <span className="hidden sm:inline">Reschedule</span>
+                        <span className="sm:hidden">Resched</span>
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-rose-500/40 text-rose-300 hover:text-white hover:bg-rose-600/30 text-xs font-bold"
+                        icon={<CalendarX className="w-3.5 h-3.5 text-rose-400" />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCancelTarget(associatedAppt);
+                          setCancelReason('');
+                          setCancelModalError(null);
+                        }}
+                      >
+                        <span className="hidden sm:inline">Cancel Appointment</span>
+                        <span className="sm:hidden">Cancel</span>
+                      </Button>
+                    </>
                   )}
 
                   <Button
@@ -625,26 +646,44 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
 
               {/* Action buttons inside View Detail modal */}
               <div className="flex flex-wrap items-center gap-2 pt-2">
-                {/* Direct Cancel Button inside modal if notification is appointment-related */}
                 {(() => {
                   const appt = findAssociatedAppointment(selectedNotif);
                   const isEligible = appt ? isAppointmentEligible(appt) : false;
                   if (appt && isEligible) {
                     return (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        className="bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-glow-rose/20 text-xs font-bold"
-                        icon={<CalendarX className="w-3.5 h-3.5" />}
-                        onClick={() => {
-                          setSelectedNotif(null);
-                          setCancelTarget(appt);
-                          setCancelReason('');
-                          setCancelModalError(null);
-                        }}
-                      >
-                        Cancel Appointment
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-sky-500/40 text-sky-300 hover:text-white hover:bg-sky-600/30 text-xs font-bold"
+                          icon={<Calendar className="w-3.5 h-3.5 text-sky-400" />}
+                          onClick={() => {
+                            setSelectedNotif(null);
+                            setRescheduleTarget(appt);
+                            const d = new Date();
+                            d.setDate(d.getDate() + 1);
+                            setRescheduleDate(d.toISOString().split('T')[0]);
+                            setRescheduleSlot(appt.time || '10:00 AM');
+                            setRescheduleModalError(null);
+                          }}
+                        >
+                          Reschedule
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          className="bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-glow-rose/20 text-xs font-bold"
+                          icon={<CalendarX className="w-3.5 h-3.5" />}
+                          onClick={() => {
+                            setSelectedNotif(null);
+                            setCancelTarget(appt);
+                            setCancelReason('');
+                            setCancelModalError(null);
+                          }}
+                        >
+                          Cancel Appointment
+                        </Button>
+                      </>
                     );
                   }
                   return null;
@@ -667,6 +706,152 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
 
                 <Button variant="glass" size="sm" className="justify-center" onClick={() => setSelectedNotif(null)}>
                   Close
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Reschedule Appointment Modal ── */}
+      <AnimatePresence>
+        {rescheduleTarget && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/80 backdrop-blur-md"
+            onClick={() => {
+              if (!submittingReschedule) {
+                setRescheduleTarget(null);
+                setRescheduleModalError(null);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              className="glass-card max-w-lg w-full p-6 border border-sky-500/30 bg-navy-900/98 rounded-3xl space-y-4 shadow-2xl relative"
+            >
+              <div className="flex items-center gap-3 border-b border-white/10 pb-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-sky-400 flex-shrink-0">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-extrabold text-white">
+                    Reschedule Appointment
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    Select a new date and time slot for your consultation.
+                  </p>
+                </div>
+              </div>
+
+              {rescheduleModalError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{rescheduleModalError}</span>
+                </div>
+              )}
+
+              {/* Current Appointment Info */}
+              <div className="p-3.5 rounded-2xl bg-black/40 border border-white/10 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono font-bold text-accent px-1.5 py-0.5 rounded bg-accent/10 border border-accent/20">
+                    {rescheduleTarget.appointmentId}
+                  </span>
+                  <span className="text-[10px] text-gray-400">
+                    {rescheduleTarget.type === 'video' ? 'Virtual Video Consultation' : 'Hospital OPD Visit'}
+                  </span>
+                </div>
+                <p className="font-extrabold text-white text-sm">{rescheduleTarget.doctor.name}</p>
+                <p className="text-[11px] text-accent">{rescheduleTarget.doctor.specialization} · {rescheduleTarget.doctor.department}</p>
+                <p className="text-[10px] text-gray-400 pt-1">
+                  Current Schedule: <span className="text-gray-200 font-semibold">{rescheduleTarget.date} at {rescheduleTarget.time}</span>
+                </p>
+              </div>
+
+              {/* Date Selector */}
+              <div className="space-y-1.5 text-left">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                    Select New Date
+                  </label>
+                  <span className="text-[10px] text-sky-300 font-semibold">
+                    Next 14 Days
+                  </span>
+                </div>
+                <input
+                  type="date"
+                  min={minDateStr}
+                  max={maxDateStr}
+                  value={rescheduleDate}
+                  onChange={(e) => setRescheduleDate(e.target.value)}
+                  disabled={submittingReschedule}
+                  className="w-full p-2.5 bg-white/5 border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all cursor-pointer"
+                />
+              </div>
+
+              {/* Slot Selector */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                  Select New Time Slot
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                  {[
+                    '09:00 AM',
+                    '09:30 AM',
+                    '10:00 AM',
+                    '10:30 AM',
+                    '11:00 AM',
+                    '11:30 AM',
+                    '02:00 PM',
+                    '02:30 PM',
+                    '03:00 PM',
+                    '03:30 PM',
+                    '04:00 PM',
+                    '04:30 PM',
+                  ].map((slot) => (
+                    <button
+                      key={slot}
+                      type="button"
+                      disabled={submittingReschedule}
+                      onClick={() => setRescheduleSlot(slot)}
+                      className={`text-[11px] py-1.5 px-2 rounded-xl border text-center transition-all cursor-pointer ${
+                        rescheduleSlot === slot
+                          ? 'bg-sky-500/30 text-sky-200 border-sky-400 font-bold shadow-sm'
+                          : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {slot}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-1/2 py-2 text-xs font-bold"
+                  disabled={submittingReschedule}
+                  onClick={() => {
+                    setRescheduleTarget(null);
+                    setRescheduleModalError(null);
+                  }}
+                >
+                  Keep Current Slot
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-1/2 py-2 text-xs font-bold bg-sky-600 hover:bg-sky-500 text-white border-sky-500 shadow-glow-sky/20"
+                  disabled={submittingReschedule}
+                  onClick={handleConfirmReschedule}
+                  icon={submittingReschedule ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
+                  iconPosition="left"
+                >
+                  {submittingReschedule ? 'Rescheduling...' : 'Confirm Reschedule'}
                 </Button>
               </div>
             </motion.div>
