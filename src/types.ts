@@ -583,6 +583,7 @@ export interface PatientNotification {
   type: PatientNotificationType;
   isRead: boolean;
   linkTab?: string;
+  appointmentId?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────

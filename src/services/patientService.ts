@@ -1168,9 +1168,9 @@ let _mockAppointments: PatientBookedAppointment[] = [
   {
     id: 101,
     appointmentId: 'APT-0101',
-    date: '2026-09-30',
+    date: '2026-10-25',
     time: '11:00 AM',
-    rawDate: '2026-09-30T11:00:00.000Z',
+    rawDate: '2026-10-25T11:00:00.000Z',
     status: 'scheduled',
     reason: 'Cardiology Follow-up & ECG Review',
     notes: 'In-person consultation',

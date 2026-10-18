@@ -1350,6 +1350,7 @@ router.get(
           timestamp: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
           isRead: n.isRead ?? false,
           type: mappedType as any,
+          linkTab: mappedType === 'appointment' ? 'appointments' : undefined,
         };
       });
 
