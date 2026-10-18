@@ -131,6 +131,12 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
         orderBy: { dischargeDate: 'desc' },
         take: 1,
       },
+      inpatientAdmissions: {
+        where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
+        include: { ward: true, bed: true, admittingDoctor: true },
+        orderBy: { admissionDateTime: 'desc' },
+        take: 1,
+      },
     },
   });
 
@@ -327,13 +333,26 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       department = 'Intensive Care Unit (ICU)';
     }
 
-    // Determine bed and ward assignment from database
-    const ward = patient.ward || undefined;
-    const bedNumber = patient.bedNumber || undefined;
-    const rawStatus = patient.admissionStatus || 'Active';
-    const status = (['Active', 'Critical', 'Admitted', 'Discharged', 'Under Observation'].includes(rawStatus)
-      ? rawStatus
-      : 'Active') as 'Active' | 'Critical' | 'Admitted' | 'Discharged' | 'Under Observation';
+    // Determine bed, ward, and status from active admission or patient record
+    const activeInpatientAdm = (patient as any).inpatientAdmissions?.[0];
+    const ward = activeInpatientAdm?.ward?.name || patient.ward || undefined;
+    const bedNumber = activeInpatientAdm?.bed?.bedNumber || patient.bedNumber || undefined;
+
+    let status: 'Active' | 'Critical' | 'Admitted' | 'Discharged' | 'Under Observation' = 'Active';
+    if (activeInpatientAdm) {
+      if (activeInpatientAdm.acuityLevel === 'CRITICAL') {
+        status = 'Critical';
+      } else if (activeInpatientAdm.admissionStatus === 'UNDER_OBSERVATION') {
+        status = 'Under Observation';
+      } else {
+        status = 'Admitted';
+      }
+    } else {
+      const rawStatus = patient.admissionStatus || 'Active';
+      status = (['Active', 'Critical', 'Admitted', 'Discharged', 'Under Observation'].includes(rawStatus)
+        ? rawStatus
+        : 'Active') as 'Active' | 'Critical' | 'Admitted' | 'Discharged' | 'Under Observation';
+    }
 
     const latestDischarge = (patient as any).dischargeSummaries?.[0];
     const dischargeDate = latestDischarge
@@ -344,7 +363,9 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
 
     let admissionDate: string | undefined = undefined;
 
-    if (latestDischarge?.admissionDate) {
+    if (activeInpatientAdm?.admissionDateTime) {
+      admissionDate = activeInpatientAdm.admissionDateTime.toISOString().split('T')[0];
+    } else if (latestDischarge?.admissionDate) {
       admissionDate = latestDischarge.admissionDate.toISOString().split('T')[0];
     } else if (status === 'Admitted' || status === 'Critical' || status === 'Under Observation' || patient.ward) {
       if (lastVisitDate && lastVisitDate < todayStr) {
@@ -368,6 +389,11 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       admissionDate = lastVisitDate && lastVisitDate < todayStr ? lastVisitDate : undefined;
     }
 
+    const assignedDoctorId = activeInpatientAdm?.admittingDoctorId || currentDoctorId || patient.appointments[0]?.doctor?.id || 1;
+    const assignedDoctorName = activeInpatientAdm?.admittingDoctor
+      ? `Dr. ${activeInpatientAdm.admittingDoctor.firstName} ${activeInpatientAdm.admittingDoctor.lastName}`
+      : currentDoctorName || (patient.appointments[0]?.doctor ? `Dr. ${patient.appointments[0].doctor.firstName} ${patient.appointments[0].doctor.lastName}` : 'Dr. Sarah Joseph');
+
     return {
       id: patient.id,
       firstName: patient.firstName,
@@ -388,9 +414,8 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
             phone: patient.emergencyContactPhone || '',
           }
         : undefined,
-      assignedDoctorId: currentDoctorId || patient.appointments[0]?.doctor?.id || 1,
-      assignedDoctorName: currentDoctorName
-        || (patient.appointments[0]?.doctor ? `Dr. ${patient.appointments[0].doctor.firstName} ${patient.appointments[0].doctor.lastName}` : 'Dr. Sarah Joseph'),
+      assignedDoctorId,
+      assignedDoctorName,
       department,
       ward,
       bedNumber,
@@ -453,6 +478,7 @@ router.get(
             { prescriptions: { some: { doctorId: doctor.id } } },
             { medicalRecords: { some: { doctorId: doctor.id } } },
             { dischargeSummaries: { some: { doctorId: doctor.id } } },
+            { inpatientAdmissions: { some: { admittingDoctorId: doctor.id } } },
           ],
         });
       }
@@ -1294,12 +1320,21 @@ router.get(
       if (status && status !== 'all') {
         where.admissionStatus = status.toUpperCase();
       }
+      if (req.query.doctorId) {
+        where.admittingDoctorId = parseInt(req.query.doctorId as string);
+      }
       if (search) {
         where.OR = [
           { admissionNumber: { contains: search, mode: 'insensitive' } },
           { admissionDiagnosis: { contains: search, mode: 'insensitive' } },
+          { chiefComplaint: { contains: search, mode: 'insensitive' } },
           { patient: { firstName: { contains: search, mode: 'insensitive' } } },
           { patient: { lastName: { contains: search, mode: 'insensitive' } } },
+          { admittingDoctor: { firstName: { contains: search, mode: 'insensitive' } } },
+          { admittingDoctor: { lastName: { contains: search, mode: 'insensitive' } } },
+          { ward: { name: { contains: search, mode: 'insensitive' } } },
+          { ward: { wardNumber: { contains: search, mode: 'insensitive' } } },
+          { bed: { bedNumber: { contains: search, mode: 'insensitive' } } },
         ];
       }
 

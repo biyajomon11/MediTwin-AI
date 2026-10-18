@@ -34,7 +34,7 @@ import type {
   AdmissionHistoryResponse,
   BedAllocationSummaryDTO,
 } from '../types';
-import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID, JOLDA_INPATIENT_MOCK } from '../data/doctorMockData';
+import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID, JOLDA_INPATIENT_MOCK, BITTU_INPATIENTS_MOCK, BITTU_ADMISSIONS_MOCK } from '../data/doctorMockData';
 import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from './patientService';
 
 export { MOCK_DOCTOR_ID };
@@ -228,6 +228,31 @@ export async function getPatients(
     currentDoctorName.includes('jolda') ||
     (currentUser?.email && currentUser.email.toLowerCase().includes('jolda'));
 
+  const isBittuDoctor =
+    currentDoctorName.includes('bittu') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('bittu'));
+
+  if (isBittuDoctor) {
+    let patients = [...BITTU_INPATIENTS_MOCK];
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      patients = patients.filter(
+        (p) =>
+          p.firstName.toLowerCase().includes(q) ||
+          p.lastName.toLowerCase().includes(q) ||
+          String(p.id).includes(q) ||
+          p.email?.toLowerCase().includes(q)
+      );
+    }
+    if (filters.department) {
+      patients = patients.filter((p) => p.department?.toLowerCase() === filters.department?.toLowerCase());
+    }
+    if (filters.status) {
+      patients = patients.filter((p) => p.status === filters.status);
+    }
+    return sortPatientList(patients, filters.sortBy || 'criticalFirst', filters.sortOrder);
+  }
+
   if (isJoldaDoctor) {
     let patients = [JOLDA_INPATIENT_MOCK];
     if (filters.search) {
@@ -313,6 +338,16 @@ export async function getPatientById(
     currentDoctorName.includes('jolda') ||
     (currentUser?.email && currentUser.email.toLowerCase().includes('jolda'));
 
+  const isBittuDoctor =
+    currentDoctorName.includes('bittu') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('bittu'));
+
+  if (isBittuDoctor) {
+    const found = BITTU_INPATIENTS_MOCK.find((p) => p.id === patientId || String(p.id) === String(patientId));
+    if (found) return found;
+    throw new Error('Patient record not found or not assigned to your clinical care.');
+  }
+
   if (isJoldaDoctor) {
     if (patientId === JOLDA_INPATIENT_MOCK.id || String(patientId) === String(JOLDA_INPATIENT_MOCK.id)) {
       return JOLDA_INPATIENT_MOCK;
@@ -357,7 +392,9 @@ export async function updatePatientBed(
   }
 
   // Update in local mock patients so UI reflects immediately
-  const p = MOCK_PATIENTS.find((item) => item.id === patientId) || (JOLDA_INPATIENT_MOCK.id === patientId ? JOLDA_INPATIENT_MOCK : undefined);
+  const p = MOCK_PATIENTS.find((item) => item.id === patientId)
+    || (JOLDA_INPATIENT_MOCK.id === patientId ? JOLDA_INPATIENT_MOCK : undefined)
+    || BITTU_INPATIENTS_MOCK.find((item) => item.id === patientId);
   if (p) {
     if (data.ward !== undefined) p.ward = data.ward || undefined;
     if (data.bedNumber !== undefined) p.bedNumber = data.bedNumber || undefined;
@@ -695,43 +732,9 @@ export async function getInpatientAdmissions(params?: {
 
   let merged = Array.from(combinedMap.values());
 
-  // Fallback to default admitted Thomas Varghese if empty
+  // Fallback to default admitted patients if empty
   if (merged.length === 0) {
-    const defaultAdmission: InpatientAdmissionRecord = {
-      id: 10401,
-      admissionNumber: 'ADM-2026-0104',
-      patientId: 104,
-      patientName: 'Thomas Varghese',
-      patientCode: 'PT-104',
-      patientAge: 48,
-      age: 48,
-      gender: 'Male',
-      patientGender: 'Male',
-      bloodGroup: 'O+',
-      phone: '+91 98471 23456',
-      patientPhone: '+91 98471 23456',
-      email: 'thomas.varghese@gmail.com',
-      admittingDoctorId: 101,
-      admittingDoctorName: 'Dr. Jolda Jomon',
-      doctorName: 'Dr. Jolda Jomon',
-      doctorSpecialization: 'General Medicine',
-      admittingDoctorSpecialization: 'General Medicine',
-      doctorDepartment: 'General Medicine',
-      wardId: 1,
-      wardNumber: 'GW-2B',
-      wardName: 'General Ward 2B',
-      wardDepartment: 'General Medicine',
-      bedId: 108,
-      bedNumber: 'Bed 08',
-      admissionDateTime: '2026-10-08T09:30:00.000Z',
-      admissionDiagnosis: 'Acute Bronchitis & Type 2 Diabetes Monitoring',
-      chiefComplaint: 'Severe productive cough, shortness of breath on exertion, and elevated blood glucose.',
-      nursingHandoverInstructions: 'Assess vitals q4h, monitor blood glucose pre-meals and at bedtime, ensure IV Ceftriaxone 1g daily.',
-      admissionStatus: 'ADMITTED',
-      acuityLevel: 'MODERATE',
-      createdAt: '2026-10-08T09:30:00.000Z',
-    };
-    merged = [defaultAdmission];
+    merged = [...BITTU_ADMISSIONS_MOCK];
   }
 
   // Apply filters
@@ -1052,14 +1055,16 @@ export async function getBedAllocationSummary(): Promise<BedAllocationSummaryDTO
     (a) => a.admissionStatus === 'ADMITTED' || a.admissionStatus === 'UNDER_OBSERVATION'
   );
 
+  const activeAdmissionsList = localAdmissions.length > 0 ? localAdmissions : BITTU_ADMISSIONS_MOCK;
+
   return {
     totalHospitalBeds: Math.max(totalHospitalBeds, 300),
-    totalOccupiedBeds: Math.max(totalOccupiedBeds, localAdmissions.length, 21),
+    totalOccupiedBeds: Math.max(totalOccupiedBeds, activeAdmissionsList.length, 21),
     totalAvailableBeds: Math.max(totalAvailableBeds, 279),
     totalMaintenanceBeds: 0,
     overallOccupancyPercentage: Math.round((Math.max(totalOccupiedBeds, 21) / Math.max(totalHospitalBeds, 300)) * 100),
-    currentInpatientCount: Math.max(localAdmissions.length, 1),
-    criticalInpatientsCount: localAdmissions.filter((a) => a.acuityLevel === 'CRITICAL').length,
+    currentInpatientCount: activeAdmissionsList.filter((a) => a.admissionStatus !== 'DISCHARGED').length,
+    criticalInpatientsCount: activeAdmissionsList.filter((a) => a.acuityLevel === 'CRITICAL').length,
     wards: wardSummaries,
   };
 }

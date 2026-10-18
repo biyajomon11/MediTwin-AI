@@ -68,20 +68,25 @@ app.get('/api/schema-summary', (_req: Request, res: Response) => {
   });
 });
 
-import { ensureInpatientJoldaAndAngel } from './init-inpatient';
+import { ensureInpatientJoldaAndAngel, ensureInpatientsForBittuJomon } from './init-inpatient';
 import { seedWardsAndBeds } from './seed-wards-beds';
 
 app.listen(Number(PORT), '0.0.0.0', async () => {
   console.log(`🚀 MediTwin AI Backend API running on port ${PORT}`);
+  try {
+    await seedWardsAndBeds();
+  } catch (err) {
+    console.warn('[SEED_WARDS_BEDS] Bed inventory seed note:', err);
+  }
   try {
     await ensureInpatientJoldaAndAngel();
   } catch (err) {
     console.warn('[INIT_INPATIENT] Startup initialization note:', err);
   }
   try {
-    await seedWardsAndBeds();
+    await ensureInpatientsForBittuJomon();
   } catch (err) {
-    console.warn('[SEED_WARDS_BEDS] Bed inventory seed note:', err);
+    console.warn('[INIT_INPATIENT] Dr. Bittu Jomon inpatient initialization note:', err);
   }
 });
 
