@@ -6,17 +6,24 @@ import {
   CheckCircle2, XCircle, Plus, Save, Loader2, Users,
   Activity, FolderOpen, Printer, ShieldAlert, StopCircle, Stethoscope,
   Eye, Download, X, HeartPulse, ArrowUp, ArrowDown, RotateCcw, FileCheck,
-  Clock,
+  Clock, Bed, Building2,
 } from 'lucide-react';
 import type {
   DoctorPatient, PatientStatus, ClinicalNote, Prescription, MedicalDocument,
+  InpatientAdmissionRecord,
 } from '../../types';
-import { getPatients, addClinicalNote, discontinuePrescription, updatePatientBed, updateDoctorAppointmentStatus, type PatientSortField } from '../../services/doctorService';
+import {
+  getPatients, addClinicalNote, discontinuePrescription, updatePatientBed,
+  updateDoctorAppointmentStatus, getInpatientAdmissions, type PatientSortField,
+} from '../../services/doctorService';
 import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
 import { DischargeSummaryTab } from '../../components/doctor/DischargeSummaryTab';
 import { DoctorNursingSummaryTab } from '../../components/doctor/DoctorNursingSummaryTab';
+import { InpatientAdmissionModal } from '../../components/doctor/InpatientAdmissionModal';
+import { InpatientAdmissionDetailsModal } from '../../components/doctor/InpatientAdmissionDetailsModal';
 import { getTallManName } from '../../utils/medicationSafety';
 import { formatPatientId, isPatientInpatient } from '../../utils/patientUtils';
+
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -1755,12 +1762,14 @@ export interface PatientRecordsPageProps {
   initialTab?: string;
   initialStatusFilter?: PatientStatus | '';
   initialPatientId?: number;
+  initialViewMode?: 'records' | 'inpatient_admissions';
 }
 
 export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
   initialTab = 'overview',
   initialStatusFilter = '',
   initialPatientId,
+  initialViewMode,
 }) => {
   const [patients, setPatients]               = useState<DoctorPatient[]>([]);
   const [allPatients, setAllPatients]         = useState<DoctorPatient[]>([]);
@@ -1774,6 +1783,21 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
   const [status, setStatus]         = useState<PatientStatus | ''>(initialStatusFilter);
   const [sortBy, setSortBy]         = useState<PatientSortField>('criticalFirst');
   const [sortOrder, setSortOrder]   = useState<'asc' | 'desc'>('desc');
+
+  // ── Inpatient Admission & Real-time Wards / Beds State ───────
+  const [viewMode, setViewMode] = useState<'records' | 'inpatient_admissions'>(
+    initialViewMode || (initialTab === 'inpatient-admissions' ? 'inpatient_admissions' : 'records')
+  );
+  const [isAdmissionModalOpen, setIsAdmissionModalOpen] = useState(false);
+  const [admissionTargetPatientId, setAdmissionTargetPatientId] = useState<number | undefined>(undefined);
+  const [selectedAdmissionForDetails, setSelectedAdmissionForDetails] = useState<InpatientAdmissionRecord | null>(null);
+
+  const [inpatientAdmissions, setInpatientAdmissions] = useState<InpatientAdmissionRecord[]>([]);
+  const [inpatientLoading, setInpatientLoading] = useState(false);
+  const [inpatientStatusFilter, setInpatientStatusFilter] = useState<string>('all');
+  const [inpatientSearch, setInpatientSearch] = useState<string>('');
+  const [inpatientPage, setInpatientPage] = useState<number>(1);
+  const [inpatientPagination, setInpatientPagination] = useState({ page: 1, limit: 15, total: 0, totalPages: 1 });
 
   // Load all patients once for accurate filter counts & emergency alert banner
   const loadAllPatients = useCallback(async () => {
@@ -1801,6 +1825,41 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
   }, [search, department, status, sortBy, sortOrder]);
 
   useEffect(() => { fetchPatients(); }, [fetchPatients]);
+
+  const fetchInpatientAdmissions = useCallback(async () => {
+    setInpatientLoading(true);
+    try {
+      const res = await getInpatientAdmissions({
+        status: inpatientStatusFilter !== 'all' ? inpatientStatusFilter : undefined,
+        search: inpatientSearch.trim() || undefined,
+        page: inpatientPage,
+        limit: 15,
+      });
+      setInpatientAdmissions(res.data);
+      setInpatientPagination(res.pagination);
+    } catch (e) {
+      console.error('Failed to load inpatient admissions:', e);
+    } finally {
+      setInpatientLoading(false);
+    }
+  }, [inpatientStatusFilter, inpatientSearch, inpatientPage]);
+
+  useEffect(() => {
+    if (viewMode === 'inpatient_admissions') {
+      fetchInpatientAdmissions();
+    }
+  }, [viewMode, fetchInpatientAdmissions]);
+
+  const handleAdmissionSuccess = (adm: InpatientAdmissionRecord) => {
+    setActionSuccessMsg(`Inpatient admission ${adm.admissionNumber} created successfully for ${adm.patientName}. Bed ${adm.bedNumber} allocated.`);
+    setIsAdmissionModalOpen(false);
+    setAdmissionTargetPatientId(undefined);
+    fetchPatients();
+    loadAllPatients();
+    if (viewMode === 'inpatient_admissions') {
+      fetchInpatientAdmissions();
+    }
+  };
 
   const [updatingAptId, setUpdatingAptId] = useState<string | number | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -1965,7 +2024,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Title */}
+      {/* Title & Actions Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold text-white flex items-center gap-2">
@@ -1974,23 +2033,69 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
           <p className="text-sm text-gray-400 mt-0.5">Showing patients assigned to your clinical care</p>
         </div>
 
-        {criticalCount > 0 && (
-          <div className="flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold shadow-sm">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
-            </span>
-            <AlertTriangle className="w-4 h-4 text-rose-400" />
-            <span>{criticalCount} Critical Patient{criticalCount > 1 ? 's' : ''} on Duty</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => {
+              setAdmissionTargetPatientId(undefined);
+              setIsAdmissionModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-500 to-accent text-navy-950 font-bold text-xs sm:text-sm hover:brightness-110 shadow-lg shadow-teal-500/20 transition-all cursor-pointer"
+          >
+            <Bed className="w-4 h-4 text-navy-950" />
+            <span>Admit Inpatient</span>
+          </button>
+
+          {criticalCount > 0 && (
+            <div className="flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold shadow-sm">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+              </span>
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+              <span>{criticalCount} Critical Patient{criticalCount > 1 ? 's' : ''} on Duty</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* ── Emergency Priority Triage Alert Banner (always visible when critical patients exist) ── */}
-      {status !== 'Discharged' && criticalList.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
+      {/* ── View Mode Selector: Patient Registry vs Inpatient Admissions ── */}
+      <div className="flex items-center gap-2 border-b border-white/10 pb-3">
+        <button
+          onClick={() => setViewMode('records')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+            viewMode === 'records'
+              ? 'bg-accent/20 text-accent border border-accent/40 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Patient Registry ({pool.length})</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setViewMode('inpatient_admissions');
+            fetchInpatientAdmissions();
+          }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+            viewMode === 'inpatient_admissions'
+              ? 'bg-accent/20 text-accent border border-accent/40 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+          }`}
+        >
+          <Bed className="w-4 h-4" />
+          <span>Inpatient Admissions & Beds</span>
+        </button>
+      </div>
+
+      {/* ── Patient Records View Mode ── */}
+      {viewMode === 'records' && (
+        <>
+          {/* ── Emergency Priority Triage Alert Banner (always visible when critical patients exist) ── */}
+          {status !== 'Discharged' && criticalList.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
           className="p-5 rounded-2xl bg-gradient-to-b from-rose-950/85 via-navy-900/95 to-navy-950/95 border-2 border-rose-500/60 shadow-[0_4px_25px_rgba(244,63,94,0.2)] space-y-4"
         >
           {/* Header */}
@@ -2495,6 +2600,20 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
                     );
                   })()}
 
+                  {p.status !== 'Admitted' && p.status !== 'Critical' && (
+                    <button
+                      onClick={() => {
+                        setAdmissionTargetPatientId(p.id);
+                        setIsAdmissionModalOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-teal-300 border border-teal-500/30 transition-all cursor-pointer flex-shrink-0"
+                      title="Admit patient to ward or ICU"
+                    >
+                      <Bed className="w-3.5 h-3.5 text-teal-400" />
+                      <span>Admit</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => setSelectedPatient(p)}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 cursor-pointer ${
@@ -2511,6 +2630,321 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
           })}
         </div>
       )}
+        </>
+      )}
+
+      {/* ── Inpatient Admissions & Bed Allocations View Mode ── */}
+      {viewMode === 'inpatient_admissions' && (
+        <div className="space-y-5">
+          {/* Top Inpatient Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
+              <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span>Total Admissions</span>
+                <Bed className="w-4 h-4 text-accent" />
+              </div>
+              <div className="text-xl font-black text-white">{inpatientPagination.total}</div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
+              <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span>Active Inpatients</span>
+                <Activity className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-xl font-black text-emerald-400">
+                {inpatientAdmissions.filter((a) => a.admissionStatus === 'ADMITTED').length}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
+              <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span>Under Observation</span>
+                <Clock className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="text-xl font-black text-amber-400">
+                {inpatientAdmissions.filter((a) => a.admissionStatus === 'UNDER_OBSERVATION').length}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10">
+              <div className="flex items-center justify-between text-gray-400 text-xs mb-1">
+                <span>Discharged</span>
+                <FileCheck className="w-4 h-4 text-gray-400" />
+              </div>
+              <div className="text-xl font-black text-gray-300">
+                {inpatientAdmissions.filter((a) => a.admissionStatus === 'DISCHARGED').length}
+              </div>
+            </div>
+          </div>
+
+          {/* Controls: Search, Status Filter, Refresh */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={inpatientSearch}
+                onChange={(e) => setInpatientSearch(e.target.value)}
+                placeholder="Search by admission #, patient name, or diagnosis..."
+                className="glass-input w-full pl-9 pr-4 py-2.5 text-sm text-white"
+              />
+            </div>
+
+            {/* Status Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              {[
+                { label: 'All', value: 'all' },
+                { label: 'Admitted', value: 'ADMITTED' },
+                { label: 'Observation', value: 'UNDER_OBSERVATION' },
+                { label: 'Discharged', value: 'DISCHARGED' },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  onClick={() => setInpatientStatusFilter(item.value)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    inpatientStatusFilter === item.value
+                      ? 'bg-accent/20 text-accent border border-accent/40 shadow-sm'
+                      : 'bg-white/5 text-gray-400 hover:text-white border border-white/10'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+
+              <button
+                onClick={() => fetchInpatientAdmissions()}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 transition-colors"
+                title="Refresh admissions list"
+              >
+                <RotateCcw className={`w-4 h-4 ${inpatientLoading ? 'animate-spin text-accent' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Inpatient Admissions Cards / Table */}
+          {inpatientLoading ? (
+            <div className="p-12 text-center rounded-2xl bg-white/[0.02] border border-white/10 space-y-3">
+              <Loader2 className="w-8 h-8 text-accent animate-spin mx-auto" />
+              <p className="text-sm text-gray-300 font-medium">
+                Retrieving inpatient admissions and real-time bed inventory...
+              </p>
+            </div>
+          ) : inpatientAdmissions.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-white/[0.02] border border-white/10 space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent mx-auto">
+                <Bed className="w-7 h-7" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h3 className="text-base font-bold text-white">No Inpatient Admissions Found</h3>
+                <p className="text-xs text-gray-400">
+                  {inpatientSearch || inpatientStatusFilter !== 'all'
+                    ? 'No inpatient admission records match your active search or filter criteria.'
+                    : 'There are currently no inpatient admissions recorded in this hospital.'}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setAdmissionTargetPatientId(undefined);
+                  setIsAdmissionModalOpen(true);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-navy-950 font-bold text-xs hover:brightness-110 shadow-lg shadow-accent/20 transition-all cursor-pointer"
+              >
+                <Bed className="w-4 h-4" />
+                <span>Admit a Patient</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {inpatientAdmissions.map((adm) => {
+                const acuityBadgeColor =
+                  adm.acuityLevel === 'CRITICAL'
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                    : adm.acuityLevel === 'HIGH'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : adm.acuityLevel === 'MODERATE'
+                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                    : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+
+                const statusBadgeColor =
+                  adm.admissionStatus === 'ADMITTED'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : adm.admissionStatus === 'UNDER_OBSERVATION'
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    : 'bg-slate-500/20 text-gray-400 border-slate-500/40';
+
+                const admDateFormatted = new Date(adm.admissionDateTime).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+
+                return (
+                  <motion.div
+                    key={adm.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-navy-900/80 to-navy-950/80 border border-white/10 hover:border-accent/30 transition-all shadow-md space-y-3"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-white/5">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent font-bold text-sm flex-shrink-0">
+                          {adm.patientName.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-white text-sm">{adm.patientName}</span>
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-white/5 text-gray-400 border border-white/10">
+                              {adm.patientCode}
+                            </span>
+                            <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-accent/15 text-accent border border-accent/30 font-semibold">
+                              {adm.admissionNumber}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400">
+                            {adm.age} yrs • {adm.gender} • Blood Group {adm.bloodGroup} • Admitted {admDateFormatted}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${acuityBadgeColor}`}>
+                          {adm.acuityLevel} ACUITY
+                        </span>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusBadgeColor}`}>
+                          {adm.admissionStatus.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                        <span className="text-gray-400 text-[11px] flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-accent" /> Ward & Bed Assignment
+                        </span>
+                        <div className="font-semibold text-white flex items-center gap-2">
+                          <span>{adm.wardName}</span>
+                          <span className="px-2 py-0.5 rounded-md bg-teal-500/20 text-teal-300 border border-teal-500/40 font-bold font-mono text-[11px]">
+                            {adm.bedNumber}
+                          </span>
+                        </div>
+                        <p className="text-gray-400 text-[10px]">{adm.wardDepartment || 'Inpatient Service'}</p>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                        <span className="text-gray-400 text-[11px] flex items-center gap-1.5">
+                          <Stethoscope className="w-3.5 h-3.5 text-accent" /> Clinical Diagnosis
+                        </span>
+                        <p className="font-semibold text-white truncate">{adm.admissionDiagnosis}</p>
+                        <p className="text-gray-400 text-[10px] truncate">CC: {adm.chiefComplaint}</p>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                        <span className="text-gray-400 text-[11px] flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-accent" /> Admitting Physician
+                        </span>
+                        <p className="font-semibold text-white">{adm.doctorName}</p>
+                        <p className="text-gray-400 text-[10px]">{adm.doctorSpecialization} • {adm.doctorDepartment}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
+                      {adm.nursingHandoverInstructions ? (
+                        <p className="text-[11px] text-gray-400 italic truncate max-w-md">
+                          <span className="font-semibold text-gray-300 not-italic">Handover: </span>
+                          "{adm.nursingHandoverInstructions}"
+                        </p>
+                      ) : (
+                        <span className="text-[11px] text-gray-500 italic">No special handover instructions</span>
+                      )}
+
+                      <div className="flex items-center gap-2 ml-auto">
+                        <button
+                          onClick={() => setSelectedAdmissionForDetails(adm)}
+                          className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-accent" />
+                          <span>View Details</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const found = patients.find((p) => p.id === adm.patientId);
+                            if (found) {
+                              setSelectedPatient(found);
+                            } else {
+                              setViewMode('records');
+                              setSearch(adm.patientName);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-accent/20 hover:bg-accent/30 text-accent border border-accent/40 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>Patient Chart</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+
+              {/* Pagination Controls */}
+              {inpatientPagination.totalPages > 1 && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/5 text-xs">
+                  <span className="text-gray-400">
+                    Page <span className="font-bold text-white">{inpatientPage}</span> of{' '}
+                    <span className="font-bold text-white">{inpatientPagination.totalPages}</span> ({inpatientPagination.total} total)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={inpatientPage <= 1}
+                      onClick={() => setInpatientPage((prev) => Math.max(1, prev - 1))}
+                      className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      disabled={inpatientPage >= inpatientPagination.totalPages}
+                      onClick={() => setInpatientPage((prev) => Math.min(inpatientPagination.totalPages, prev + 1))}
+                      className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Inpatient Admission Modal ── */}
+      <InpatientAdmissionModal
+        isOpen={isAdmissionModalOpen}
+        onClose={() => {
+          setIsAdmissionModalOpen(false);
+          setAdmissionTargetPatientId(undefined);
+        }}
+        patients={patients}
+        initialPatientId={admissionTargetPatientId}
+        onAdmitted={handleAdmissionSuccess}
+      />
+
+      {/* ── Inpatient Admission Details Modal ── */}
+      <InpatientAdmissionDetailsModal
+        admission={selectedAdmissionForDetails}
+        onClose={() => setSelectedAdmissionForDetails(null)}
+        onOpenPatientChart={(patientId) => {
+          setSelectedAdmissionForDetails(null);
+          setViewMode('records');
+          const found = patients.find((p) => p.id === patientId);
+          if (found) {
+            setSelectedPatient(found);
+          }
+        }}
+      />
     </div>
   );
 };

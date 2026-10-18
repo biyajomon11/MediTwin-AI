@@ -6,7 +6,7 @@ import {
   LogOut, CheckCircle2, ChevronRight, ChevronDown, Brain, ClipboardList,
   LayoutDashboard, Menu, X, Users, BookOpen,
   Calendar, Pill, FlaskConical, AlertTriangle, Clock,
-  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen, Heart, Info, FileCheck,
+  ClipboardEdit, HeartHandshake, Bell, Layers, FileText, BarChart3, Building2, FolderOpen, Heart, Info, FileCheck, Bed,
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { NurseObservationsPage } from './NurseObservationsPage';
@@ -108,22 +108,24 @@ const NURSE_NAV: NavItem[] = [
 ];
 
 const PATIENT_RECORD_SUBITEMS = [
-  { id: 'overview',          label: 'Overview',              icon: User         },
-  { id: 'discharge-summary', label: 'Discharge Summary',     icon: FileCheck    },
-  { id: 'labs',          label: 'Lab Reports',           icon: FlaskConical },
-  { id: 'appointments',  label: 'Appointments',          icon: Calendar     },
-  { id: 'prescriptions', label: 'Prescriptions',         icon: Pill         },
-  { id: 'notes',         label: 'Clinical Notes',        icon: FileText     },
-  { id: 'documents',     label: 'Medical Documents',     icon: FolderOpen   },
+  { id: 'overview',             label: 'Overview',                   icon: User         },
+  { id: 'inpatient-admissions', label: 'Inpatient Admissions & Beds', icon: Bed         },
+  { id: 'discharge-summary',    label: 'Discharge Summary',          icon: FileCheck    },
+  { id: 'labs',                 label: 'Lab Reports',                icon: FlaskConical },
+  { id: 'appointments',         label: 'Appointments',               icon: Calendar     },
+  { id: 'prescriptions',        label: 'Prescriptions',              icon: Pill         },
+  { id: 'notes',                label: 'Clinical Notes',             icon: FileText     },
+  { id: 'documents',            label: 'Medical Documents',          icon: FolderOpen   },
 ];
 
 const DOCTOR_NAV: NavItem[] = [
-  { id: 'dashboard',         label: 'Dashboard',            icon: LayoutDashboard },
-  { id: 'patient-records',   label: 'Patient Records',      icon: Users, hasSubmenu: true },
-  { id: 'ai-summaries',      label: 'AI Patient Summaries', icon: Brain            },
-  { id: 'medical-history',   label: 'Medical History',      icon: HeartPulse       },
-  { id: 'guidelines',        label: 'Clinical Guidelines',  icon: BookOpen         },
-  { id: 'profile',           label: 'Doctor Profile',       icon: User             },
+  { id: 'dashboard',            label: 'Dashboard',                  icon: LayoutDashboard },
+  { id: 'patient-records',      label: 'Patient Records',            icon: Users, hasSubmenu: true },
+  { id: 'inpatient-admissions', label: 'Inpatient & Bed Allocation', icon: Bed },
+  { id: 'ai-summaries',         label: 'AI Patient Summaries',       icon: Brain            },
+  { id: 'medical-history',      label: 'Medical History',            icon: HeartPulse       },
+  { id: 'guidelines',           label: 'Clinical Guidelines',        icon: BookOpen         },
+  { id: 'profile',              label: 'Doctor Profile',             icon: User             },
 ];
 
 // ─────────────────────────────────────────────────────────────────
@@ -470,6 +472,7 @@ export const DashboardPage: React.FC = () => {
       actions: [
         ...(doctorStats.criticalCount > 0 ? ['🚨 Urgent Critical Triage'] : []),
         'Review Patient Records',
+        'Inpatient Admissions & Beds',
         'Inpatient Discharge Summaries',
         'Generate AI Summary',
         'Browse Clinical Guidelines',
@@ -599,21 +602,25 @@ export const DashboardPage: React.FC = () => {
       } else {
         setActiveView('observations');
       }
-    } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records' || action === 'Inpatient Discharge Summaries')) {
+    } else if (isDoctor && (action === '🚨 Urgent Critical Triage' || action === 'Review Patient Records' || action === 'Inpatient Discharge Summaries' || action === 'Inpatient Admissions & Beds')) {
       if (action === '🚨 Urgent Critical Triage') {
         setDoctorInitialStatus('Critical');
         setDoctorInitialPatientId(undefined);
         setDoctorRecordTab('overview');
+        setActiveView('patient-records');
+      } else if (action === 'Inpatient Admissions & Beds') {
+        setActiveView('inpatient-admissions');
       } else if (action === 'Inpatient Discharge Summaries') {
         setDoctorInitialStatus('');
         setDoctorInitialPatientId(undefined);
         setDoctorRecordTab('discharge-summary');
+        setActiveView('patient-records');
       } else {
         setDoctorInitialStatus('');
         setDoctorInitialPatientId(undefined);
         setDoctorRecordTab('overview');
+        setActiveView('patient-records');
       }
-      setActiveView('patient-records');
     } else if (isDoctor && action === 'Generate AI Summary') {
       setActiveView('ai-summaries');
     } else if (isDoctor && action === 'Browse Clinical Guidelines') {
@@ -871,8 +878,11 @@ export const DashboardPage: React.FC = () => {
             initialTab={doctorRecordTab}
             initialStatusFilter={doctorInitialStatus}
             initialPatientId={doctorInitialPatientId}
+            initialViewMode={doctorRecordTab === 'inpatient-admissions' ? 'inpatient_admissions' : undefined}
           />
         );
+      case 'inpatient-admissions':
+        return <PatientRecordsPage initialViewMode="inpatient_admissions" initialTab="inpatient-admissions" />;
       case 'ai-summaries':
         return <AIPatientSummaryPage />;
       case 'medical-history':

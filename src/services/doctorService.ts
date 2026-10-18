@@ -25,6 +25,10 @@ import type {
   OverviewRequestItem,
   DischargeSummary,
   CreateDischargeSummaryInput,
+  HospitalWardDTO,
+  WardBedDTO,
+  InpatientAdmissionRecord,
+  CreateInpatientAdmissionInput,
 } from '../types';
 import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID, JOLDA_INPATIENT_MOCK } from '../data/doctorMockData';
 import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from './patientService';
@@ -347,6 +351,179 @@ export async function updatePatientBed(
     return { success: false, error: err.message || 'Failed to update patient bed.' };
   }
 }
+
+/**
+ * Retrieves hospital wards with real-time bed capacity and occupancy metrics from PostgreSQL.
+ * Calls backend GET /api/doctor/wards.
+ */
+export async function getHospitalWards(): Promise<HospitalWardDTO[]> {
+  try {
+    const res = await fetch('/api/doctor/wards', {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.error('[DOCTOR_SERVICE] Failed to fetch hospital wards:', err);
+  }
+  return [];
+}
+
+/**
+ * Retrieves bed inventory and real-time occupancy status for a specific hospital ward.
+ * Calls backend GET /api/doctor/wards/:wardId/beds.
+ */
+export async function getWardBeds(wardId: number): Promise<{ ward: any; beds: WardBedDTO[]; total: number; available: number }> {
+  try {
+    const res = await fetch(`/api/doctor/wards/${wardId}/beds`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.error(`[DOCTOR_SERVICE] Failed to fetch beds for ward ${wardId}:`, err);
+  }
+  return { ward: null, beds: [], total: 0, available: 0 };
+}
+
+/**
+ * Searches existing registered and outpatient patients in the hospital database for inpatient admission.
+ * Calls backend GET /api/doctor/patients/search.
+ */
+export async function searchPatientsForAdmission(query: string = ''): Promise<any[]> {
+  try {
+    const params = new URLSearchParams();
+    if (query) params.append('q', query);
+    params.append('limit', '30');
+
+    const res = await fetch(`/api/doctor/patients/search?${params.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.error('[DOCTOR_SERVICE] Failed to search patients for admission:', err);
+  }
+  return [];
+}
+
+/**
+ * Creates a transactional Inpatient Admission record in PostgreSQL,
+ * atomically assigns the hospital bed, updates patient admission status,
+ * persists nursing handover note, and creates an audit event.
+ * Calls backend POST /api/doctor/inpatient-admissions.
+ */
+export async function createInpatientAdmission(
+  input: CreateInpatientAdmissionInput
+): Promise<{ success: boolean; data?: InpatientAdmissionRecord; error?: string }> {
+  try {
+    const res = await fetch('/api/doctor/inpatient-admissions', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(input),
+    });
+
+    const json = await res.json();
+    return json;
+  } catch (err: any) {
+    console.error('[DOCTOR_SERVICE] Inpatient admission creation error:', err);
+    return { success: false, error: err.message || 'Failed to complete inpatient admission.' };
+  }
+}
+
+/**
+ * Retrieves paginated inpatient admissions with filtering by ward, status, or search.
+ * Calls backend GET /api/doctor/inpatient-admissions.
+ */
+export async function getInpatientAdmissions(params?: {
+  status?: string;
+  wardId?: number;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<{
+  data: InpatientAdmissionRecord[];
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+}> {
+  try {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.wardId) q.append('wardId', String(params.wardId));
+    if (params?.search) q.append('search', params.search);
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.limit) q.append('limit', String(params.limit));
+
+    const res = await fetch(`/api/doctor/inpatient-admissions?${q.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success) {
+        return {
+          data: json.data || [],
+          pagination: json.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 },
+        };
+      }
+    }
+  } catch (err) {
+    console.error('[DOCTOR_SERVICE] Failed to retrieve inpatient admissions:', err);
+  }
+  return { data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 1 } };
+}
+
+/**
+ * Retrieves full details of a specific inpatient admission record by ID.
+ * Calls backend GET /api/doctor/inpatient-admissions/:id.
+ */
+export async function getInpatientAdmissionById(
+  id: number
+): Promise<{ success: boolean; data?: InpatientAdmissionRecord; error?: string }> {
+  try {
+    const res = await fetch(`/api/doctor/inpatient-admissions/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    return await res.json();
+  } catch (err: any) {
+    console.error(`[DOCTOR_SERVICE] Failed to retrieve admission #${id}:`, err);
+    return { success: false, error: err.message || 'Failed to load admission details.' };
+  }
+}
+
+/**
+ * Retrieves all inpatient admission history for a specific patient.
+ * Calls backend GET /api/doctor/patients/:patientId/inpatient-admissions.
+ */
+export async function getPatientInpatientHistory(
+  patientId: number
+): Promise<InpatientAdmissionRecord[]> {
+  try {
+    const res = await fetch(`/api/doctor/patients/${patientId}/inpatient-admissions`, {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.error(`[DOCTOR_SERVICE] Failed to fetch patient ${patientId} admissions:`, err);
+  }
+  return [];
+}
+
 
 /**
  * Appends a verified clinical progress note to the patient's record in PostgreSQL.

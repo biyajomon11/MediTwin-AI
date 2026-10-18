@@ -1603,5 +1603,72 @@ export interface AdminActivityItem {
   status: string;
 }
 
+// ── Inpatient Admission & Ward / Bed Inventory Types ───────────
+
+export interface HospitalWardDTO {
+  id: number;
+  wardNumber: string;
+  name: string;
+  department: string | null;
+  totalBeds: number;
+  occupiedBeds: number;
+  availableBeds: number;
+  occupancyPercentage: number;
+  isActive: boolean;
+}
+
+export interface WardBedDTO {
+  id: number;
+  wardId: number;
+  bedNumber: string;
+  status: 'AVAILABLE' | 'OCCUPIED' | 'MAINTENANCE';
+  isAvailable: boolean;
+}
+
+export interface InpatientAdmissionRecord {
+  id: number;
+  admissionNumber: string;
+  patientId: number;
+  patientName: string;
+  patientCode: string;
+  age: number;
+  gender: string;
+  bloodGroup: string;
+  email: string;
+  phone: string;
+  admittingDoctorId: number;
+  doctorName: string;
+  doctorSpecialization: string;
+  doctorDepartment: string;
+  wardId: number;
+  wardNumber: string;
+  wardName: string;
+  wardDepartment: string;
+  bedId: number;
+  bedNumber: string;
+  admissionDateTime: string;
+  admissionDiagnosis: string;
+  chiefComplaint: string;
+  nursingHandoverInstructions: string | null;
+  admissionStatus: 'ADMITTED' | 'UNDER_OBSERVATION' | 'DISCHARGED';
+  acuityLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  sourceAppointmentId: number | null;
+  dischargeDate: string | null;
+  createdAt: string;
+}
+
+export interface CreateInpatientAdmissionInput {
+  patientId: number;
+  wardId: number;
+  bedId: number;
+  admissionDiagnosis: string;
+  chiefComplaint: string;
+  nursingHandoverInstructions?: string;
+  admissionStatus?: 'ADMITTED' | 'UNDER_OBSERVATION';
+  acuityLevel?: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  sourceAppointmentId?: number | null;
+}
+
+
 
 

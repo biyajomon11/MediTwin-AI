@@ -4,6 +4,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { authenticateJWT, AuthenticatedRequest } from '../middleware/auth';
 import { requireRoles } from '../middleware/roleGuard';
+import { seedWardsAndBeds } from '../seed-wards-beds';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -588,6 +589,101 @@ router.get(
 );
 
 /**
+ * GET /api/doctor/patients/search
+ * Fast server-side patient search by name, email, phone, or ID for inpatient admission.
+ */
+router.get(
+  '/patients/search',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const q = (req.query.q as string | undefined)?.trim();
+      const limit = Math.min(50, Math.max(1, parseInt((req.query.limit as string) || '15')));
+
+      const where: any = {};
+      if (q) {
+        const conditions: any[] = [
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q, mode: 'insensitive' } },
+          { user: { email: { contains: q, mode: 'insensitive' } } },
+        ];
+        const numId = parseInt(q.replace(/\D/g, ''));
+        if (!isNaN(numId)) {
+          conditions.push({ id: numId });
+        }
+        where.OR = conditions;
+      }
+
+      const patients = await prisma.patient.findMany({
+        where,
+        take: limit,
+        orderBy: { id: 'asc' },
+        include: {
+          gender: true,
+          bloodGroup: true,
+          user: { select: { email: true } },
+          appointments: {
+            take: 1,
+            orderBy: { appointmentDate: 'desc' },
+            select: { id: true, appointmentDate: true },
+          },
+          inpatientAdmissions: {
+            where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
+            take: 1,
+            orderBy: { admissionDateTime: 'desc' },
+            include: { ward: true, bed: true },
+          },
+        },
+      });
+
+      const formatted = patients.map((p) => {
+        const activeAdmission = p.inpatientAdmissions?.[0];
+        const isAdmitted = Boolean(activeAdmission) || ['Admitted', 'Critical', 'Under Observation'].includes(p.admissionStatus || '');
+        const age = calculateAge(p.dateOfBirth);
+
+        return {
+          id: p.id,
+          firstName: p.firstName,
+          lastName: p.lastName,
+          name: `${p.firstName} ${p.lastName}`,
+          email: p.user?.email || '',
+          phone: p.phone || '',
+          dateOfBirth: p.dateOfBirth.toISOString().split('T')[0],
+          age,
+          gender: p.gender?.name || 'Unspecified',
+          bloodGroup: p.bloodGroup?.name || 'Unknown',
+          patientCode: `${isAdmitted ? 'IP' : 'OP'}-${String(p.id).padStart(3, '0')}`,
+          status: p.admissionStatus || 'Active',
+          ward: p.ward,
+          bedNumber: p.bedNumber,
+          isAdmitted,
+          currentAdmission: activeAdmission
+            ? {
+                id: activeAdmission.id,
+                admissionNumber: activeAdmission.admissionNumber,
+                wardNumber: activeAdmission.ward.wardNumber,
+                wardName: activeAdmission.ward.name,
+                bedNumber: activeAdmission.bed.bedNumber,
+                admissionDateTime: activeAdmission.admissionDateTime.toISOString(),
+                admissionStatus: activeAdmission.admissionStatus,
+                acuityLevel: activeAdmission.acuityLevel,
+              }
+            : null,
+          hasOutpatientHistory: p.appointments.length > 0,
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error('[DOCTOR] Patient search error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to search patients.' });
+    }
+  }
+);
+
+/**
  * GET /api/doctor/patients/:id
  * Retrieves a single patient's detailed clinical record DTO.
  */
@@ -646,13 +742,36 @@ router.patch(
         return res.status(404).json({ success: false, error: 'Patient not found.' });
       }
 
-      const updated = await prisma.patient.update({
-        where: { id: patientId },
-        data: {
-          ...(ward !== undefined ? { ward: ward || null } : {}),
-          ...(bedNumber !== undefined ? { bedNumber: bedNumber || null } : {}),
-          ...(admissionStatus !== undefined ? { admissionStatus } : {}),
-        },
+      const updated = await prisma.$transaction(async (tx) => {
+        // If bed is being cleared or set to Outpatient
+        if (ward === null || bedNumber === null || ward === '' || bedNumber === '') {
+          // Free any previously occupied bed
+          const activeAdm = await tx.inpatientAdmission.findFirst({
+            where: {
+              patientId,
+              admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+            },
+          });
+          if (activeAdm) {
+            await tx.inpatientAdmission.update({
+              where: { id: activeAdm.id },
+              data: { admissionStatus: 'DISCHARGED', dischargeDate: new Date() },
+            });
+            await tx.bed.update({
+              where: { id: activeAdm.bedId },
+              data: { status: 'AVAILABLE' },
+            });
+          }
+        }
+
+        return tx.patient.update({
+          where: { id: patientId },
+          data: {
+            ...(ward !== undefined ? { ward: ward || null } : {}),
+            ...(bedNumber !== undefined ? { bedNumber: bedNumber || null } : {}),
+            ...(admissionStatus !== undefined ? { admissionStatus } : {}),
+          },
+        });
       });
 
       await logAudit(req.user!.userId, 'UPDATE_PATIENT_BED', 'patients', patientId, { ward, bedNumber, admissionStatus });
@@ -669,6 +788,625 @@ router.patch(
     } catch (err) {
       console.error('[DOCTOR] Update patient bed error:', err);
       return res.status(500).json({ success: false, error: 'Failed to update patient bed.' });
+    }
+  }
+);
+
+// ── INPATIENT ADMISSIONS & BED MANAGEMENT SUITE ──────────────────
+
+/** Formats an InpatientAdmission model into a client-safe DTO */
+function formatInpatientAdmissionDTO(admission: any) {
+  return {
+    id: admission.id,
+    admissionNumber: admission.admissionNumber,
+    patientId: admission.patientId,
+    patientName: admission.patient ? `${admission.patient.firstName} ${admission.patient.lastName}` : undefined,
+    patientCode: admission.patient ? `IP-${String(admission.patient.id).padStart(3, '0')}` : undefined,
+    patientAge: admission.patient?.dateOfBirth ? calculateAge(admission.patient.dateOfBirth) : undefined,
+    patientGender: admission.patient?.gender?.name || 'Unspecified',
+    patientPhone: admission.patient?.phone || undefined,
+    admittingDoctorId: admission.admittingDoctorId,
+    admittingDoctorName: admission.admittingDoctor
+      ? `Dr. ${admission.admittingDoctor.firstName} ${admission.admittingDoctor.lastName}`
+      : undefined,
+    admittingDoctorSpecialization: admission.admittingDoctor?.specialization?.name || undefined,
+    wardId: admission.wardId,
+    wardNumber: admission.ward?.wardNumber || undefined,
+    wardName: admission.ward?.name || undefined,
+    wardDepartment: admission.ward?.department || undefined,
+    bedId: admission.bedId,
+    bedNumber: admission.bed?.bedNumber || undefined,
+    admissionDateTime: admission.admissionDateTime instanceof Date
+      ? admission.admissionDateTime.toISOString()
+      : admission.admissionDateTime,
+    admissionDiagnosis: admission.admissionDiagnosis,
+    chiefComplaint: admission.chiefComplaint,
+    nursingHandoverInstructions: admission.nursingHandoverInstructions || null,
+    admissionStatus: admission.admissionStatus,
+    acuityLevel: admission.acuityLevel,
+    sourceAppointmentId: admission.sourceAppointmentId || null,
+    dischargeDate: admission.dischargeDate instanceof Date
+      ? admission.dischargeDate.toISOString()
+      : admission.dischargeDate,
+    createdAt: admission.createdAt instanceof Date
+      ? admission.createdAt.toISOString()
+      : admission.createdAt,
+  };
+}
+
+/**
+ * GET /api/doctor/wards
+ * Lists all active hospital wards with total, available, and occupied bed counts.
+ */
+router.get(
+  '/wards',
+  authenticateJWT,
+  requireRoles(['doctor', 'nurse', 'admin']),
+  async (_req: AuthenticatedRequest, res: Response) => {
+    try {
+      const count = await prisma.ward.count();
+      if (count === 0) {
+        await seedWardsAndBeds();
+      }
+
+      const wards = await prisma.ward.findMany({
+        where: { isActive: true },
+        orderBy: { id: 'asc' },
+        include: {
+          beds: {
+            select: { id: true, status: true },
+          },
+        },
+      });
+
+      const formatted = wards.map((w) => {
+        const totalBeds = w.beds.length;
+        const availableBeds = w.beds.filter((b) => b.status === 'AVAILABLE').length;
+        const occupiedBeds = w.beds.filter((b) => b.status === 'OCCUPIED').length;
+
+        return {
+          id: w.id,
+          wardNumber: w.wardNumber,
+          name: w.name,
+          department: w.department || 'General Medicine',
+          totalBeds,
+          availableBeds,
+          occupiedBeds,
+          isFull: availableBeds === 0,
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
+    } catch (err) {
+      console.error('[DOCTOR] Fetch wards error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve hospital wards.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/wards/:wardId/beds
+ * Retrieves all beds in a ward with real-time availability and occupancy metadata.
+ */
+router.get(
+  '/wards/:wardId/beds',
+  authenticateJWT,
+  requireRoles(['doctor', 'nurse', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const wardId = parseInt(req.params.wardId);
+      if (isNaN(wardId)) {
+        return res.status(400).json({ success: false, error: 'Invalid ward ID.' });
+      }
+
+      const ward = await prisma.ward.findUnique({
+        where: { id: wardId },
+        include: {
+          beds: {
+            orderBy: { bedNumber: 'asc' },
+            include: {
+              admissions: {
+                where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
+                take: 1,
+                include: {
+                  patient: { select: { id: true, firstName: true, lastName: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!ward) {
+        return res.status(404).json({ success: false, error: 'Ward not found.' });
+      }
+
+      const statusFilter = (req.query.status as string | undefined)?.toUpperCase();
+      let beds = ward.beds;
+      if (statusFilter === 'AVAILABLE') {
+        beds = beds.filter((b) => b.status === 'AVAILABLE');
+      }
+
+      const formatted = beds.map((b) => {
+        const activeAdm = b.admissions?.[0];
+        return {
+          id: b.id,
+          wardId: b.wardId,
+          bedNumber: b.bedNumber,
+          status: b.status,
+          isAvailable: b.status === 'AVAILABLE',
+          occupiedBy: activeAdm
+            ? {
+                patientId: activeAdm.patient.id,
+                patientName: `${activeAdm.patient.firstName} ${activeAdm.patient.lastName}`,
+                admissionNumber: activeAdm.admissionNumber,
+              }
+            : null,
+        };
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          ward: {
+            id: ward.id,
+            wardNumber: ward.wardNumber,
+            name: ward.name,
+            department: ward.department,
+          },
+          beds: formatted,
+          total: formatted.length,
+          availableCount: formatted.filter((b) => b.isAvailable).length,
+        },
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Fetch ward beds error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve ward beds.' });
+    }
+  }
+);
+
+const createAdmissionSchema = z.object({
+  patientId: z.number().int().positive({ message: 'Valid patient ID is required.' }),
+  wardId: z.number().int().positive().optional().nullable(),
+  ward: z.string().optional().nullable(),
+  bedId: z.number().int().positive().optional().nullable(),
+  bedNumber: z.string().optional().nullable(),
+  admissionDiagnosis: z.string().min(3, { message: 'Admission diagnosis must be at least 3 characters.' }).max(255),
+  chiefComplaint: z.string().min(3, { message: 'Chief complaint must be at least 3 characters.' }),
+  nursingHandoverInstructions: z.string().optional().nullable(),
+  admissionStatus: z.enum(['ADMITTED', 'UNDER_OBSERVATION']).default('ADMITTED'),
+  acuityLevel: z.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']).default('MODERATE'),
+  sourceAppointmentId: z.number().int().positive().optional().nullable(),
+  admissionDateTime: z.string().optional().nullable(),
+});
+
+/**
+ * POST /api/doctor/inpatient-admissions
+ * Transactionally admits an existing patient to a hospital ward and bed.
+ */
+router.post(
+  '/inpatient-admissions',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const parsed = createAdmissionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed.',
+          details: parsed.error.flatten().fieldErrors,
+        });
+      }
+
+      const data = parsed.data;
+      const userId = req.user!.userId;
+      const doctor = await getDoctorByUserId(userId);
+
+      if (!doctor && req.user!.role === 'doctor') {
+        return res.status(403).json({ success: false, error: 'Only registered doctors can admit patients.' });
+      }
+
+      const effectiveDoctorId = doctor ? doctor.id : 1;
+
+      // 1. Verify Patient exists
+      const patient = await prisma.patient.findUnique({
+        where: { id: data.patientId },
+        include: { user: true },
+      });
+
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient not found.' });
+      }
+
+      // 2. Prevent admission if patient is already actively admitted
+      const activeAdmission = await prisma.inpatientAdmission.findFirst({
+        where: {
+          patientId: data.patientId,
+          admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+        },
+        include: { ward: true, bed: true },
+      });
+
+      if (activeAdmission || ['Admitted', 'Critical', 'Under Observation'].includes(patient.admissionStatus || '')) {
+        const currentLoc = activeAdmission
+          ? `${activeAdmission.ward.wardNumber} – ${activeAdmission.bed.bedNumber}`
+          : patient.ward || 'an active inpatient bed';
+
+        return res.status(409).json({
+          success: false,
+          error: `Patient ${patient.firstName} ${patient.lastName} is already admitted in ${currentLoc}. The patient must be discharged before a new admission can be created.`,
+        });
+      }
+
+      // 3. Resolve Ward
+      let targetWard = null;
+      if (data.wardId) {
+        targetWard = await prisma.ward.findUnique({ where: { id: data.wardId } });
+      } else if (data.ward) {
+        targetWard = await prisma.ward.findFirst({
+          where: {
+            OR: [
+              { wardNumber: { equals: data.ward.trim(), mode: 'insensitive' } },
+              { name: { contains: data.ward.trim(), mode: 'insensitive' } },
+            ],
+          },
+        });
+      }
+
+      if (!targetWard || !targetWard.isActive) {
+        return res.status(404).json({ success: false, error: 'Selected ward not found or is currently inactive.' });
+      }
+
+      // 4. Resolve Bed
+      let targetBed = null;
+      if (data.bedId) {
+        targetBed = await prisma.bed.findUnique({ where: { id: data.bedId } });
+        if (targetBed && targetBed.wardId !== targetWard.id) {
+          return res.status(400).json({ success: false, error: 'Selected bed does not belong to the selected ward.' });
+        }
+      } else if (data.bedNumber) {
+        const cleanBed = data.bedNumber.trim().toLowerCase().startsWith('bed')
+          ? data.bedNumber.trim()
+          : `Bed ${data.bedNumber.trim().padStart(2, '0')}`;
+
+        targetBed = await prisma.bed.findFirst({
+          where: {
+            wardId: targetWard.id,
+            bedNumber: { equals: cleanBed, mode: 'insensitive' },
+          },
+        });
+      }
+
+      if (!targetBed) {
+        return res.status(404).json({
+          success: false,
+          error: `Bed was not found in ${targetWard.wardNumber}. Please select a valid bed from the ward inventory.`,
+        });
+      }
+
+      // 5. Check Bed Availability
+      if (targetBed.status !== 'AVAILABLE') {
+        return res.status(409).json({
+          success: false,
+          error: `Bed ${targetBed.bedNumber} in ${targetWard.wardNumber} is currently occupied or unavailable. Please select an available bed.`,
+        });
+      }
+
+      const bedConflict = await prisma.inpatientAdmission.findFirst({
+        where: {
+          bedId: targetBed.id,
+          admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+        },
+      });
+
+      if (bedConflict) {
+        return res.status(409).json({
+          success: false,
+          error: `Bed ${targetBed.bedNumber} in ${targetWard.wardNumber} is already occupied by admission ${bedConflict.admissionNumber}.`,
+        });
+      }
+
+      // 6. Transactional Execution
+      const admissionNumber = `ADM-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+      const formattedWard = `${targetWard.wardNumber} – ${targetBed.bedNumber}`;
+      const admissionDate = data.admissionDateTime ? new Date(data.admissionDateTime) : new Date();
+
+      // Separate clinical acuity from admission lifecycle status
+      const finalPatientStatus = data.admissionStatus === 'UNDER_OBSERVATION'
+        ? 'Under Observation'
+        : (data.acuityLevel === 'CRITICAL' ? 'Critical' : 'Admitted');
+
+      const createdAdmission = await prisma.$transaction(async (tx) => {
+        // Concurrency safety check inside transaction
+        const liveBed = await tx.bed.findUnique({ where: { id: targetBed!.id } });
+        if (!liveBed || liveBed.status !== 'AVAILABLE') {
+          throw new Error(`BED_CONFLICT: Bed ${targetBed!.bedNumber} was reserved concurrently.`);
+        }
+
+        // Mark bed as OCCUPIED
+        await tx.bed.update({
+          where: { id: targetBed!.id },
+          data: { status: 'OCCUPIED' },
+        });
+
+        // Create InpatientAdmission
+        const adm = await tx.inpatientAdmission.create({
+          data: {
+            admissionNumber,
+            patientId: data.patientId,
+            admittingDoctorId: effectiveDoctorId,
+            wardId: targetWard!.id,
+            bedId: targetBed!.id,
+            admissionDateTime: admissionDate,
+            admissionDiagnosis: data.admissionDiagnosis,
+            chiefComplaint: data.chiefComplaint,
+            nursingHandoverInstructions: data.nursingHandoverInstructions || null,
+            admissionStatus: data.admissionStatus,
+            acuityLevel: data.acuityLevel,
+            sourceAppointmentId: data.sourceAppointmentId || null,
+          },
+          include: {
+            patient: {
+              include: { gender: true, bloodGroup: true, user: { select: { email: true } } },
+            },
+            admittingDoctor: {
+              include: { specialization: true, department: true },
+            },
+            ward: true,
+            bed: true,
+          },
+        });
+
+        // Update Patient record
+        await tx.patient.update({
+          where: { id: data.patientId },
+          data: {
+            ward: formattedWard,
+            bedNumber: targetBed!.bedNumber,
+            admissionStatus: finalPatientStatus,
+          },
+        });
+
+        // If nursing handover instructions provided, persist a nursing note in medical_records
+        if (data.nursingHandoverInstructions && data.nursingHandoverInstructions.trim()) {
+          const noteType = await tx.recordType.findFirst({ where: { name: 'nursing_note' } })
+            || await tx.recordType.findFirst({ where: { name: 'consultation' } });
+
+          if (noteType) {
+            const handoverPayload = {
+              date: admissionDate.toISOString().split('T')[0],
+              time: formatTime12(admissionDate),
+              nurseName: 'Ward Duty Nurse',
+              noteType: 'Doctor Inpatient Admission Handover',
+              admissionNumber,
+              ward: formattedWard,
+              acuityLevel: data.acuityLevel,
+              diagnosis: data.admissionDiagnosis,
+              chiefComplaint: data.chiefComplaint,
+              nursingObservation: data.nursingHandoverInstructions.trim(),
+              treatmentCareProvided: 'Inpatient admission protocol initiated by attending physician.',
+              additionalNotes: `Admitted under Dr. ${doctor ? doctor.firstName + ' ' + doctor.lastName : 'Attending Physician'}.`,
+            };
+
+            await tx.medicalRecord.create({
+              data: {
+                patientId: data.patientId,
+                doctorId: effectiveDoctorId,
+                recordTypeId: noteType.id,
+                title: `Doctor Admission Handover: ${formattedWard}`,
+                description: JSON.stringify(handoverPayload),
+                recordDate: admissionDate,
+              },
+            });
+          }
+        }
+
+        return adm;
+      });
+
+      // 7. Audit Logging
+      await logAudit(
+        userId,
+        'INPATIENT_ADMISSION_CREATED',
+        'inpatient_admissions',
+        createdAdmission.id,
+        {
+          admissionNumber: createdAdmission.admissionNumber,
+          patientId: data.patientId,
+          ward: formattedWard,
+          bedNumber: targetBed.bedNumber,
+          acuityLevel: data.acuityLevel,
+          admissionStatus: data.admissionStatus,
+        }
+      );
+
+      await logAudit(
+        userId,
+        'BED_ASSIGNED',
+        'beds',
+        targetBed.id,
+        {
+          bedNumber: targetBed.bedNumber,
+          wardId: targetWard.id,
+          patientId: data.patientId,
+          admissionId: createdAdmission.id,
+        }
+      );
+
+      return res.status(201).json({
+        success: true,
+        message: `Patient ${patient.firstName} ${patient.lastName} successfully admitted to ${formattedWard}.`,
+        data: formatInpatientAdmissionDTO(createdAdmission),
+      });
+    } catch (err: any) {
+      if (err.message && err.message.includes('BED_CONFLICT')) {
+        return res.status(409).json({ success: false, error: err.message });
+      }
+      console.error('[DOCTOR] Inpatient admission error:', err);
+      return res.status(500).json({ success: false, error: 'Internal server error while creating inpatient admission.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/inpatient-admissions
+ * Retrieves paginated inpatient admissions with filters.
+ */
+router.get(
+  '/inpatient-admissions',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patientId = req.query.patientId ? parseInt(req.query.patientId as string) : undefined;
+      const wardId = req.query.wardId ? parseInt(req.query.wardId as string) : undefined;
+      const status = req.query.status as string | undefined;
+      const search = (req.query.search as string | undefined)?.trim();
+      const page = Math.max(1, parseInt((req.query.page as string) || '1'));
+      const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '20')));
+      const skip = (page - 1) * limit;
+
+      const where: any = {};
+      if (patientId) where.patientId = patientId;
+      if (wardId) where.wardId = wardId;
+      if (status && status !== 'all') {
+        where.admissionStatus = status.toUpperCase();
+      }
+      if (search) {
+        where.OR = [
+          { admissionNumber: { contains: search, mode: 'insensitive' } },
+          { admissionDiagnosis: { contains: search, mode: 'insensitive' } },
+          { patient: { firstName: { contains: search, mode: 'insensitive' } } },
+          { patient: { lastName: { contains: search, mode: 'insensitive' } } },
+        ];
+      }
+
+      const [total, admissions] = await Promise.all([
+        prisma.inpatientAdmission.count({ where }),
+        prisma.inpatientAdmission.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { admissionDateTime: 'desc' },
+          include: {
+            patient: {
+              include: { gender: true, bloodGroup: true, user: { select: { email: true } } },
+            },
+            admittingDoctor: {
+              include: { specialization: true, department: true },
+            },
+            ward: true,
+            bed: true,
+          },
+        }),
+      ]);
+
+      const formatted = admissions.map(formatInpatientAdmissionDTO);
+
+      return res.json({
+        success: true,
+        data: formatted,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      });
+    } catch (err) {
+      console.error('[DOCTOR] List admissions error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve inpatient admissions.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/inpatient-admissions/:id
+ * Retrieves full details of a specific inpatient admission record.
+ */
+router.get(
+  '/inpatient-admissions/:id',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ success: false, error: 'Invalid admission ID.' });
+      }
+
+      const admission = await prisma.inpatientAdmission.findUnique({
+        where: { id },
+        include: {
+          patient: {
+            include: { gender: true, bloodGroup: true, user: { select: { email: true } } },
+          },
+          admittingDoctor: {
+            include: { specialization: true, department: true },
+          },
+          ward: true,
+          bed: true,
+        },
+      });
+
+      if (!admission) {
+        return res.status(404).json({ success: false, error: 'Inpatient admission not found.' });
+      }
+
+      await logAudit(req.user!.userId, 'INPATIENT_ADMISSION_VIEWED', 'inpatient_admissions', id, {
+        admissionNumber: admission.admissionNumber,
+      });
+
+      return res.json({
+        success: true,
+        data: formatInpatientAdmissionDTO(admission),
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Get admission details error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve admission details.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/patients/:patientId/inpatient-admissions
+ * Retrieves all inpatient admission history for a specific patient.
+ */
+router.get(
+  '/patients/:patientId/inpatient-admissions',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const patientId = parseInt(req.params.patientId);
+      if (isNaN(patientId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const admissions = await prisma.inpatientAdmission.findMany({
+        where: { patientId },
+        orderBy: { admissionDateTime: 'desc' },
+        include: {
+          patient: {
+            include: { gender: true, bloodGroup: true, user: { select: { email: true } } },
+          },
+          admittingDoctor: {
+            include: { specialization: true, department: true },
+          },
+          ward: true,
+          bed: true,
+        },
+      });
+
+      return res.json({
+        success: true,
+        data: admissions.map(formatInpatientAdmissionDTO),
+      });
+    } catch (err) {
+      console.error('[DOCTOR] Get patient admissions error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to retrieve patient admissions.' });
     }
   }
 );
@@ -2524,8 +3262,25 @@ router.post(
         if (isFinal) {
           await tx.patient.update({
             where: { id: patientId },
-            data: { admissionStatus: 'Discharged' },
+            data: { admissionStatus: 'Discharged', ward: null, bedNumber: null },
           });
+
+          const activeAdm = await tx.inpatientAdmission.findFirst({
+            where: {
+              patientId,
+              admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+            },
+          });
+          if (activeAdm) {
+            await tx.inpatientAdmission.update({
+              where: { id: activeAdm.id },
+              data: { admissionStatus: 'DISCHARGED', dischargeDate: new Date() },
+            });
+            await tx.bed.update({
+              where: { id: activeAdm.bedId },
+              data: { status: 'AVAILABLE' },
+            });
+          }
         }
 
         return created;
@@ -2701,8 +3456,25 @@ router.put(
         if (isFinal) {
           await tx.patient.update({
             where: { id: existing.patientId },
-            data: { admissionStatus: 'Discharged' },
+            data: { admissionStatus: 'Discharged', ward: null, bedNumber: null },
           });
+
+          const activeAdm = await tx.inpatientAdmission.findFirst({
+            where: {
+              patientId: existing.patientId,
+              admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+            },
+          });
+          if (activeAdm) {
+            await tx.inpatientAdmission.update({
+              where: { id: activeAdm.id },
+              data: { admissionStatus: 'DISCHARGED', dischargeDate: new Date() },
+            });
+            await tx.bed.update({
+              where: { id: activeAdm.bedId },
+              data: { status: 'AVAILABLE' },
+            });
+          }
         }
 
         return result;
@@ -2814,11 +3586,28 @@ router.post(
           },
         });
 
-        // Set patient admission status to 'Discharged'
+        // Set patient admission status to 'Discharged' and free bed
         await tx.patient.update({
           where: { id: existing.patientId },
-          data: { admissionStatus: 'Discharged' },
+          data: { admissionStatus: 'Discharged', ward: null, bedNumber: null },
         });
+
+        const activeAdm = await tx.inpatientAdmission.findFirst({
+          where: {
+            patientId: existing.patientId,
+            admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+          },
+        });
+        if (activeAdm) {
+          await tx.inpatientAdmission.update({
+            where: { id: activeAdm.id },
+            data: { admissionStatus: 'DISCHARGED', dischargeDate: new Date() },
+          });
+          await tx.bed.update({
+            where: { id: activeAdm.bedId },
+            data: { status: 'AVAILABLE' },
+          });
+        }
 
         return record;
       });
