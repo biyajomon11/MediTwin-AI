@@ -957,6 +957,7 @@ export const DashboardPage: React.FC<{ initialRole?: string; defaultTab?: string
                   setActiveView('patient-records');
                 }}
                 onNavigateToInpatients={() => setActiveView('inpatient-management')}
+                onNavigateToDashboard={() => setActiveView('overview')}
               />
             );
           case 'ai-summaries':
