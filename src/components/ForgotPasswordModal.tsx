@@ -347,7 +347,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
           </div>
           <div>
             <h2 id="forgot-password-title" className="text-xl font-bold text-white tracking-tight">
-              {step === 'request' && 'Reset Workstation Password'}
+              {step === 'request' && 'Reset Your Password'}
               {step === 'verify' && 'Verify & Set New Password'}
               {step === 'success' && 'Password Updated'}
             </h2>
