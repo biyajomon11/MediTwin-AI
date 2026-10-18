@@ -7,6 +7,7 @@ import { PasswordInput } from './PasswordInput';
 import { Button } from './Button';
 import { SocialLogin } from './SocialLogin';
 import { GoogleAuthModal } from './GoogleAuthModal';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 export const LoginForm: React.FC = () => {
   const navigate = useNavigate();
@@ -18,6 +19,8 @@ export const LoginForm: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  const [resetSuccessNotice, setResetSuccessNotice] = useState<string | null>(null);
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -249,6 +252,27 @@ export const LoginForm: React.FC = () => {
   return (
     <div className="w-full space-y-6">
 
+      {/* Password Reset Success Notice */}
+      {resetSuccessNotice && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between gap-2.5"
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+            <span>{resetSuccessNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setResetSuccessNotice(null)}
+            className="text-emerald-400 hover:text-white text-xs px-1"
+          >
+            ✕
+          </button>
+        </motion.div>
+      )}
+
       {/* General Error Banner */}
       {errors.general && (
         <motion.div
@@ -315,16 +339,16 @@ export const LoginForm: React.FC = () => {
             <span>Remember Me</span>
           </label>
 
-          <a
-            href="#forgot-password"
-            onClick={(e) => {
-              e.preventDefault();
-              alert('Password reset link sent to your administrator.');
+          <button
+            type="button"
+            onClick={() => {
+              setResetSuccessNotice(null);
+              setIsForgotPasswordOpen(true);
             }}
-            className="text-accent font-semibold hover:underline"
+            className="text-accent font-semibold hover:underline cursor-pointer focus:outline-none"
           >
             Forgot Password?
-          </a>
+          </button>
         </div>
 
         {/* Submit Button */}
@@ -358,6 +382,21 @@ export const LoginForm: React.FC = () => {
         onClose={() => setIsGoogleModalOpen(false)}
         prefillEmail={email}
         onSuccess={handleGoogleSuccess}
+      />
+
+      {/* Forgot Password Recovery Modal */}
+      <ForgotPasswordModal
+        isOpen={isForgotPasswordOpen}
+        onClose={() => setIsForgotPasswordOpen(false)}
+        initialIdentifier={email}
+        onPasswordResetSuccess={(updatedEmail) => {
+          if (updatedEmail) {
+            setEmail(updatedEmail);
+          }
+          setPassword('');
+          setResetSuccessNotice('Your password was successfully updated! Please sign in with your new password.');
+          setErrors({});
+        }}
       />
     </div>
   );

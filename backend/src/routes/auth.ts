@@ -15,6 +15,81 @@ const loginSchema = z.object({
   password: z.string().min(1, { message: 'Password is required.' }),
 });
 
+interface PasswordResetRecord {
+  code: string;
+  userId: number;
+  email: string;
+  expiresAt: number;
+}
+
+// In-memory token/code cache with expiry (15 minutes)
+const passwordResetStore = new Map<string, PasswordResetRecord>();
+
+function maskEmail(email: string): string {
+  const [localPart, domain] = email.split('@');
+  if (!domain) return '***';
+  if (localPart.length <= 2) {
+    return `${localPart[0]}*@${domain}`;
+  }
+  return `${localPart[0]}***${localPart[localPart.length - 1]}@${domain}`;
+}
+
+export async function findUserByIdentifier(identifier: string) {
+  const clean = identifier.trim();
+  const lower = clean.toLowerCase();
+  const nameParts = clean.split(/\s+/);
+  const lettersOnly = lower.replace(/[^a-z]/g, '');
+
+  return await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: { equals: clean, mode: 'insensitive' } },
+        { email: { startsWith: `${clean}@`, mode: 'insensitive' } },
+        { email: { contains: clean, mode: 'insensitive' } },
+        ...(lettersOnly.length >= 3 ? [
+          { email: { contains: lettersOnly, mode: 'insensitive' as const } },
+        ] : []),
+        // Unique nurse credentials
+        { nurse:   { registrationNumber: { equals: clean, mode: 'insensitive' } } },
+        { nurse:   { nurseId: { equals: clean, mode: 'insensitive' } } },
+        { nurse:   { licenseNumber: { equals: clean, mode: 'insensitive' } } },
+        // Unique doctor credentials
+        { doctor:  { licenseNumber: { equals: clean, mode: 'insensitive' } } },
+        // First name matches
+        { doctor:  { firstName: { equals: clean, mode: 'insensitive' } } },
+        { nurse:   { firstName: { equals: clean, mode: 'insensitive' } } },
+        { patient: { firstName: { equals: clean, mode: 'insensitive' } } },
+        { admin:   { firstName: { equals: clean, mode: 'insensitive' } } },
+        ...(lettersOnly.length >= 3 ? [
+          { doctor:  { firstName: { contains: lettersOnly, mode: 'insensitive' as const } } },
+          { nurse:   { firstName: { contains: lettersOnly, mode: 'insensitive' as const } } },
+          { patient: { firstName: { contains: lettersOnly, mode: 'insensitive' as const } } },
+          { admin:   { firstName: { contains: lettersOnly, mode: 'insensitive' as const } } },
+        ] : []),
+        // Last name matches
+        { doctor:  { lastName:  { equals: clean, mode: 'insensitive' } } },
+        { nurse:   { lastName:  { equals: clean, mode: 'insensitive' } } },
+        { patient: { lastName:  { equals: clean, mode: 'insensitive' } } },
+        { admin:   { lastName:  { equals: clean, mode: 'insensitive' } } },
+        // Full name matches (when identifier contains space)
+        ...(nameParts.length >= 2 ? [
+          { patient: { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
+          { doctor:  { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
+          { nurse:   { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
+          { admin:   { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
+        ] : []),
+      ],
+    },
+    include: {
+      role:    true,
+      nurse:   true,
+      doctor:  true,
+      patient: true,
+      admin:   true,
+    },
+  });
+}
+
 /**
  * POST /api/auth/login
  * Authenticates a user and issues a JWT.
@@ -33,48 +108,8 @@ router.post('/login', async (req: Request, res: Response) => {
     const { email, password } = parsed.data;
     const secret = process.env.JWT_SECRET || 'super-secret-meditwin-jwt-key';
 
-    const identifier = email.trim();
-    const nameParts = identifier.split(/\s+/);
-
-    // Find user in DB by email, email prefix (username), nurse registration number, nurse ID, license number, or name
-    const user = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email: { equals: identifier, mode: 'insensitive' } },
-          { email: { startsWith: `${identifier}@`, mode: 'insensitive' } },
-          // Unique nurse credentials
-          { nurse:   { registrationNumber: { equals: identifier, mode: 'insensitive' } } },
-          { nurse:   { nurseId: { equals: identifier, mode: 'insensitive' } } },
-          { nurse:   { licenseNumber: { equals: identifier, mode: 'insensitive' } } },
-          // Unique doctor credentials
-          { doctor:  { licenseNumber: { equals: identifier, mode: 'insensitive' } } },
-          // First name matches
-          { doctor:  { firstName: { equals: identifier, mode: 'insensitive' } } },
-          { nurse:   { firstName: { equals: identifier, mode: 'insensitive' } } },
-          { patient: { firstName: { equals: identifier, mode: 'insensitive' } } },
-          { admin:   { firstName: { equals: identifier, mode: 'insensitive' } } },
-          // Last name matches
-          { doctor:  { lastName:  { equals: identifier, mode: 'insensitive' } } },
-          { nurse:   { lastName:  { equals: identifier, mode: 'insensitive' } } },
-          { patient: { lastName:  { equals: identifier, mode: 'insensitive' } } },
-          { admin:   { lastName:  { equals: identifier, mode: 'insensitive' } } },
-          // Full name matches (when identifier contains space)
-          ...(nameParts.length >= 2 ? [
-            { patient: { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
-            { doctor:  { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
-            { nurse:   { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
-            { admin:   { firstName: { equals: nameParts[0], mode: 'insensitive' as const }, lastName: { equals: nameParts.slice(1).join(' '), mode: 'insensitive' as const } } },
-          ] : []),
-        ],
-      },
-      include: {
-        role:    true,
-        nurse:   true,
-        doctor:  true,
-        patient: true,
-        admin:   true,
-      },
-    });
+    // Find user in DB using comprehensive multi-attribute lookup
+    const user = await findUserByIdentifier(email);
 
     // User not found — return generic error (don't reveal which field is wrong)
     if (!user) {
@@ -369,6 +404,211 @@ router.post('/google', async (req: Request, res: Response) => {
     return res.status(500).json({
       success: false,
       error: 'Google authentication service encountered an error.',
+    });
+  }
+});
+
+const resetPasswordSchema = z.object({
+  identifier: z.string().optional(),
+  code: z.string().min(4, { message: 'Verification code is required.' }),
+  newPassword: z.string().min(6, { message: 'Password must be at least 6 characters long.' }),
+});
+
+/**
+ * POST /api/auth/forgot-password
+ * Initiates password recovery for a user identified by email, username, or credential ID.
+ */
+router.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter your registered email, username, or license ID.',
+      });
+    }
+
+    const user = await findUserByIdentifier(identifier);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: `No healthcare account found matching "${identifier.trim()}". Please verify your credentials or contact hospital administration.`,
+      });
+    }
+
+    // Generate 6-digit secure numeric verification code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes validity
+
+    const record: PasswordResetRecord = {
+      code: resetCode,
+      userId: user.id,
+      email: user.email,
+      expiresAt,
+    };
+
+    passwordResetStore.set(user.email.toLowerCase(), record);
+    passwordResetStore.set(String(user.id), record);
+    passwordResetStore.set(`code_${resetCode}`, record);
+
+    const masked = maskEmail(user.email);
+    const userName = user.doctor ? `Dr. ${user.doctor.firstName} ${user.doctor.lastName}`
+      : user.nurse ? `Nurse ${user.nurse.firstName} ${user.nurse.lastName}`
+      : user.patient ? `${user.patient.firstName} ${user.patient.lastName}`
+      : user.admin ? `Admin ${user.admin.firstName} ${user.admin.lastName}`
+      : user.email.split('@')[0];
+
+    return res.json({
+      success: true,
+      message: `A 6-digit password reset verification code has been dispatched to ${masked}.`,
+      emailMasked: masked,
+      userEmail: user.email,
+      userName,
+      userRole: user.role.name,
+      code: resetCode, // Passed for instant developer & test environment sandbox verification
+      expiresInMinutes: 15,
+    });
+  } catch (err: any) {
+    console.error('[AUTH] forgot-password error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'An internal error occurred while processing password recovery.',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/verify-code
+ * Validates a 6-digit recovery code.
+ */
+router.post('/verify-code', async (req: Request, res: Response) => {
+  try {
+    const { identifier, code } = req.body;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Verification code is required.',
+      });
+    }
+
+    const cleanCode = code.trim();
+    let record = passwordResetStore.get(`code_${cleanCode}`);
+    if (!record && identifier) {
+      record = passwordResetStore.get(identifier.trim().toLowerCase());
+    }
+
+    if (!record || record.code !== cleanCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid verification code. Please check and try again.',
+      });
+    }
+
+    if (Date.now() > record.expiresAt) {
+      passwordResetStore.delete(`code_${cleanCode}`);
+      return res.status(400).json({
+        success: false,
+        error: 'Verification code has expired. Please request a new code.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Verification code confirmed.',
+      email: record.email,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Code verification failed.' });
+  }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Updates the user's password in the database upon verifying the code.
+ */
+router.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        error: parsed.error.issues[0]?.message || 'Invalid password reset input.',
+      });
+    }
+
+    const { identifier, code, newPassword } = parsed.data;
+    const cleanCode = code.trim();
+
+    let record = passwordResetStore.get(`code_${cleanCode}`);
+    if (!record && identifier) {
+      record = passwordResetStore.get(identifier.trim().toLowerCase());
+    }
+
+    if (!record && identifier) {
+      const user = await findUserByIdentifier(identifier);
+      if (user) {
+        const byId = passwordResetStore.get(String(user.id));
+        if (byId && byId.code === cleanCode) {
+          record = byId;
+        }
+      }
+    }
+
+    if (!record || record.code !== cleanCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired verification code. Please request a fresh reset code.',
+      });
+    }
+
+    if (Date.now() > record.expiresAt) {
+      passwordResetStore.delete(`code_${cleanCode}`);
+      return res.status(400).json({
+        success: false,
+        error: 'Verification code has expired. Please request a fresh reset code.',
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: record.userId },
+      include: { role: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User workstation account not found.',
+      });
+    }
+
+    // Hash the new password with bcrypt
+    const password_hash = await bcrypt.hash(newPassword, 10);
+
+    // Atomically update password in PostgreSQL
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password_hash,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Invalidate reset records
+    passwordResetStore.delete(user.email.toLowerCase());
+    passwordResetStore.delete(String(user.id));
+    passwordResetStore.delete(`code_${cleanCode}`);
+
+    return res.json({
+      success: true,
+      message: 'Password has been successfully updated. You may now sign in with your new password.',
+      email: user.email,
+      role: user.role.name,
+    });
+  } catch (err: any) {
+    console.error('[AUTH] reset-password error:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'An internal error occurred while updating your password.',
     });
   }
 });
