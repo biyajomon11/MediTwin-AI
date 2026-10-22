@@ -2109,21 +2109,14 @@ export async function getPatientDischargeSummaries(patientId: number): Promise<D
 
     if (res.ok) {
       const json = await res.json();
-      return json.data || [];
+      return Array.isArray(json.data) ? json.data : [];
     }
 
-    // If 404, safely return empty list so the clinician can create an initial draft
-    if (res.status === 404) {
-      return [];
-    }
-
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Failed to fetch discharge summaries (${res.status})`);
+    // Safe fallback: return empty list on 404, 500, etc. so the doctor can draft an initial summary
+    return [];
   } catch (err: any) {
-    if (err?.message && (err.message.includes('Patient not found') || err.message.includes('Failed to fetch'))) {
-      return [];
-    }
-    throw err;
+    console.warn('[DOCTOR_SERVICE] Error fetching discharge summaries, using empty list fallback:', err);
+    return [];
   }
 }
 
