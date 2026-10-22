@@ -11,6 +11,10 @@ import {
   AlertTriangle,
   HeartPulse,
   CheckCircle2,
+  ArrowRightLeft,
+  LogOut,
+  FileText,
+  Pill,
 } from 'lucide-react';
 import type {
   InpatientAdmissionRecord,
@@ -104,7 +108,7 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
     fetchData();
   };
 
-  // Alphabetically Sorted & Filtered Admissions List
+  // Continuous Alphabetically Sorted (A–Z) & Filtered Admissions List
   const sortedAdmissions = useMemo(() => {
     const filtered = admissions.filter((adm) => {
       // Search by patient name, patient code, admission number, diagnosis
@@ -156,25 +160,13 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
     );
   }, [admissions, searchTerm, selectedWard, selectedStatus, selectedAcuity, dateFilter]);
 
-  // Group admissions by first letter for clear alphabetical arrangement
-  const groupedAdmissions = useMemo(() => {
-    const map = new Map<string, InpatientAdmissionRecord[]>();
-    sortedAdmissions.forEach((adm) => {
-      const letter = (adm.patientName || 'A').trim().charAt(0).toUpperCase();
-      const key = letter >= 'A' && letter <= 'Z' ? letter : '#';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(adm);
-    });
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [sortedAdmissions]);
-
-  // Handle Admission Created
+  // Handle Admission Created (automatically re-sorts alphabetically via useMemo)
   const handleAdmissionSuccess = (newAdmission: InpatientAdmissionRecord) => {
-    setAdmissions((prev) => [newAdmission, ...prev.filter((a) => a.id !== newAdmission.id)]);
+    setAdmissions((prev) => [...prev.filter((a) => a.id !== newAdmission.id), newAdmission]);
     setIsAdmitModalOpen(false);
   };
 
-  // Handle Transfer Success
+  // Handle Transfer Success (automatically re-sorts and updates in alphabetical order)
   const handleTransferSuccess = (updatedAdmission: InpatientAdmissionRecord) => {
     setAdmissions((prev) =>
       prev.map((a) => (a.id === updatedAdmission.id ? updatedAdmission : a))
@@ -241,7 +233,7 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
     );
   }
 
-  // ── Render Alphabetical Inpatient Directory ───────────────────
+  // ── Render Continuous Alphabetical Inpatient Directory ───────────
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto animate-fadeIn">
       {/* Top Header */}
@@ -252,11 +244,11 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
               Inpatient Management
             </h1>
             <span className="px-2.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30 text-xs font-semibold">
-              Live Directory
+              Alphabetical Roster
             </span>
           </div>
           <p className="text-xs sm:text-sm text-gray-400 mt-1">
-            Alphabetical Inpatient Roster • Real-time bed occupancy, admissions & clinical status
+            Real-time bed occupancy, admissions & clinical status sorted alphabetically by patient name (A–Z)
           </p>
         </div>
 
@@ -442,7 +434,7 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
         <div className="flex items-center justify-between text-xs text-gray-400 pt-1">
           <span>
             Showing <strong className="text-white">{sortedAdmissions.length}</strong> of{' '}
-            <strong className="text-white">{admissions.length}</strong> inpatients arranged alphabetically
+            <strong className="text-white">{admissions.length}</strong> recorded inpatient admissions (Alphabetical A–Z)
           </span>
           {(searchTerm || selectedWard !== 'ALL' || selectedStatus !== 'ALL' || selectedAcuity !== 'ALL' || dateFilter !== 'ALL') && (
             <button
@@ -461,7 +453,7 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
         </div>
       </div>
 
-      {/* Alphabetical Inpatient Registry Table */}
+      {/* Continuous Alphabetical Inpatient Registry Table */}
       <div className="rounded-2xl bg-gradient-to-b from-navy-900 to-navy-950 border border-white/10 shadow-xl overflow-hidden">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-center text-gray-400">
@@ -496,118 +488,205 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
             <table className="w-full text-left text-xs">
               <thead className="bg-navy-950/80 text-[11px] font-semibold text-gray-400 uppercase tracking-wider border-b border-white/10">
                 <tr>
-                  <th className="py-3.5 px-4 text-left">Inpatient Name</th>
-                  <th className="py-3.5 px-4 text-left">Admission Number</th>
-                  <th className="py-3.5 px-4 text-left">Ward & Bed</th>
-                  <th className="py-3.5 px-4 text-left">Status</th>
-                  <th className="py-3.5 px-4 text-right">Inpatient Details</th>
+                  <th className="py-3.5 px-4">Patient / ID</th>
+                  <th className="py-3.5 px-4">Admission #</th>
+                  <th className="py-3.5 px-4">Ward & Bed</th>
+                  <th className="py-3.5 px-4">Admitted At</th>
+                  <th className="py-3.5 px-4">Diagnosis & Chief Complaint</th>
+                  <th className="py-3.5 px-4">Acuity</th>
+                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4 text-right">Clinical Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {groupedAdmissions.map(([letter, groupList]) => (
-                  <React.Fragment key={letter}>
-                    {/* Alphabetical Letter Group Header Row */}
-                    <tr className="bg-navy-950/90 border-y border-white/10">
-                      <td colSpan={5} className="py-2.5 px-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-6 h-6 rounded-lg bg-accent text-navy-950 font-black text-xs flex items-center justify-center shadow-sm">
-                              {letter}
-                            </span>
-                            <span className="text-xs font-bold text-white tracking-wide">
-                              Letter {letter}
-                            </span>
-                            <span className="text-[11px] text-gray-400 font-normal">
-                              ({groupList.length} {groupList.length === 1 ? 'patient' : 'patients'})
-                            </span>
+                {sortedAdmissions.map((adm) => {
+                  const isDischarged = adm.admissionStatus === 'DISCHARGED';
+                  return (
+                    <tr
+                      key={adm.id}
+                      onClick={() => setViewingAdmission(adm)}
+                      className="hover:bg-white/[0.03] transition-colors group cursor-pointer"
+                    >
+                      {/* Patient Name & Demographics */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center text-accent font-bold text-xs flex-shrink-0 group-hover:scale-105 transition-transform shadow-inner">
+                            {(adm.patientName || 'PT').slice(0, 2).toUpperCase()}
                           </div>
-                          <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">
-                            Alphabetical Section
-                          </span>
+                          <div>
+                            <div className="font-bold text-white text-xs hover:text-accent transition-colors flex items-center gap-1.5">
+                              <span>{adm.patientName}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-400 mt-0.5">
+                              <span className="font-mono text-gray-400">{adm.patientCode || `PT-${adm.patientId}`}</span> •{' '}
+                              <span>{adm.gender}</span>, {adm.age}y
+                            </div>
+                          </div>
                         </div>
                       </td>
-                    </tr>
 
-                    {/* Inpatients under this Letter */}
-                    {groupList.map((adm) => {
-                      return (
-                        <tr
-                          key={adm.id}
-                          onClick={() => setViewingAdmission(adm)}
-                          className="hover:bg-white/[0.03] transition-colors group cursor-pointer"
-                        >
-                          {/* Patient Name & Demographics */}
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center text-accent font-bold text-xs flex-shrink-0 group-hover:scale-105 transition-transform shadow-inner">
-                                {(adm.patientName || 'PT').slice(0, 2).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-bold text-white text-sm group-hover:text-accent transition-colors flex items-center gap-2">
-                                  <span>{adm.patientName}</span>
-                                </div>
-                                <div className="text-[11px] text-gray-400 mt-0.5">
-                                  <span className="font-mono text-gray-400">{adm.patientCode || `PT-${adm.patientId}`}</span> •{' '}
-                                  <span>{adm.gender}</span>, {adm.age}y • Blood: <span className="text-accent font-medium">{adm.bloodGroup || 'O+'}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
+                      {/* Admission Number */}
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-white/[0.05] border border-white/10 text-gray-200 inline-block">
+                          {adm.admissionNumber}
+                        </span>
+                        <span className="text-[10px] text-gray-500 block mt-0.5">
+                          {adm.doctorName ? `by ${adm.doctorName}` : 'Attending MD'}
+                        </span>
+                      </td>
 
-                          {/* Admission Number */}
-                          <td className="py-3.5 px-4">
-                            <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-md bg-white/[0.06] border border-white/15 text-white tracking-wider inline-block">
-                              {adm.admissionNumber}
-                            </span>
-                            <span className="text-[11px] text-gray-400 block mt-1">
-                              Admitted {adm.admissionDateTime ? new Date(adm.admissionDateTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent'}
-                            </span>
-                          </td>
+                      {/* Ward & Bed */}
+                      <td className="py-3.5 px-4">
+                        <div className="font-semibold text-white flex items-center gap-1.5">
+                          <Building2 className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                          <span>{adm.wardName}</span>
+                        </div>
+                        <div className="text-[11px] text-accent font-mono flex items-center gap-1 mt-0.5">
+                          <Bed className="w-3 h-3 text-accent" />
+                          <span>{adm.bedNumber}</span>
+                        </div>
+                      </td>
 
-                          {/* Ward & Bed */}
-                          <td className="py-3.5 px-4">
-                            <div className="font-semibold text-white flex items-center gap-1.5 text-xs">
-                              <Building2 className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                              <span>{adm.wardName}</span>
-                            </div>
-                            <div className="text-[11px] text-accent font-mono flex items-center gap-1 mt-0.5 font-semibold">
-                              <Bed className="w-3 h-3 text-accent" />
-                              <span>{adm.bedNumber}</span>
-                            </div>
-                          </td>
+                      {/* Admission Date/Time */}
+                      <td className="py-3.5 px-4">
+                        <div className="text-gray-300 font-medium">
+                          {adm.admissionDateTime
+                            ? new Date(adm.admissionDateTime).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })
+                            : 'Recent'}
+                        </div>
+                        <div className="text-[10px] text-gray-500 font-mono">
+                          {adm.admissionDateTime
+                            ? new Date(adm.admissionDateTime).toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : ''}
+                        </div>
+                      </td>
 
-                          {/* Status & Acuity */}
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${getStatusBadge(adm.admissionStatus)}`}>
-                                {adm.admissionStatus === 'UNDER_OBSERVATION' ? 'Observation' : adm.admissionStatus}
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getAcuityBadge(adm.acuityLevel)}`}>
-                                {adm.acuityLevel}
-                              </span>
-                            </div>
-                          </td>
+                      {/* Diagnosis & Chief Complaint */}
+                      <td className="py-3.5 px-4 max-w-xs">
+                        <div className="font-medium text-white truncate" title={adm.admissionDiagnosis}>
+                          {adm.admissionDiagnosis}
+                        </div>
+                        <div className="text-[11px] text-gray-400 truncate mt-0.5" title={adm.chiefComplaint}>
+                          {adm.chiefComplaint}
+                        </div>
+                      </td>
 
-                          {/* View Icon Action */}
-                          <td className="py-3.5 px-4 text-right">
+                      {/* Acuity Level */}
+                      <td className="py-3.5 px-4">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getAcuityBadge(adm.acuityLevel)}`}>
+                          {adm.acuityLevel}
+                        </span>
+                      </td>
+
+                      {/* Admission Status */}
+                      <td className="py-3.5 px-4">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getStatusBadge(adm.admissionStatus)}`}>
+                          {adm.admissionStatus === 'UNDER_OBSERVATION' ? 'Observation' : adm.admissionStatus}
+                        </span>
+                      </td>
+
+                      {/* Clinical Actions */}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* View Details / Full Inpatient File */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setViewingAdmission(adm);
+                            }}
+                            className="p-1.5 rounded-lg text-accent hover:text-navy-950 hover:bg-accent bg-accent/15 border border-accent/30 transition-all cursor-pointer"
+                            title="View Whole Inpatient Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
+                          {/* Patient Chart / Medical Record */}
+                          {onNavigateToPatient && (
                             <button
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setViewingAdmission(adm);
+                                onNavigateToPatient(adm.patientId, 'overview');
                               }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-accent/15 hover:bg-accent text-accent hover:text-navy-950 font-bold text-xs transition-all border border-accent/30 shadow-sm cursor-pointer group-hover:bg-accent group-hover:text-navy-950"
-                              title="View Whole Inpatient Details"
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-accent hover:bg-white/10 transition-colors cursor-pointer"
+                              title="Open Patient Medical Record"
                             >
-                              <Eye className="w-4 h-4" />
-                              <span>View</span>
+                              <FileText className="w-4 h-4" />
                             </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
+                          )}
+
+                          {/* Vitals / Labs */}
+                          {onNavigateToPatient && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToPatient(adm.patientId, 'labs');
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-300 hover:bg-white/10 transition-colors cursor-pointer"
+                              title="View Observations & Vitals"
+                            >
+                              <HeartPulse className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Prescriptions */}
+                          {onNavigateToPatient && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToPatient(adm.patientId, 'prescriptions');
+                              }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-primary-light hover:bg-white/10 transition-colors cursor-pointer"
+                              title="View Prescriptions"
+                            >
+                              <Pill className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Transfer Bed */}
+                          {!isDischarged && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedAdmissionForTransfer(adm);
+                              }}
+                              className="p-1.5 rounded-lg text-amber-400 hover:text-amber-200 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                              title="Transfer to Another Bed / Ward"
+                            >
+                              <ArrowRightLeft className="w-4 h-4" />
+                            </button>
+                          )}
+
+                          {/* Start Discharge Workflow */}
+                          {!isDischarged && onNavigateToPatient && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToPatient(adm.patientId, 'discharge-summary');
+                              }}
+                              className="p-1.5 rounded-lg text-emerald-400 hover:text-emerald-200 hover:bg-emerald-500/10 transition-colors cursor-pointer"
+                              title="Initiate Discharge Summary Workflow"
+                            >
+                              <LogOut className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
