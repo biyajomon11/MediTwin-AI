@@ -279,7 +279,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <p className="text-xs text-gray-300">Setting up your secure MediTwin workstation...</p>
             </motion.div>
           ) : (
-            <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-left">
+            <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-left" autoComplete="off">
+              {/* Decoy fields to trap browser credential autofill */}
+              <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, overflow: 'hidden', zIndex: -1 }} aria-hidden="true">
+                <input type="text" name="fake_username_prevent_autofill" tabIndex={-1} autoComplete="username" />
+                <input type="password" name="fake_password_prevent_autofill" tabIndex={-1} autoComplete="current-password" />
+              </div>
               {/* Role Picker */}
               <div>
                 <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider mb-2">
@@ -418,6 +423,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
+                  autoComplete="new-password"
                   required
                 />
 
@@ -426,6 +432,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••••••"
+                  autoComplete="new-password"
                   error={password && confirmPassword && password !== confirmPassword ? 'Passwords do not match' : undefined}
                   required
                 />

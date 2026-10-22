@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -77,6 +77,24 @@ export const PatientRegisterPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Clear any credentials forcefully auto-injected by browser/password-managers on initial mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setForm((prev) => {
+        if (
+          (prev.username || prev.password || prev.confirmPassword) &&
+          !touched.username &&
+          !touched.password &&
+          !touched.confirmPassword
+        ) {
+          return { ...prev, username: '', password: '', confirmPassword: '' };
+        }
+        return prev;
+      });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -487,7 +505,12 @@ export const PatientRegisterPage: React.FC = () => {
               </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-8" noValidate>
+            <form onSubmit={handleSubmit} className="space-y-8" noValidate autoComplete="off">
+              {/* Decoy fields to trap browser credential autofill */}
+              <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, overflow: 'hidden', zIndex: -1 }} aria-hidden="true">
+                <input type="text" name="fake_username_prevent_autofill" tabIndex={-1} autoComplete="username" />
+                <input type="password" name="fake_password_prevent_autofill" tabIndex={-1} autoComplete="current-password" />
+              </div>
               
               {/* ================================================== */}
               {/* SECTION 1 — PERSONAL INFORMATION                   */}
@@ -946,6 +969,12 @@ export const PatientRegisterPage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Local decoy inputs to intercept password manager heuristic scans */}
+                <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, overflow: 'hidden', zIndex: -1 }} aria-hidden="true">
+                  <input type="text" name="fake_credentials_user" tabIndex={-1} autoComplete="username" />
+                  <input type="password" name="fake_credentials_pass" tabIndex={-1} autoComplete="current-password" />
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {/* Username */}
                   <div className="space-y-1.5 md:col-span-2">
@@ -956,6 +985,7 @@ export const PatientRegisterPage: React.FC = () => {
                       <input
                         type="text"
                         name="username"
+                        autoComplete="off"
                         value={form.username}
                         onChange={handleChange}
                         onBlur={() => handleBlur('username')}
@@ -988,6 +1018,7 @@ export const PatientRegisterPage: React.FC = () => {
                       <input
                         type={showPassword ? 'text' : 'password'}
                         name="password"
+                        autoComplete="new-password"
                         value={form.password}
                         onChange={handleChange}
                         onBlur={() => handleBlur('password')}
@@ -1024,6 +1055,7 @@ export const PatientRegisterPage: React.FC = () => {
                       <input
                         type={showConfirmPassword ? 'text' : 'password'}
                         name="confirmPassword"
+                        autoComplete="new-password"
                         value={form.confirmPassword}
                         onChange={handleChange}
                         onBlur={() => handleBlur('confirmPassword')}

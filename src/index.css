@@ -10,6 +10,17 @@
     color: #F8FAFC;
     font-family: 'Inter', sans-serif;
   }
+
+  /* Prevent browser autofill from turning inputs light blue with black text */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #0F172A inset !important;
+    -webkit-text-fill-color: #F8FAFC !important;
+    caret-color: #F8FAFC !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
 }
 
 /* Glassmorphism Utility Classes */
@@ -64,12 +75,14 @@
 .gradient-text {
   background: linear-gradient(135deg, #FFFFFF 0%, #93C5FD 50%, #38BDF8 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 .gradient-text-accent {
   background: linear-gradient(135deg, #38BDF8 0%, #60A5FA 50%, #818CF8 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 

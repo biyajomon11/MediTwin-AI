@@ -558,6 +558,7 @@ export const AdminProfilePage: React.FC<AdminProfilePageProps> = ({ onLogout }) 
                 <input
                   type={showCurrentPw ? 'text' : 'password'}
                   value={currentPassword}
+                  autoComplete="current-password"
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="Enter current password"
                   className="w-full bg-navy-950/80 border border-white/10 rounded-xl px-3 py-2 text-white pr-9 focus:outline-none focus:border-accent text-xs"
@@ -579,6 +580,7 @@ export const AdminProfilePage: React.FC<AdminProfilePageProps> = ({ onLogout }) 
                 <input
                   type={showNewPw ? 'text' : 'password'}
                   value={newPassword}
+                  autoComplete="new-password"
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="At least 8 characters"
                   className="w-full bg-navy-950/80 border border-white/10 rounded-xl px-3 py-2 text-white pr-9 focus:outline-none focus:border-accent text-xs"
@@ -600,6 +602,7 @@ export const AdminProfilePage: React.FC<AdminProfilePageProps> = ({ onLogout }) 
                 <input
                   type={showConfirmPw ? 'text' : 'password'}
                   value={confirmPassword}
+                  autoComplete="new-password"
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat new password"
                   className="w-full bg-navy-950/80 border border-white/10 rounded-xl px-3 py-2 text-white pr-9 focus:outline-none focus:border-accent text-xs"

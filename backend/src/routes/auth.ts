@@ -128,11 +128,19 @@ router.post('/login', async (req: Request, res: Response) => {
       });
     }
 
+    const effectiveRole = user.doctor
+      ? 'doctor'
+      : user.nurse
+      ? 'nurse'
+      : user.admin
+      ? 'admin'
+      : user.role.name;
+
     const token = jwt.sign(
       {
         userId:             user.id,
         email:              user.email,
-        role:               user.role.name,
+        role:               effectiveRole,
         nurseId:            user.nurse?.id,
         nurseCode:          user.nurse?.nurseId,
         registrationNumber: user.nurse?.registrationNumber,
@@ -151,7 +159,7 @@ router.post('/login', async (req: Request, res: Response) => {
       user: {
         userId:             user.id,
         email:              user.email,
-        role:               user.role.name,
+        role:               effectiveRole,
         firstName:          user.patient?.firstName || user.doctor?.firstName || user.nurse?.firstName || user.admin?.firstName || '',
         lastName:           user.patient?.lastName || user.doctor?.lastName || user.nurse?.lastName || user.admin?.lastName || '',
         nurseId:            user.nurse?.id ?? null,

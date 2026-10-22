@@ -482,6 +482,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={newPassword}
+                  autoComplete="new-password"
                   onChange={(e) => {
                     setNewPassword(e.target.value);
                     if (error) setError(null);
@@ -512,6 +513,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
                 <input
                   type={showConfirmPassword ? 'text' : 'password'}
                   value={confirmPassword}
+                  autoComplete="new-password"
                   onChange={(e) => {
                     setConfirmPassword(e.target.value);
                     if (error) setError(null);

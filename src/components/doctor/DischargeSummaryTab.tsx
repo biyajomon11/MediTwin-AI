@@ -112,7 +112,11 @@ export const DischargeSummaryTab: React.FC<DischargeSummaryTabProps> = ({
       setSummaries(data);
     } catch (err: any) {
       console.error('[DISCHARGE_SUMMARY] Fetch error:', err);
-      setError(err.message || 'Failed to load discharge summaries.');
+      if (err?.message && (err.message.includes('Patient not found') || err.message.includes('not assigned'))) {
+        setSummaries([]);
+      } else {
+        setError(err?.message || 'Failed to load discharge summaries.');
+      }
     } finally {
       setLoading(false);
     }

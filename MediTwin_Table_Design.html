@@ -1,0 +1,2351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>4.5 TABLE DESIGN - MediTwin AI</title>
+<style>
+  @page {
+    size: A4;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+
+  body {
+    font-family: 'Times New Roman', Times, serif;
+    color: #000;
+    line-height: 1.4;
+    margin: 0;
+    padding: 24px 30px;
+    background: #fff;
+  }
+
+  .page-top-rule {
+    border-top: 1.5px solid #000;
+    margin-bottom: 14px;
+  }
+
+  h1.section-title {
+    font-size: 15pt;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-top: 0;
+    margin-bottom: 24px;
+    letter-spacing: 0.5px;
+  }
+
+  .table-container {
+    page-break-inside: avoid;
+    margin-bottom: 30px;
+  }
+
+  .table-title {
+    font-size: 12pt;
+    font-weight: bold;
+    margin: 0 0 10px 0;
+  }
+
+  .key-info {
+    font-size: 11pt;
+    margin: 8px 0;
+  }
+
+  .key-info strong {
+    font-weight: bold;
+  }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 10pt;
+    border: 1.5px solid #000;
+  }
+
+  table.data-table th, table.data-table td {
+    border: 1px solid #000;
+    padding: 7px 8px;
+    vertical-align: middle;
+    text-align: center;
+  }
+
+  table.data-table th {
+    background-color: #fff;
+    font-weight: bold;
+    font-size: 10pt;
+  }
+
+  .col-no {
+    width: 6%;
+  }
+
+  .col-name {
+    width: 22%;
+  }
+
+  .col-datatype {
+    width: 17%;
+  }
+
+  .col-constraints {
+    width: 24%;
+  }
+
+  .col-desc {
+    width: 31%;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-top-rule"></div>
+<h1 class="section-title">4.5 TABLE DESIGN</h1>
+
+
+<div class="table-container">
+  <div class="table-title">1.tbl_login</div>
+  <div class="key-info">Primary key: <strong>login_id</strong></div>
+  <div class="key-info">Foreign key: <strong>user_id</strong> references table <strong>tbl_user</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">login_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for login.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">email</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">User's registered email address for login authentication.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">password</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Securely hashed password string (bcrypt).</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">status</td>
+        <td class="col-datatype">Enum</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Used to identify the user is Active, Inactive, or Suspended.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key</td>
+        <td class="col-desc">References id of tbl_user.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">role</td>
+        <td class="col-datatype">Enum</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Used to identify the user is an admin, doctor, nurse, or patient.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">2.tbl_user</div>
+  <div class="key-info">Primary key: <strong>user_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique Identifier for users.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">User's full name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">phone_no</td>
+        <td class="col-datatype">Varchar(15)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">User's primary contact phone number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">created_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Timestamp when the user account was registered.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">updated_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Timestamp when the user account was last updated.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">3.tbl_role</div>
+  <div class="key-info">Primary key: <strong>role_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">role_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for system access roles.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">role_name</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Role classification (admin, doctor, nurse, patient).</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">description</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Detailed summary of role capabilities and permissions.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">4.tbl_gender</div>
+  <div class="key-info">Primary key: <strong>gender_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">gender_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for standardized gender.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">gender_name</td>
+        <td class="col-datatype">Varchar(20)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Gender classification (Male, Female, Other, Prefer not to say).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">5.tbl_blood_group</div>
+  <div class="key-info">Primary key: <strong>blood_group_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">blood_group_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for blood group type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">blood_group_name</td>
+        <td class="col-datatype">Varchar(10)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Standard clinical blood group label (A+, A-, B+, B-, AB+, AB-, O+, O-).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">6.tbl_department</div>
+  <div class="key-info">Primary key: <strong>department_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">department_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for hospital department.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">department_name</td>
+        <td class="col-datatype">Varchar(150)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Department title (Cardiology, Neurology, Pediatrics, Orthopedics, ICU).</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">description</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Summary of medical services and clinical focus of the department.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">7.tbl_specialization</div>
+  <div class="key-info">Primary key: <strong>specialization_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">specialization_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for medical specialization.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">specialization_name</td>
+        <td class="col-datatype">Varchar(150)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Name of clinical specialty (General Medicine, Cardiology, Neurology, etc.).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">8.tbl_doctor</div>
+  <div class="key-info">Primary key: <strong>doctor_id</strong></div>
+  <div class="key-info">Foreign key: <strong>user_id</strong> references table <strong>tbl_user</strong>, <strong>specialization_id</strong> references table <strong>tbl_specialization</strong>, <strong>department_id</strong> references table <strong>tbl_department</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">doctor_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for doctor profile.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Unique, Not Null</td>
+        <td class="col-desc">References user_id of tbl_user.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">first_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Doctor's first name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">last_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Doctor's last name or surname.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">specialization_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References specialization_id of tbl_specialization.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">department_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References department_id of tbl_department.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">license_number</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Official state/national medical practitioner council registration number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">phone</td>
+        <td class="col-datatype">Varchar(20)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Doctor's direct professional telephone number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">years_of_experience</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Total number of years practicing clinical medicine.</td>
+      </tr>
+      <tr>
+        <td class="col-no">10</td>
+        <td class="col-name">created_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Record registration timestamp.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">9.tbl_nurse</div>
+  <div class="key-info">Primary key: <strong>nurse_id</strong></div>
+  <div class="key-info">Foreign key: <strong>user_id</strong> references table <strong>tbl_user</strong>, <strong>department_id</strong> references table <strong>tbl_department</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">nurse_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for nurse record.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Unique, Not Null</td>
+        <td class="col-desc">References user_id of tbl_user.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">first_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Nurse's first name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">last_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Nurse's last name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">department_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References department_id of tbl_department.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">license_number</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Nursing council official license number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">nurse_code</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Internal hospital employee badge identification code.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">registration_number</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Registered Nurse (RN) statutory credential number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">assigned_ward</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Hospital inpatient ward or nursing station assigned for duties.</td>
+      </tr>
+      <tr>
+        <td class="col-no">10</td>
+        <td class="col-name">phone</td>
+        <td class="col-datatype">Varchar(20)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Nurse's contact telephone number.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">10.tbl_admin</div>
+  <div class="key-info">Primary key: <strong>admin_id</strong></div>
+  <div class="key-info">Foreign key: <strong>user_id</strong> references table <strong>tbl_user</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">admin_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for administrator record.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Unique, Not Null</td>
+        <td class="col-desc">References user_id of tbl_user.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">first_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Administrator's first name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">last_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Administrator's last name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">phone</td>
+        <td class="col-datatype">Varchar(20)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Administrator's direct telephone contact number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">created_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Administrative account registration timestamp.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">11.tbl_patient</div>
+  <div class="key-info">Primary key: <strong>patient_id</strong></div>
+  <div class="key-info">Foreign key: <strong>user_id</strong> references table <strong>tbl_user</strong>, <strong>gender_id</strong> references table <strong>tbl_gender</strong>, <strong>blood_group_id</strong> references table <strong>tbl_blood_group</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for patient health profile.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Unique, Not Null</td>
+        <td class="col-desc">References user_id of tbl_user.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">first_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Patient's given first name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">last_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Patient's family name or surname.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">date_of_birth</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Legal calendar birth date used for age calculations.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">gender_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References gender_id of tbl_gender.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">blood_group_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References blood_group_id of tbl_blood_group.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">phone</td>
+        <td class="col-datatype">Varchar(20)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Patient contact telephone number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">address</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Residential street address.</td>
+      </tr>
+      <tr>
+        <td class="col-no">10</td>
+        <td class="col-name">city</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">City of residence.</td>
+      </tr>
+      <tr>
+        <td class="col-no">11</td>
+        <td class="col-name">state</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">State or administrative district.</td>
+      </tr>
+      <tr>
+        <td class="col-no">12</td>
+        <td class="col-name">emergency_contact_name</td>
+        <td class="col-datatype">Varchar(200)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Full name of appointed emergency contact person.</td>
+      </tr>
+      <tr>
+        <td class="col-no">13</td>
+        <td class="col-name">emergency_contact_phone</td>
+        <td class="col-datatype">Varchar(20)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Phone number of emergency contact.</td>
+      </tr>
+      <tr>
+        <td class="col-no">14</td>
+        <td class="col-name">admission_status</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Current hospital care status (Outpatient, Inpatient, Discharged).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">12.tbl_doctor_availability</div>
+  <div class="key-info">Primary key: <strong>availability_id</strong></div>
+  <div class="key-info">Foreign key: <strong>doctor_id</strong> references table <strong>tbl_doctor</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">availability_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for doctor schedule entry.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">doctor_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References doctor_id of tbl_doctor.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Calendar date for the clinical duty shift.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">status</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Duty roster state (AVAILABLE, ON_LEAVE, BUSY).</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">start_time</td>
+        <td class="col-datatype">Varchar(10)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Duty start time (e.g., 09:00).</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">end_time</td>
+        <td class="col-datatype">Varchar(10)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Duty end time (e.g., 17:00).</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">reason</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Stated justification if doctor is on leave or unavailable.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">13.tbl_appointment_status</div>
+  <div class="key-info">Primary key: <strong>status_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">status_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for appointment status.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Appointment state designation (scheduled, completed, cancelled, no_show).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">14.tbl_appointment</div>
+  <div class="key-info">Primary key: <strong>appointment_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>doctor_id</strong> references table <strong>tbl_doctor</strong>, <strong>status_id</strong> references table <strong>tbl_appointment_status</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">appointment_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for appointment booking.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">doctor_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References doctor_id of tbl_doctor.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">appointment_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Calendar date of scheduled clinical visit.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">appointment_time</td>
+        <td class="col-datatype">Time</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Time slot for clinical consultation.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">status_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References status_id of tbl_appointment_status.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">reason</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Primary medical complaint or reason for booking.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">notes</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Physician clinical findings, observations, or preparatory notes.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">15.tbl_medicine</div>
+  <div class="key-info">Primary key: <strong>medicine_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">medicine_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for pharmaceutical medicine.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Commercial brand name of the drug.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">generic_name</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Standard generic pharmaceutical salt composition name.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">category</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Drug classification (Antibiotic, Analgesic, Antipyretic, Antihypertensive).</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">unit</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Dispensation package unit (Tablet, Capsule, Syrup, Injection, Cream).</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">description</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Pharmacological overview, storage guidelines, and contraindications.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">16.tbl_prescription</div>
+  <div class="key-info">Primary key: <strong>prescription_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>doctor_id</strong> references table <strong>tbl_doctor</strong>, <strong>appointment_id</strong> references table <strong>tbl_appointment</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">prescription_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for medical prescription header.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">doctor_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References doctor_id of tbl_doctor.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">appointment_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Null</td>
+        <td class="col-desc">References appointment_id of tbl_appointment.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">diagnosis</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Clinical diagnostic conclusion determined by physician.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">notes</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Physician remarks, dietary suggestions, and recovery advice.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">prescribed_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Calendar date prescription was formally issued.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">valid_until</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Prescription validity or pharmacy dispensing expiration date.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">17.tbl_prescription_item</div>
+  <div class="key-info">Primary key: <strong>item_id</strong></div>
+  <div class="key-info">Foreign key: <strong>prescription_id</strong> references table <strong>tbl_prescription</strong>, <strong>medicine_id</strong> references table <strong>tbl_medicine</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">item_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for prescription line item.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">prescription_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References prescription_id of tbl_prescription.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">medicine_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References medicine_id of tbl_medicine.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">dosage</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Specific strength and dosage quantity (e.g., 500mg, 1 tablet).</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">frequency</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Schedule frequency (e.g., Once daily, 1-0-1, Every 8 hours).</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">duration_days</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Number of days the drug should be consumed.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">instructions</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Consumption instructions (e.g., Take after food with warm water).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">18.tbl_record_type</div>
+  <div class="key-info">Primary key: <strong>record_type_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">record_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for clinical record type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Record classification (consultation, lab_result, surgery, radiology, vaccination).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">19.tbl_medical_record</div>
+  <div class="key-info">Primary key: <strong>record_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>doctor_id</strong> references table <strong>tbl_doctor</strong>, <strong>appointment_id</strong> references table <strong>tbl_appointment</strong>, <strong>record_type_id</strong> references table <strong>tbl_record_type</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">record_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for electronic health record.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">doctor_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References doctor_id of tbl_doctor.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">appointment_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Null</td>
+        <td class="col-desc">References appointment_id of tbl_appointment.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">record_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References record_type_id of tbl_record_type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">title</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Short descriptive title of the medical examination.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">description</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Comprehensive clinical findings, exam notes, and evaluations.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">record_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Calendar date the examination or procedure took place.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">20.tbl_document_type</div>
+  <div class="key-info">Primary key: <strong>document_type_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">document_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for document format type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Document classification (X-Ray, MRI, Lab Report, ECG, Prescription_PDF).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">21.tbl_medical_document</div>
+  <div class="key-info">Primary key: <strong>document_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>record_id</strong> references table <strong>tbl_medical_record</strong>, <strong>document_type_id</strong> references table <strong>tbl_document_type</strong>, <strong>uploaded_by_id</strong> references table <strong>tbl_user</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">document_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for uploaded medical document.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">record_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Null</td>
+        <td class="col-desc">References record_id of tbl_medical_record.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">document_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References document_type_id of tbl_document_type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">file_name</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Original filename of the stored diagnostic document.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">file_path</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Secure Cloudinary URL or local file storage system path.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">file_size_kb</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">File storage footprint size measured in kilobytes.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">uploaded_by_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References user_id of tbl_user who performed file upload.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">uploaded_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Timestamp when document was stored in system.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">22.tbl_ward</div>
+  <div class="key-info">Primary key: <strong>ward_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">ward_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for hospital inpatient ward.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">ward_number</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Distinct clinical ward code (e.g., WARD-GEN-A, ICU-01).</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(150)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Designation name of the ward (e.g., General Ward, Post-Op Care).</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">department</td>
+        <td class="col-datatype">Varchar(150)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Medical department supervising the ward operations.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">total_beds</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Total bed installation capacity in this ward.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">is_active</td>
+        <td class="col-datatype">Boolean</td>
+        <td class="col-constraints">Default True</td>
+        <td class="col-desc">Operational availability status of the ward.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">23.tbl_bed</div>
+  <div class="key-info">Primary key: <strong>bed_id</strong></div>
+  <div class="key-info">Foreign key: <strong>ward_id</strong> references table <strong>tbl_ward</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">bed_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for hospital bed.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">ward_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References ward_id of tbl_ward.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">bed_number</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Physical bed identifier code (e.g., B-101, ICU-04).</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">status</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Current occupancy state (AVAILABLE, OCCUPIED, MAINTENANCE).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">24.tbl_inpatient_admission</div>
+  <div class="key-info">Primary key: <strong>admission_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>admitting_doctor_id</strong> references table <strong>tbl_doctor</strong>, <strong>ward_id</strong> references table <strong>tbl_ward</strong>, <strong>bed_id</strong> references table <strong>tbl_bed</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">admission_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for inpatient admission record.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">admission_number</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Formal admission case identification number.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">admitting_doctor_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References doctor_id of tbl_doctor who admitted patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">ward_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References ward_id of tbl_ward.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">bed_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References bed_id of assigned tbl_bed.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">admission_date_time</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Exact date and time when patient was admitted.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">admission_diagnosis</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Provisional medical diagnosis justifying inpatient stay.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">chief_complaint</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Clinical symptoms presented upon emergency/ward arrival.</td>
+      </tr>
+      <tr>
+        <td class="col-no">10</td>
+        <td class="col-name">admission_status</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Inpatient status (ADMITTED, TRANSFERRED, DISCHARGED).</td>
+      </tr>
+      <tr>
+        <td class="col-no">11</td>
+        <td class="col-name">acuity_level</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Clinical urgency level (CRITICAL, MODERATE, STABLE).</td>
+      </tr>
+      <tr>
+        <td class="col-no">12</td>
+        <td class="col-name">discharge_date</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Timestamp of formal medical discharge from hospital.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">25.tbl_bed_transfer_history</div>
+  <div class="key-info">Primary key: <strong>transfer_id</strong></div>
+  <div class="key-info">Foreign key: <strong>admission_id</strong> references table <strong>tbl_inpatient_admission</strong>, <strong>from_ward_id</strong> references table <strong>tbl_ward</strong>, <strong>from_bed_id</strong> references table <strong>tbl_bed</strong>, <strong>to_ward_id</strong> references table <strong>tbl_ward</strong>, <strong>to_bed_id</strong> references table <strong>tbl_bed</strong>, <strong>transferred_by_id</strong> references table <strong>tbl_user</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">transfer_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for bed transfer audit trail.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">admission_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References admission_id of tbl_inpatient_admission.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">from_ward_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References ward_id of origin ward.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">from_bed_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References bed_id of origin bed.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">to_ward_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References ward_id of target ward.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">to_bed_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References bed_id of target bed.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">transfer_reason</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Clinical or administrative justification for patient transfer.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">transferred_by_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References user_id of authorized staff who initiated move.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">transferred_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Timestamp when patient bed transfer was executed.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">26.tbl_patient_observation</div>
+  <div class="key-info">Primary key: <strong>observation_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>nurse_id</strong> references table <strong>tbl_nurse</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">observation_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for vital signs observation record.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">nurse_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References nurse_id of tbl_nurse who recorded vitals.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">observation_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Calendar date observation was conducted.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">observation_time</td>
+        <td class="col-datatype">Time</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Time of vitals recording.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">temperature</td>
+        <td class="col-datatype">Decimal(5,2)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Body temperature measurement in Fahrenheit / Celsius.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">pulse_rate</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Heart pulse rate in beats per minute (BPM).</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">respiratory_rate</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Respiratory rate in breaths per minute.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">systolic_bp</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Systolic blood pressure in mmHg.</td>
+      </tr>
+      <tr>
+        <td class="col-no">10</td>
+        <td class="col-name">diastolic_bp</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Diastolic blood pressure in mmHg.</td>
+      </tr>
+      <tr>
+        <td class="col-no">11</td>
+        <td class="col-name">spo2</td>
+        <td class="col-datatype">Decimal(5,2)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Peripheral arterial oxygen saturation (%).</td>
+      </tr>
+      <tr>
+        <td class="col-no">12</td>
+        <td class="col-name">blood_glucose</td>
+        <td class="col-datatype">Decimal(7,2)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Blood sugar concentration in mg/dL.</td>
+      </tr>
+      <tr>
+        <td class="col-no">13</td>
+        <td class="col-name">weight</td>
+        <td class="col-datatype">Decimal(6,2)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Patient body weight in kilograms.</td>
+      </tr>
+      <tr>
+        <td class="col-no">14</td>
+        <td class="col-name">pain_score</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Visual / numeric pain rating score (0 to 10).</td>
+      </tr>
+      <tr>
+        <td class="col-no">15</td>
+        <td class="col-name">consciousness_level</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Consciousness status (Alert, Confused, Drowsy, Unresponsive).</td>
+      </tr>
+      <tr>
+        <td class="col-no">16</td>
+        <td class="col-name">general_observation</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Clinical nursing evaluation notes on patient condition.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">27.tbl_discharge_summary</div>
+  <div class="key-info">Primary key: <strong>summary_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>doctor_id</strong> references table <strong>tbl_doctor</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">summary_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for patient discharge summary.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">doctor_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References doctor_id of attending physician.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">admission_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Date of inpatient hospital admission.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">discharge_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Date patient was certified for discharge.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">admission_diagnosis</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Provisional diagnosis documented upon admission.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">discharge_diagnosis</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Final confirmed diagnosis at completion of stay.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">clinical_course</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Narrative summary of treatments and inpatient clinical course.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">condition_at_discharge</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Physical status at discharge (Improved, Stable, Cured).</td>
+      </tr>
+      <tr>
+        <td class="col-no">10</td>
+        <td class="col-name">follow_up_instructions</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Post-discharge rehabilitation and medical instructions.</td>
+      </tr>
+      <tr>
+        <td class="col-no">11</td>
+        <td class="col-name">follow_up_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Recommended date for clinical follow-up review.</td>
+      </tr>
+      <tr>
+        <td class="col-no">12</td>
+        <td class="col-name">summary_status</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Discharge summary document status (DRAFT, FINALIZED).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">28.tbl_nursing_patient_summary</div>
+  <div class="key-info">Primary key: <strong>summary_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>nurse_id</strong> references table <strong>tbl_nurse</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">summary_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for nursing shift handover report.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">nurse_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References nurse_id of authoring nurse.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">summary_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Calendar date of nursing shift handover.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">patient_current_condition</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Physical condition and mobility assessment.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">level_of_consciousness</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Mental alertness and neurological response status.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">vital_signs_summary</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Overview of vital signs observed throughout the shift.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">nursing_care_provided</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Care interventions, dressings, and medication delivery administered.</td>
+      </tr>
+      <tr>
+        <td class="col-no">9</td>
+        <td class="col-name">status</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Handover report state (DRAFT, FINALIZED).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">29.tbl_reminder_status</div>
+  <div class="key-info">Primary key: <strong>status_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">status_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for medication reminder status.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Reminder status (ACTIVE, TAKEN, MISSED, CANCELLED).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">30.tbl_medicine_reminder</div>
+  <div class="key-info">Primary key: <strong>reminder_id</strong></div>
+  <div class="key-info">Foreign key: <strong>patient_id</strong> references table <strong>tbl_patient</strong>, <strong>medicine_id</strong> references table <strong>tbl_medicine</strong>, <strong>status_id</strong> references table <strong>tbl_reminder_status</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">reminder_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for medication reminder alert.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">patient_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References patient_id of tbl_patient.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">medicine_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References medicine_id of tbl_medicine.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">reminder_time</td>
+        <td class="col-datatype">Time</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Daily scheduled alert time for medication intake.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">frequency</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Administration schedule (Once daily, Twice daily, Every 8 hours).</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">start_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Commencement date for reminder alerts.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">end_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Concluding date for medication schedule.</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">status_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References status_id of tbl_reminder_status.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">31.tbl_notification_type</div>
+  <div class="key-info">Primary key: <strong>notification_type_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">notification_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for notification category.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Category classification (APPOINTMENT, PRESCRIPTION, REMINDER, SYSTEM).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">32.tbl_notification</div>
+  <div class="key-info">Primary key: <strong>notification_id</strong></div>
+  <div class="key-info">Foreign key: <strong>user_id</strong> references table <strong>tbl_user</strong>, <strong>notification_type_id</strong> references table <strong>tbl_notification_type</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">notification_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for system user notification.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References user_id of recipient tbl_user.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">notification_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References notification_type_id of tbl_notification_type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">title</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Subject title of the notification message.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">message</td>
+        <td class="col-datatype">Text</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Full textual body of the alert notification.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">is_read</td>
+        <td class="col-datatype">Boolean</td>
+        <td class="col-constraints">Default False</td>
+        <td class="col-desc">Read acknowledgment status flag.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">created_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Timestamp when notification was created.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">33.tbl_hospital_procedure</div>
+  <div class="key-info">Primary key: <strong>procedure_id</strong></div>
+  <div class="key-info">Foreign key: <strong>department_id</strong> references table <strong>tbl_department</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">procedure_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for hospital procedure / protocol.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">department_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Null</td>
+        <td class="col-desc">References department_id of tbl_department.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">title</td>
+        <td class="col-datatype">Varchar(255)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Official clinical procedure protocol title.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">procedure_code</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Hospital protocol reference code (e.g., SOP-CARD-01).</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">category</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Protocol category (Emergency, Infection Control, Surgical).</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">version</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Protocol version number (e.g., 1.0, 2.0).</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">status</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Review status (PUBLISHED, DRAFT, UNDER_REVIEW).</td>
+      </tr>
+      <tr>
+        <td class="col-no">8</td>
+        <td class="col-name">effective_date</td>
+        <td class="col-datatype">Date</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Effective implementation date for protocol.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">34.tbl_action_type</div>
+  <div class="key-info">Primary key: <strong>action_type_id</strong></div>
+  <div class="key-info">Foreign key: Nil</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">action_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for audit action type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">name</td>
+        <td class="col-datatype">Varchar(50)</td>
+        <td class="col-constraints">Unique, Not Null</td>
+        <td class="col-desc">Action classification (CREATE, READ, UPDATE, DELETE, LOGIN, LOGOUT).</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-container">
+  <div class="table-title">35.tbl_audit_log</div>
+  <div class="key-info">Primary key: <strong>audit_id</strong></div>
+  <div class="key-info">Foreign key: <strong>user_id</strong> references table <strong>tbl_user</strong>, <strong>action_type_id</strong> references table <strong>tbl_action_type</strong></div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th class="col-no">No:</th>
+        <th class="col-name">Field name</th>
+        <th class="col-datatype">Datatype (Size)</th>
+        <th class="col-constraints">Key Constraints</th>
+        <th class="col-desc">Description of the field</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-no">1</td>
+        <td class="col-name">audit_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Primary Key, Auto_increment</td>
+        <td class="col-desc">Unique identifier for system audit log.</td>
+      </tr>
+      <tr>
+        <td class="col-no">2</td>
+        <td class="col-name">user_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Null</td>
+        <td class="col-desc">References user_id of tbl_user who performed operation.</td>
+      </tr>
+      <tr>
+        <td class="col-no">3</td>
+        <td class="col-name">action_type_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Foreign Key, Not Null</td>
+        <td class="col-desc">References action_type_id of tbl_action_type.</td>
+      </tr>
+      <tr>
+        <td class="col-no">4</td>
+        <td class="col-name">table_name</td>
+        <td class="col-datatype">Varchar(100)</td>
+        <td class="col-constraints">Not Null</td>
+        <td class="col-desc">Database entity table affected by the action.</td>
+      </tr>
+      <tr>
+        <td class="col-no">5</td>
+        <td class="col-name">record_id</td>
+        <td class="col-datatype">Int(11)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Primary key ID altered in the target table.</td>
+      </tr>
+      <tr>
+        <td class="col-no">6</td>
+        <td class="col-name">ip_address</td>
+        <td class="col-datatype">Varchar(45)</td>
+        <td class="col-constraints">Null</td>
+        <td class="col-desc">Network client IP address of requester.</td>
+      </tr>
+      <tr>
+        <td class="col-no">7</td>
+        <td class="col-name">created_at</td>
+        <td class="col-datatype">Timestamp</td>
+        <td class="col-constraints">Default Current_Timestamp</td>
+        <td class="col-desc">Timestamp when audit event occurred.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

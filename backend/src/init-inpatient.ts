@@ -51,6 +51,11 @@ export async function ensureInpatientJoldaAndAngel(): Promise<void> {
           isActive: true,
         },
       });
+    } else if (userJolda.roleId !== doctorRole.id) {
+      userJolda = await prisma.user.update({
+        where: { id: userJolda.id },
+        data: { roleId: doctorRole.id },
+      });
     }
 
     let doctorJolda = await prisma.doctor.findFirst({
