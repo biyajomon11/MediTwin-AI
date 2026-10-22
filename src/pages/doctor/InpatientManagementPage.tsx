@@ -17,6 +17,8 @@ import {
   User,
   CheckCircle2,
   Building,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import type {
   InpatientAdmissionRecord,
@@ -155,6 +157,22 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
     });
   }, [admissions, searchTerm, selectedWard, selectedStatus, selectedAcuity, dateFilter]);
 
+  // Pagination for vertical navigation without scrolling through thousands of records
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reset to page 1 whenever filters or search query change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedWard, selectedStatus, selectedAcuity, dateFilter]);
+
+  const totalPages = Math.ceil(filteredAdmissions.length / (pageSize === -1 ? filteredAdmissions.length || 1 : pageSize)) || 1;
+  const paginatedAdmissions = useMemo(() => {
+    if (pageSize === -1) return filteredAdmissions;
+    const start = (currentPage - 1) * pageSize;
+    return filteredAdmissions.slice(start, start + pageSize);
+  }, [filteredAdmissions, currentPage, pageSize]);
+
   // Handle Admission Created
   const handleAdmissionSuccess = (newAdmission: InpatientAdmissionRecord) => {
     setAdmissions((prev) => [newAdmission, ...prev.filter((a) => a.id !== newAdmission.id)]);
@@ -264,7 +282,13 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* Current Inpatients */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg relative overflow-hidden">
+        <div
+          onClick={() => setSelectedStatus((prev) => (prev === 'ADMITTED' ? 'ALL' : 'ADMITTED'))}
+          className={`p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border shadow-lg relative overflow-hidden cursor-pointer transition-all hover:scale-[1.01] ${
+            selectedStatus === 'ADMITTED' ? 'border-accent ring-1 ring-accent/50' : 'border-white/10 hover:border-accent/40'
+          }`}
+          title="Click to filter active admitted inpatients"
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-400">Current Inpatients</span>
             <div className="p-2 rounded-xl bg-accent/15 text-accent border border-accent/30">
@@ -280,7 +304,15 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
         </div>
 
         {/* Total Hospital Beds */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg relative overflow-hidden">
+        <div
+          onClick={() => {
+            if (onNavigateToBedAllocation) onNavigateToBedAllocation();
+          }}
+          className={`p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg relative overflow-hidden transition-all ${
+            onNavigateToBedAllocation ? 'cursor-pointer hover:border-primary/40 hover:scale-[1.01]' : ''
+          }`}
+          title={onNavigateToBedAllocation ? 'Click to open Hospital Bed Allocation Map' : undefined}
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-400">Total Hospital Beds</span>
             <div className="p-2 rounded-xl bg-primary/20 text-primary-light border border-primary/30">
@@ -296,7 +328,13 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
         </div>
 
         {/* Occupied Beds */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg relative overflow-hidden">
+        <div
+          onClick={() => setSelectedStatus((prev) => (prev === 'ADMITTED' ? 'ALL' : 'ADMITTED'))}
+          className={`p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border shadow-lg relative overflow-hidden cursor-pointer transition-all hover:scale-[1.01] ${
+            selectedStatus === 'ADMITTED' ? 'border-amber-400 ring-1 ring-amber-400/50' : 'border-white/10 hover:border-amber-400/40'
+          }`}
+          title="Click to filter occupied bed inpatients"
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-400">Occupied Beds</span>
             <div className="p-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30">
@@ -312,7 +350,11 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
         </div>
 
         {/* Available Beds */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 shadow-lg relative overflow-hidden">
+        <div
+          onClick={() => setIsAdmitModalOpen(true)}
+          className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-white/10 hover:border-emerald-500/40 shadow-lg relative overflow-hidden cursor-pointer transition-all hover:scale-[1.01]"
+          title="Click to admit patient into an available bed"
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-400">Available Beds</span>
             <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
@@ -328,7 +370,13 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
         </div>
 
         {/* Critical Acuity Inpatients */}
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border border-rose-500/20 shadow-lg relative overflow-hidden col-span-2 lg:col-span-1">
+        <div
+          onClick={() => setSelectedAcuity((prev) => (prev === 'CRITICAL' ? 'ALL' : 'CRITICAL'))}
+          className={`p-4 rounded-2xl bg-gradient-to-br from-navy-900 to-navy-950 border shadow-lg relative overflow-hidden col-span-2 lg:col-span-1 cursor-pointer transition-all hover:scale-[1.01] ${
+            selectedAcuity === 'CRITICAL' ? 'border-rose-500 ring-1 ring-rose-500/50' : 'border-rose-500/30 hover:border-rose-500/60'
+          }`}
+          title="Click to filter only critical acuity inpatients"
+        >
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-rose-300">Critical Acuity</span>
             <div className="p-2 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30 animate-pulse">
@@ -463,47 +511,64 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-navy-950/80 border-b border-white/10 text-gray-400 font-semibold uppercase tracking-wider text-[11px]">
+            <table className="w-full text-left text-xs min-w-[850px]">
+              <thead className="bg-navy-950/90 border-b border-white/10 text-gray-400 font-semibold uppercase tracking-wider text-[11px]">
                 <tr>
-                  <th className="py-3.5 px-4">Patient / ID</th>
-                  <th className="py-3.5 px-4">Admission #</th>
-                  <th className="py-3.5 px-4">Ward & Bed</th>
-                  <th className="py-3.5 px-4">Admitted At</th>
-                  <th className="py-3.5 px-4">Diagnosis & Chief Complaint</th>
-                  <th className="py-3.5 px-4">Acuity</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Clinical Actions</th>
+                  <th className="py-3 px-3.5">Patient / ID</th>
+                  <th className="py-3 px-3">Admission #</th>
+                  <th className="py-3 px-3">Ward & Bed</th>
+                  <th className="py-3 px-3">Admitted At</th>
+                  <th className="py-3 px-3">Diagnosis & Chief Complaint</th>
+                  <th className="py-3 px-3">Acuity</th>
+                  <th className="py-3 px-3">Status</th>
+                  <th className="py-3 px-3.5 text-right sticky right-0 bg-[#080f1e] border-l border-white/10 shadow-[-12px_0_16px_rgba(0,0,0,0.6)] z-20">
+                    Clinical Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {filteredAdmissions.map((adm) => {
+                {paginatedAdmissions.map((adm) => {
                   const isDischarged = adm.admissionStatus === 'DISCHARGED';
                   return (
                     <tr
                       key={adm.id}
-                      className="hover:bg-white/[0.02] transition-colors group cursor-default"
+                      onClick={() => setSelectedAdmissionForDetails(adm)}
+                      className="hover:bg-white/[0.04] transition-colors group cursor-pointer"
+                      title="Click row anywhere to view full inpatient record"
                     >
-                      {/* Patient Name & Demographics */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent font-bold text-xs flex-shrink-0">
+                      {/* Patient Name & Demographics + Direct View Button */}
+                      <td className="py-3 px-3.5">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/30 flex items-center justify-center text-accent font-bold text-xs flex-shrink-0 mt-0.5">
                             {(adm.patientName || 'PT').slice(0, 2).toUpperCase()}
                           </div>
                           <div>
-                            <div className="font-bold text-white text-xs hover:text-accent transition-colors flex items-center gap-1.5">
+                            <div className="font-bold text-white text-xs group-hover:text-accent transition-colors flex items-center gap-1.5">
                               <span>{adm.patientName}</span>
                             </div>
                             <div className="text-[11px] text-gray-400">
-                              <span className="font-mono text-gray-400">{adm.patientCode || `PT-${adm.patientId}`}</span> •{' '}
+                              <span className="font-mono text-gray-300 font-semibold">{adm.patientCode || `PT-${adm.patientId}`}</span> •{' '}
                               <span>{adm.gender}</span>, {adm.age}y
                             </div>
+                            {/* DIRECT VIEW BUTTON (No horizontal scrolling required) */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedAdmissionForDetails(adm);
+                              }}
+                              className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-accent/15 hover:bg-accent text-accent hover:text-navy-950 border border-accent/30 text-[10px] font-bold transition-all shadow-sm"
+                              title="View Inpatient Admission Record & Timeline (No scrolling needed)"
+                            >
+                              <Eye className="w-3 h-3" />
+                              <span>View Details</span>
+                            </button>
                           </div>
                         </div>
                       </td>
 
                       {/* Admission Number */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-3">
                         <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-white/[0.05] border border-white/10 text-gray-200">
                           {adm.admissionNumber}
                         </span>
@@ -513,7 +578,7 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                       </td>
 
                       {/* Ward & Bed */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-3">
                         <div className="font-semibold text-white flex items-center gap-1.5">
                           <Building2 className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                           <span>{adm.wardName}</span>
@@ -525,7 +590,7 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                       </td>
 
                       {/* Admission Date/Time */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-3">
                         <div className="text-gray-300 font-medium">
                           {adm.admissionDateTime
                             ? new Date(adm.admissionDateTime).toLocaleDateString('en-US', {
@@ -546,7 +611,7 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                       </td>
 
                       {/* Diagnosis & Chief Complaint */}
-                      <td className="py-3.5 px-4 max-w-xs">
+                      <td className="py-3 px-3 max-w-[200px]">
                         <div className="font-medium text-white truncate" title={adm.admissionDiagnosis}>
                           {adm.admissionDiagnosis}
                         </div>
@@ -556,37 +621,44 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                       </td>
 
                       {/* Acuity Level */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-3">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${getAcuityBadge(adm.acuityLevel)}`}>
                           {adm.acuityLevel}
                         </span>
                       </td>
 
                       {/* Admission Status */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-3">
                         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getStatusBadge(adm.admissionStatus)}`}>
                           {adm.admissionStatus === 'UNDER_OBSERVATION' ? 'Observation' : adm.admissionStatus}
                         </span>
                       </td>
 
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
+                      {/* Actions - Sticky on the right */}
+                      <td className="py-3 px-3.5 text-right sticky right-0 bg-[#091122] group-hover:bg-[#121c32] border-l border-white/10 shadow-[-12px_0_16px_rgba(0,0,0,0.6)] z-10 transition-colors">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* View Details */}
+                          {/* Prominent View Details Button */}
                           <button
                             type="button"
-                            onClick={() => setSelectedAdmissionForDetails(adm)}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAdmissionForDetails(adm);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-accent/20 hover:bg-accent text-accent hover:text-navy-950 font-bold text-xs transition-colors border border-accent/30 shadow-sm"
                             title="View Full Admission Record & Timeline"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
                           </button>
 
                           {/* Patient Chart / Medical Record */}
                           {onNavigateToPatient && (
                             <button
                               type="button"
-                              onClick={() => onNavigateToPatient(adm.patientId, 'overview')}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToPatient(adm.patientId, 'overview');
+                              }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-accent hover:bg-white/10 transition-colors"
                               title="Open Patient Medical Record"
                             >
@@ -598,7 +670,10 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                           {onNavigateToPatient && (
                             <button
                               type="button"
-                              onClick={() => onNavigateToPatient(adm.patientId, 'labs')}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToPatient(adm.patientId, 'labs');
+                              }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-300 hover:bg-white/10 transition-colors"
                               title="View Observations & Vitals"
                             >
@@ -610,7 +685,10 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                           {onNavigateToPatient && (
                             <button
                               type="button"
-                              onClick={() => onNavigateToPatient(adm.patientId, 'prescriptions')}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToPatient(adm.patientId, 'prescriptions');
+                              }}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-primary-light hover:bg-white/10 transition-colors"
                               title="View Prescriptions"
                             >
@@ -622,7 +700,10 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                           {!isDischarged && (
                             <button
                               type="button"
-                              onClick={() => setSelectedAdmissionForTransfer(adm)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedAdmissionForTransfer(adm);
+                              }}
                               className="p-1.5 rounded-lg text-amber-400 hover:text-amber-200 hover:bg-amber-500/10 transition-colors"
                               title="Transfer to Another Bed / Ward"
                             >
@@ -634,7 +715,10 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                           {!isDischarged && onNavigateToPatient && (
                             <button
                               type="button"
-                              onClick={() => onNavigateToPatient(adm.patientId, 'discharge-summary')}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onNavigateToPatient(adm.patientId, 'discharge-summary');
+                              }}
                               className="p-1.5 rounded-lg text-emerald-400 hover:text-emerald-200 hover:bg-emerald-500/10 transition-colors"
                               title="Initiate Discharge Summary Workflow"
                             >
@@ -648,6 +732,61 @@ export const InpatientManagementPage: React.FC<InpatientManagementPageProps> = (
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Controls - Eliminate endless vertical scrolling */}
+        {!loading && filteredAdmissions.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-navy-950/90 border-t border-white/10 text-xs text-gray-400">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span>Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-navy-900 border border-white/15 text-white text-xs focus:outline-none focus:border-accent"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={-1}>All ({filteredAdmissions.length})</option>
+                </select>
+              </div>
+              <span className="text-gray-400">
+                Showing <strong className="text-white">{filteredAdmissions.length === 0 ? 0 : (currentPage - 1) * (pageSize === -1 ? filteredAdmissions.length : pageSize) + 1}</strong> -{' '}
+                <strong className="text-white">{pageSize === -1 ? filteredAdmissions.length : Math.min(currentPage * pageSize, filteredAdmissions.length)}</strong> of{' '}
+                <strong className="text-white">{filteredAdmissions.length}</strong> inpatients
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Previous Page"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span className="px-3 py-1 rounded-lg bg-white/[0.05] text-white font-mono text-xs border border-white/10">
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-1.5 rounded-lg border border-white/10 text-gray-300 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Next Page"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>
