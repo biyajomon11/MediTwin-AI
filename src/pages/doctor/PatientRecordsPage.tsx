@@ -6,7 +6,7 @@ import {
   CheckCircle2, XCircle, Plus, Save, Loader2, Users,
   Activity, FolderOpen, Printer, ShieldAlert, StopCircle, Stethoscope,
   Eye, Download, X, HeartPulse, ArrowUp, ArrowDown, RotateCcw, FileCheck,
-  Clock, Bed, Building2,
+  Clock, Bed, Building2, Trash2,
 } from 'lucide-react';
 import type {
   DoctorPatient, PatientStatus, ClinicalNote, Prescription, MedicalDocument,
@@ -14,11 +14,11 @@ import type {
 } from '../../types';
 import {
   getPatients, addClinicalNote, discontinuePrescription, updatePatientBed,
-  updateDoctorAppointmentStatus, getInpatientAdmissions, type PatientSortField,
+  updateDoctorAppointmentStatus, getInpatientAdmissions, deleteDoctorMedicalDocument, type PatientSortField,
 } from '../../services/doctorService';
 import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
 import { DischargeSummaryTab } from '../../components/doctor/DischargeSummaryTab';
-import { DoctorNursingSummaryTab } from '../../components/doctor/DoctorNursingSummaryTab';
+import { AddMedicalDocumentModal } from '../../components/doctor/AddMedicalDocumentModal';
 import { InpatientAdmissionModal } from '../../components/doctor/InpatientAdmissionModal';
 import { InpatientAdmissionDetailsModal } from '../../components/doctor/InpatientAdmissionDetailsModal';
 import { getTallManName } from '../../utils/medicationSafety';
@@ -159,12 +159,11 @@ const NOTE_TYPE_COLORS = {
 const TABS = [
   { id: 'overview',          label: 'Overview',              icon: User         },
   { id: 'discharge-summary', label: 'Discharge Summary',     icon: FileCheck    },
-  { id: 'nursing-summary',   label: 'Nursing Summary',       icon: FileText     },
-  { id: 'labs',          label: 'Lab Reports',           icon: FlaskConical },
-  { id: 'appointments',  label: 'Appointments',          icon: Calendar     },
-  { id: 'prescriptions', label: 'Prescriptions',         icon: Pill         },
-  { id: 'notes',         label: 'Clinical Notes',        icon: FileText     },
-  { id: 'documents',     label: 'Medical Documents',     icon: FolderOpen   },
+  { id: 'labs',              label: 'Lab Reports',           icon: FlaskConical },
+  { id: 'appointments',      label: 'Appointments',          icon: Calendar     },
+  { id: 'prescriptions',     label: 'Prescriptions',         icon: Pill         },
+  { id: 'notes',             label: 'Clinical Notes',        icon: FileText     },
+  { id: 'documents',         label: 'Medical Documents',     icon: FolderOpen   },
 ];
 
 const DEPARTMENTS = ['Cardiology', 'Neurology', 'General Medicine', 'Oncology', 'Pediatrics'];
@@ -237,10 +236,11 @@ const PatientRecord: React.FC<{
   patient: DoctorPatient;
   onBack: () => void;
   onNoteAdded: (note: ClinicalNote) => void;
+  onDocumentAdded?: (doc: MedicalDocument) => void;
   initialTab?: string;
   onMarkAppointmentCompleted?: (patient: DoctorPatient, appointment: any) => void;
   updatingAptId?: string | number | null;
-}> = ({ patient, onBack, onNoteAdded, initialTab = 'overview', onMarkAppointmentCompleted, updatingAptId }) => {
+}> = ({ patient, onBack, onNoteAdded, onDocumentAdded, initialTab = 'overview', onMarkAppointmentCompleted, updatingAptId }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [showNoteForm, setShowNoteForm] = useState(false);
 
@@ -262,6 +262,45 @@ const PatientRecord: React.FC<{
   const [discontinueRxId, setDiscontinueRxId] = useState<string | null>(null);
   const [discontinueReason, setDiscontinueReason] = useState('Course completed / replaced with alternative therapy');
   const [discontinuing, setDiscontinuing] = useState(false);
+
+  // ── Medical Document States ──
+  const [documents, setDocuments] = useState<MedicalDocument[]>(patient.documents || []);
+  const [showAddDocModal, setShowAddDocModal] = useState(false);
+  const [docFilterCategory, setDocFilterCategory] = useState<string>('All');
+  const [docSearchQuery, setDocSearchQuery] = useState('');
+  const [docSuccessMsg, setDocSuccessMsg] = useState<string | null>(null);
+  const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDocuments(patient.documents || []);
+  }, [patient]);
+
+  const handleDocumentUploaded = (newDoc: MedicalDocument) => {
+    setDocuments((prev) => [newDoc, ...prev.filter((d) => d.id !== newDoc.id)]);
+    setDocSuccessMsg(`Medical document "${newDoc.name}" attached successfully.`);
+    setTimeout(() => setDocSuccessMsg(null), 5000);
+    if (onDocumentAdded) {
+      onDocumentAdded(newDoc);
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string, docName: string) => {
+    if (!window.confirm(`Are you sure you want to remove "${docName}" from this patient's record?`)) {
+      return;
+    }
+    setDeletingDocId(docId);
+    try {
+      await deleteDoctorMedicalDocument(patient.id, docId);
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      if (selectedDoc && selectedDoc.id === docId) {
+        setSelectedDoc(null);
+      }
+      setDocSuccessMsg(`Document "${docName}" removed.`);
+      setTimeout(() => setDocSuccessMsg(null), 4000);
+    } finally {
+      setDeletingDocId(null);
+    }
+  };
 
   // ── Document Preview States ──
   const [selectedDoc, setSelectedDoc] = useState<MedicalDocument | null>(null);
@@ -1115,6 +1154,16 @@ const PatientRecord: React.FC<{
                     View in Prescriptions Tab ({prescriptions.filter((r) => r.status === 'Active').length}) →
                   </button>
                 </div>
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                  <span className="text-gray-400">Medical Documents:</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('documents')}
+                    className="text-xs text-cyan-300 hover:underline font-bold"
+                  >
+                    View & Upload Documents ({documents.length}) →
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1596,34 +1645,255 @@ const PatientRecord: React.FC<{
 
         {/* DOCUMENTS */}
         {activeTab === 'documents' && (
-          <div className="space-y-3">
-            {(!patient.documents || patient.documents.length === 0) ? (
-              <div className="glass-card p-8 border border-white/10 text-center text-gray-400 text-sm">No medical documents uploaded.</div>
-            ) : (patient.documents || []).map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => setSelectedDoc(doc)}
-                className="glass-card p-4 border border-white/10 flex items-center gap-4 hover:border-accent/40 hover:bg-white/5 transition-all cursor-pointer group"
-              >
-                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                  <FileText className="w-5 h-5 text-accent" />
+          <div className="space-y-4">
+            {/* Action Bar & Summary Header */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 glass-card p-4 border border-white/10 rounded-2xl bg-[#0B132B]/60">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                  <FolderOpen className="w-5 h-5" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate group-hover:text-accent transition-colors">{doc.name}</p>
-                  <p className="text-xs text-gray-400">{doc.category || 'Lab Report'} · {doc.size || '180 KB'} · Uploaded {fmtDate(doc.uploadedDate)} by {doc.uploadedBy || 'Hospital Diagnostic Lab'}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-gray-300 font-medium">{doc.type || 'PDF'}</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setSelectedDoc(doc); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/30 hover:bg-primary/50 border border-primary/50 text-xs font-semibold text-white transition-all shadow-sm"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-accent" />
-                    <span>View</span>
-                  </button>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm sm:text-base font-bold text-white">Medical Documents & Diagnostic Archive</h3>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      {documents.length} File{documents.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Diagnostic imaging, laboratory reports, clinical referrals, and external attachments for {patient.firstName} {patient.lastName}.
+                  </p>
                 </div>
               </div>
-            ))}
+
+              <button
+                type="button"
+                onClick={() => setShowAddDocModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white font-bold text-xs shadow-md shadow-cyan-900/30 hover:shadow-cyan-900/50 transition-all cursor-pointer whitespace-nowrap self-stretch sm:self-auto justify-center"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Medical Document</span>
+              </button>
+            </div>
+
+            {/* Success Notification */}
+            <AnimatePresence>
+              {docSuccessMsg && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between shadow-md"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>{docSuccessMsg}</span>
+                  </div>
+                  <button onClick={() => setDocSuccessMsg(null)} className="p-1 hover:text-white">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                {['All', 'Lab Report', 'Radiology', 'Prescription', 'Discharge Summary', 'Referral', 'Other'].map((cat) => {
+                  const isCatActive = docFilterCategory === cat;
+                  const catCount = cat === 'All' ? documents.length : documents.filter(d => (d.category || '').toLowerCase() === cat.toLowerCase()).length;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setDocFilterCategory(cat)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isCatActive
+                          ? 'bg-cyan-500 text-navy-950 font-bold shadow-sm'
+                          : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
+                      }`}
+                    >
+                      <span>{cat}</span>
+                      <span className={`text-[10px] px-1 py-0.2 rounded-full ${isCatActive ? 'bg-navy-950/30 text-navy-950 font-extrabold' : 'bg-white/10 text-gray-300'}`}>
+                        {catCount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Search input */}
+              <div className="relative min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={docSearchQuery}
+                  onChange={(e) => setDocSearchQuery(e.target.value)}
+                  placeholder="Filter by title / uploader…"
+                  className="w-full bg-slate-900/80 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:border-cyan-400 outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Documents List */}
+            {(() => {
+              const filteredDocs = documents.filter((doc) => {
+                const matchesCat = docFilterCategory === 'All' || (doc.category || '').toLowerCase() === docFilterCategory.toLowerCase();
+                const q = docSearchQuery.toLowerCase().trim();
+                const matchesSearch = !q || (doc.name || '').toLowerCase().includes(q) || (doc.uploadedBy || '').toLowerCase().includes(q) || (doc.notes || '').toLowerCase().includes(q);
+                return matchesCat && matchesSearch;
+              });
+
+              if (filteredDocs.length === 0) {
+                return (
+                  <div className="glass-card p-10 border border-white/10 text-center rounded-2xl space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500 mx-auto">
+                      <FolderOpen className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-white">No Medical Documents Found</h4>
+                      <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                        {documents.length === 0
+                          ? 'No diagnostic reports or clinical attachments have been uploaded for this patient yet.'
+                          : `No documents found matching category "${docFilterCategory}" or search query.`}
+                      </p>
+                    </div>
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (documents.length === 0) {
+                            setShowAddDocModal(true);
+                          } else {
+                            setDocFilterCategory('All');
+                            setDocSearchQuery('');
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>{documents.length === 0 ? 'Attach First Document' : 'Reset Filters'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2.5">
+                  {filteredDocs.map((doc) => {
+                    const isDeleting = deletingDocId === doc.id;
+                    const cat = doc.category || 'Lab Report';
+                    const catBadgeColor =
+                      cat === 'Radiology' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
+                      cat === 'Prescription' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+                      cat === 'Referral' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+                      cat === 'Discharge Summary' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' :
+                      'bg-teal-500/20 text-teal-300 border-teal-500/30';
+
+                    return (
+                      <div
+                        key={doc.id}
+                        onClick={() => setSelectedDoc(doc)}
+                        className="glass-card p-4 border border-white/10 hover:border-cyan-400/50 hover:bg-white/[0.04] transition-all rounded-xl cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/15 flex items-center justify-center flex-shrink-0 group-hover:scale-105 group-hover:border-cyan-400/40 transition-all text-cyan-400 shadow-sm">
+                            <FileText className="w-5 h-5 text-cyan-400" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-sm font-bold text-white group-hover:text-cyan-300 transition-colors truncate">
+                                {doc.name}
+                              </p>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${catBadgeColor}`}>
+                                {cat}
+                              </span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-gray-300 uppercase">
+                                {doc.type || 'PDF'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
+                              <span>Size: <strong className="text-gray-300">{doc.size || '240 KB'}</strong></span>
+                              <span>•</span>
+                              <span>Date: <strong className="text-gray-300">{fmtDate(doc.uploadedDate)}</strong></span>
+                              <span>•</span>
+                              <span>Uploaded by: <strong className="text-emerald-400">{doc.uploadedBy || 'Attending Physician'}</strong></span>
+                            </p>
+                            {doc.notes && (
+                              <p className="text-[11px] text-cyan-300/80 italic mt-1 line-clamp-1 border-l-2 border-cyan-500/30 pl-2">
+                                "{doc.notes}"
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5 w-full sm:w-auto justify-end">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedDoc(doc);
+                            }}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View</span>
+                          </button>
+
+                          {doc.url ? (
+                            <a
+                              href={doc.url}
+                              download={doc.name}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-gray-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
+                              title="Download Attachment"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                alert(`Initiating secure encrypted download for: ${doc.name}`);
+                              }}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-gray-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
+                              title="Download Attachment"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={isDeleting}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteDocument(doc.id, doc.name);
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-rose-500/20 text-gray-400 hover:text-rose-300 transition-colors cursor-pointer"
+                            title="Delete Document"
+                          >
+                            {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" /> : <Trash2 className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Add Medical Document Modal */}
+            <AddMedicalDocumentModal
+              isOpen={showAddDocModal}
+              onClose={() => setShowAddDocModal(false)}
+              patient={patient}
+              onDocumentAdded={handleDocumentUploaded}
+            />
           </div>
         )}
 
@@ -1635,11 +1905,6 @@ const PatientRecord: React.FC<{
               if (onNoteAdded) onNoteAdded({} as any);
             }}
           />
-        )}
-
-        {/* NURSING SUMMARY (READ-ONLY FOR ATTENDING PHYSICIAN) */}
-        {activeTab === 'nursing-summary' && (
-          <DoctorNursingSummaryTab patient={patient} />
         )}
 
         {/* ── Document Inspection Modal for Doctor ── */}
@@ -1704,9 +1969,23 @@ const PatientRecord: React.FC<{
                   </div>
                 </div>
 
+                {/* Document Clinical Notes or Image Preview */}
+                {selectedDoc.notes && (
+                  <div className="p-3.5 rounded-xl bg-cyan-950/20 border border-cyan-500/30 text-xs text-gray-200 space-y-1">
+                    <span className="text-[10px] uppercase font-bold text-cyan-300 tracking-wider">Physician Clinical Remarks</span>
+                    <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap">{selectedDoc.notes}</p>
+                  </div>
+                )}
+
+                {selectedDoc.url && selectedDoc.url.startsWith('data:image/') && (
+                  <div className="p-2 rounded-xl bg-black/40 border border-white/10 flex justify-center max-h-64 overflow-hidden">
+                    <img src={selectedDoc.url} alt={selectedDoc.name} className="object-contain max-h-60 rounded-lg" />
+                  </div>
+                )}
+
                 {/* Document Simulated Content / Preview Box */}
                 <div className="space-y-2">
-                  <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Clinical Document Content</span>
+                  <span className="text-xs font-bold text-gray-300 uppercase tracking-wider">Clinical Document Record</span>
                   <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-700/60 text-xs text-gray-200 space-y-2 font-mono max-h-48 overflow-y-auto">
                     <p className="text-emerald-400 font-bold border-b border-white/10 pb-1">📄 MEDITWIN DIAGNOSTIC LIS — CLINICAL ATTACHMENT</p>
                     <p><strong>Document ID:</strong> {selectedDoc.id}</p>
@@ -1724,27 +2003,40 @@ const PatientRecord: React.FC<{
                     onClick={() => {
                       const printWin = window.open('', '_blank', 'width=800,height=900');
                       if (printWin) {
-                        printWin.document.write(`<html><head><title>${selectedDoc.name}</title></head><body style="font-family:sans-serif;padding:30px;"><h2>MediTwin AI - Medical Document</h2><p><strong>Patient:</strong> ${patient.firstName} ${patient.lastName}</p><p><strong>File:</strong> ${selectedDoc.name}</p><p><strong>Uploaded:</strong> ${fmtDate(selectedDoc.uploadedDate)} by ${selectedDoc.uploadedBy || 'Hospital Diagnostic Lab'}</p><hr/><p>Official Electronic Health Record attachment.</p></body></html>`);
+                        printWin.document.write(`<html><head><title>${selectedDoc.name}</title></head><body style="font-family:sans-serif;padding:30px;"><h2>MediTwin AI - Medical Document</h2><p><strong>Patient:</strong> ${patient.firstName} ${patient.lastName}</p><p><strong>File:</strong> ${selectedDoc.name}</p><p><strong>Uploaded:</strong> ${fmtDate(selectedDoc.uploadedDate)} by ${selectedDoc.uploadedBy || 'Hospital Diagnostic Lab'}</p>${selectedDoc.notes ? `<p><strong>Remarks:</strong> ${selectedDoc.notes}</p>` : ''}<hr/><p>Official Electronic Health Record attachment.</p></body></html>`);
                         printWin.document.close();
                         printWin.focus();
                         printWin.print();
                       }
                     }}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white transition-all cursor-pointer"
                   >
                     <Printer className="w-4 h-4 text-gray-300" />
                     <span>Print Report</span>
                   </button>
-                  <button
-                    onClick={() => alert(`Initiating secure encrypted download for: ${selectedDoc.name}`)}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-slate-900 hover:bg-accent-light text-xs font-bold transition-all shadow-glow-accent"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Download File</span>
-                  </button>
+
+                  {selectedDoc.url ? (
+                    <a
+                      href={selectedDoc.url}
+                      download={selectedDoc.name}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-slate-900 hover:bg-accent-light text-xs font-bold transition-all shadow-glow-accent cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download File</span>
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => alert(`Initiating secure encrypted download for: ${selectedDoc.name}`)}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent text-slate-900 hover:bg-accent-light text-xs font-bold transition-all shadow-glow-accent cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download File</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => setSelectedDoc(null)}
-                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-400 transition-colors"
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-gray-400 transition-colors cursor-pointer"
                   >
                     Close
                   </button>
@@ -1959,6 +2251,17 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
     setAllPatients(prev => prev.map(p => p.id === updated.id ? updated : p));
   };
 
+  const handleDocumentAdded = (doc: MedicalDocument) => {
+    if (!selectedPatient) return;
+    const updated = {
+      ...selectedPatient,
+      documents: [doc, ...(selectedPatient.documents || []).filter(d => d.id !== doc.id)],
+    };
+    setSelectedPatient(updated);
+    setPatients(prev => prev.map(p => p.id === updated.id ? updated : p));
+    setAllPatients(prev => prev.map(p => p.id === updated.id ? updated : p));
+  };
+
   // Auto-select patient when initialPatientId is provided
   useEffect(() => {
     if (initialPatientId && allPatients.length > 0 && !selectedPatient) {
@@ -1989,6 +2292,7 @@ export const PatientRecordsPage: React.FC<PatientRecordsPageProps> = ({
         patient={selectedPatient}
         onBack={() => setSelectedPatient(null)}
         onNoteAdded={handleNoteAdded}
+        onDocumentAdded={handleDocumentAdded}
         initialTab={initialTab === 'inpatient-admissions' ? 'overview' : initialTab}
         onMarkAppointmentCompleted={handleMarkAppointmentCompleted}
         updatingAptId={updatingAptId}

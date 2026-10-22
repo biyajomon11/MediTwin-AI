@@ -223,7 +223,10 @@ export interface MedicalDocument {
   uploadedBy: string;
   size: string;
   category: 'Lab Report' | 'Radiology' | 'Prescription' | 'Discharge Summary' | 'Referral' | 'Other';
+  url?: string;
+  notes?: string;
 }
+
 
 /** Full patient record visible to the assigned doctor */
 export interface DoctorPatient extends PatientSummary {

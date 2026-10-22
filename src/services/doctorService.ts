@@ -33,6 +33,7 @@ import type {
   AdmissionTimelineEvent,
   AdmissionHistoryResponse,
   BedAllocationSummaryDTO,
+  MedicalDocument,
 } from '../types';
 import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID, JOLDA_INPATIENT_MOCK, BITTU_INPATIENTS_MOCK, BITTU_ADMISSIONS_MOCK } from '../data/doctorMockData';
 import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from './patientService';
@@ -2326,6 +2327,148 @@ export async function markAllDoctorNotificationsRead(): Promise<void> {
     console.warn('[DOCTOR_SERVICE] Network error marking all read:', err);
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Doctor Patient Medical Document Management
+// ─────────────────────────────────────────────────────────────
+
+function syncMockPatientDocument(patientId: number, doc: MedicalDocument) {
+  const targetId = normalizeDoctorPatientId(patientId);
+  const candidates = [
+    ...MOCK_PATIENTS,
+    JOLDA_INPATIENT_MOCK,
+    ...BITTU_INPATIENTS_MOCK,
+  ];
+  for (const p of candidates) {
+    if (p.id === targetId || p.id === patientId) {
+      if (!p.documents) p.documents = [];
+      const exists = p.documents.some((d) => d.id === doc.id);
+      if (!exists) {
+        p.documents.unshift(doc);
+      }
+    }
+  }
+}
+
+/**
+ * Uploads and attaches a medical document / diagnostic report to a patient's EHR chart.
+ */
+export async function uploadDoctorMedicalDocument(
+  patientId: number | string,
+  docData: {
+    name: string;
+    category: MedicalDocument['category'];
+    type?: string;
+    size?: string;
+    fileDataUrl?: string;
+    notes?: string;
+    uploadedDate?: string;
+  }
+): Promise<MedicalDocument> {
+  const targetId = normalizeDoctorPatientId(patientId);
+
+  try {
+    const res = await fetch(`/api/doctor/patients/${targetId}/documents`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(docData),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        syncMockPatientDocument(targetId, json.data);
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[DOCTOR_SERVICE] Network upload error, falling back to local mock state:', err);
+  }
+
+  // Fallback for offline / demo mode
+  const newId = `DOC-${Date.now()}`;
+  const localDoc: MedicalDocument = {
+    id: newId,
+    name: docData.name,
+    category: docData.category,
+    type: docData.type || 'PDF',
+    size: docData.size || '320 KB',
+    uploadedDate: docData.uploadedDate || new Date().toISOString().split('T')[0],
+    uploadedBy: 'Dr. Jolda Mathew (Attending Physician)',
+    url: docData.fileDataUrl,
+    notes: docData.notes,
+  };
+
+  syncMockPatientDocument(targetId, localDoc);
+  return localDoc;
+}
+
+/**
+ * Retrieves all medical documents attached to the specified patient.
+ */
+export async function getDoctorPatientDocuments(
+  patientId: number | string
+): Promise<MedicalDocument[]> {
+  const targetId = normalizeDoctorPatientId(patientId);
+
+  try {
+    const res = await fetch(`/api/doctor/patients/${targetId}/documents`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[DOCTOR_SERVICE] Network fetch documents error:', err);
+  }
+
+  const p = MOCK_PATIENTS.find((item) => item.id === targetId || item.id === patientId)
+    || (JOLDA_INPATIENT_MOCK.id === targetId || JOLDA_INPATIENT_MOCK.id === patientId ? JOLDA_INPATIENT_MOCK : undefined)
+    || BITTU_INPATIENTS_MOCK.find((item) => item.id === targetId || item.id === patientId);
+
+  return p?.documents || [];
+}
+
+/**
+ * Deletes a medical document attached to the patient.
+ */
+export async function deleteDoctorMedicalDocument(
+  patientId: number | string,
+  docId: string
+): Promise<boolean> {
+  const targetId = normalizeDoctorPatientId(patientId);
+  try {
+    const res = await fetch(`/api/doctor/documents/${docId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+    // Update local mock patients
+    const candidates = [
+      ...MOCK_PATIENTS,
+      JOLDA_INPATIENT_MOCK,
+      ...BITTU_INPATIENTS_MOCK,
+    ];
+    for (const p of candidates) {
+      if (p.id === targetId || p.id === patientId) {
+        if (p.documents) {
+          p.documents = p.documents.filter((d) => d.id !== docId);
+        }
+      }
+    }
+    return res.ok;
+  } catch (err) {
+    console.warn('[DOCTOR_SERVICE] Delete document error:', err);
+    return false;
+  }
+}
+
 
 
 

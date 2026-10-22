@@ -153,7 +153,17 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
         orderBy: { recordDate: 'desc' },
       },
       medicalDocuments: {
-        include: { documentType: true },
+        include: {
+          documentType: true,
+          uploadedBy: {
+            select: {
+              id: true,
+              doctor: { select: { firstName: true, lastName: true } },
+              nurse: { select: { firstName: true, lastName: true } },
+              patient: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
         orderBy: { uploadedAt: 'desc' },
       },
       observations: {
@@ -286,17 +296,28 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
     }));
 
   // Documents mapping
-  const documents = patient.medicalDocuments.map((doc) => ({
-    id: `DOC-${doc.id}`,
-    name: doc.fileName,
-    type: doc.documentType.name,
-    uploadedDate: doc.uploadedAt ? doc.uploadedAt.toISOString().split('T')[0] : '2026-08-10',
-    uploadDate: doc.uploadedAt ? doc.uploadedAt.toISOString().split('T')[0] : '2026-08-10',
-    uploadedBy: 'Hospital Diagnostic Lab',
-    category: (doc.documentType.name || 'Lab Report') as any,
-    size: `${doc.fileSizeKb || 180} KB`,
-    url: doc.filePath,
-  }));
+  const documents = patient.medicalDocuments.map((doc) => {
+    let uploaderName = 'Hospital Diagnostic Lab';
+    if (doc.uploadedBy?.doctor) {
+      uploaderName = `Dr. ${doc.uploadedBy.doctor.firstName} ${doc.uploadedBy.doctor.lastName}`;
+    } else if (doc.uploadedBy?.nurse) {
+      uploaderName = `Nurse ${doc.uploadedBy.nurse.firstName} ${doc.uploadedBy.nurse.lastName}`;
+    } else if (doc.uploadedBy?.patient) {
+      uploaderName = `${doc.uploadedBy.patient.firstName} ${doc.uploadedBy.patient.lastName} (Patient)`;
+    }
+    const sizeKb = doc.fileSizeKb || 180;
+    return {
+      id: `DOC-${doc.id}`,
+      name: doc.fileName,
+      type: doc.documentType?.name || 'PDF',
+      uploadedDate: doc.uploadedAt ? doc.uploadedAt.toISOString().split('T')[0] : '2026-08-10',
+      uploadDate: doc.uploadedAt ? doc.uploadedAt.toISOString().split('T')[0] : '2026-08-10',
+      uploadedBy: uploaderName,
+      category: (doc.documentType?.name || 'Lab Report') as any,
+      size: sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`,
+      url: doc.filePath,
+    };
+  });
 
     // Derive documented allergies
     const email = patient.user?.email || '';
@@ -2110,6 +2131,237 @@ router.post(
     }
   }
 );
+
+/**
+ * POST /api/doctor/patients/:id/documents
+ * Allows attending physician or hospital administrator to attach medical documents to patient chart.
+ */
+router.post(
+  '/patients/:id/documents',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const rawId = parseInt(req.params.id);
+      if (isNaN(rawId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const patientId = await resolvePatientId(rawId);
+      const patient = await prisma.patient.findUnique({
+        where: { id: patientId },
+        include: { user: true },
+      });
+
+      if (!patient) {
+        return res.status(404).json({ success: false, error: 'Patient record not found.' });
+      }
+
+      const userId = req.user?.userId || 0;
+      const doctor = await getDoctorByUserId(userId);
+
+      const {
+        name,
+        fileName,
+        title,
+        category,
+        documentType,
+        uploadedDate,
+        date,
+        size,
+        fileSize,
+        type,
+        fileType,
+        fileDataUrl,
+        url,
+        notes,
+        description,
+      } = req.body || {};
+
+      const docName = (name || fileName || title || 'Clinical_Document.pdf').trim();
+      const docCategory = (category || documentType || 'Lab Report').trim();
+      const docTypeFormat = (type || fileType || 'PDF').trim();
+      const docNotes = notes || description || undefined;
+
+      // Find or create DocumentType
+      let dt = await prisma.documentType.findFirst({
+        where: {
+          OR: [
+            { name: { equals: docCategory, mode: 'insensitive' } },
+            { name: { contains: docCategory, mode: 'insensitive' } },
+          ],
+        },
+      });
+
+      if (!dt) {
+        try {
+          dt = await prisma.documentType.create({
+            data: { name: docCategory },
+          });
+        } catch {
+          dt = (await prisma.documentType.findFirst()) || { id: 1, name: 'General Document' };
+        }
+      }
+
+      // Calculate size in KB
+      let sizeKb = 250;
+      if (typeof size === 'number') {
+        sizeKb = Math.round(size);
+      } else if (typeof size === 'string') {
+        const num = parseFloat(size.replace(/[^0-9.]/g, ''));
+        if (!isNaN(num)) {
+          sizeKb = size.toUpperCase().includes('MB') ? Math.round(num * 1024) : Math.round(num);
+        }
+      } else if (fileSize) {
+        const num = parseFloat(String(fileSize).replace(/[^0-9.]/g, ''));
+        if (!isNaN(num)) {
+          sizeKb = String(fileSize).toUpperCase().includes('MB') ? Math.round(num * 1024) : Math.round(num);
+        }
+      }
+
+      const effectiveUploaderId = userId > 0 ? userId : (doctor?.userId || patient.userId || 1);
+      const filePathVal = fileDataUrl || url || `/uploads/documents/${Date.now()}_${docName.replace(/\s+/g, '_')}`;
+
+      const created = await prisma.medicalDocument.create({
+        data: {
+          patientId: patient.id,
+          documentTypeId: dt.id,
+          fileName: docName,
+          filePath: filePathVal,
+          fileSizeKb: sizeKb,
+          uploadedById: effectiveUploaderId,
+        },
+        include: {
+          documentType: true,
+        },
+      });
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const docDTO = {
+        id: `DOC-${created.id}`,
+        name: created.fileName,
+        type: docTypeFormat,
+        uploadedDate: created.uploadedAt ? created.uploadedAt.toISOString().split('T')[0] : (uploadedDate || date || todayStr),
+        uploadedBy: doctor ? `Dr. ${doctor.firstName} ${doctor.lastName}` : 'Attending Physician',
+        category: (dt.name || docCategory || 'Lab Report') as any,
+        size: sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`,
+        url: created.filePath,
+        notes: docNotes,
+      };
+
+      await logAudit(userId, 'CREATE_MEDICAL_DOCUMENT', 'medical_documents', created.id, {
+        patientId: patient.id,
+        fileName: created.fileName,
+        category: dt.name,
+      });
+
+      return res.status(201).json({
+        success: true,
+        data: docDTO,
+        message: 'Medical document attached to patient chart successfully.',
+      });
+    } catch (err: any) {
+      console.error('[DOCTOR] Upload medical document error:', err);
+      return res.status(500).json({ success: false, error: err.message || 'Failed to attach medical document.' });
+    }
+  }
+);
+
+/**
+ * GET /api/doctor/patients/:id/documents
+ * Retrieves all medical documents for the specified patient.
+ */
+router.get(
+  '/patients/:id/documents',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const rawId = parseInt(req.params.id);
+      if (isNaN(rawId)) {
+        return res.status(400).json({ success: false, error: 'Invalid patient ID.' });
+      }
+
+      const patientId = await resolvePatientId(rawId);
+      const docs = await prisma.medicalDocument.findMany({
+        where: { patientId },
+        include: {
+          documentType: true,
+          uploadedBy: {
+            select: {
+              id: true,
+              doctor: { select: { firstName: true, lastName: true } },
+              nurse: { select: { firstName: true, lastName: true } },
+              patient: { select: { firstName: true, lastName: true } },
+            },
+          },
+        },
+        orderBy: { uploadedAt: 'desc' },
+      });
+
+      const formatted = docs.map((doc) => {
+        let uploaderName = 'Hospital Diagnostic Lab';
+        if (doc.uploadedBy?.doctor) {
+          uploaderName = `Dr. ${doc.uploadedBy.doctor.firstName} ${doc.uploadedBy.doctor.lastName}`;
+        } else if (doc.uploadedBy?.nurse) {
+          uploaderName = `Nurse ${doc.uploadedBy.nurse.firstName} ${doc.uploadedBy.nurse.lastName}`;
+        } else if (doc.uploadedBy?.patient) {
+          uploaderName = `${doc.uploadedBy.patient.firstName} ${doc.uploadedBy.patient.lastName} (Patient)`;
+        }
+
+        const sizeKb = doc.fileSizeKb || 240;
+        return {
+          id: `DOC-${doc.id}`,
+          name: doc.fileName,
+          type: doc.documentType?.name || 'PDF',
+          uploadedDate: doc.uploadedAt ? doc.uploadedAt.toISOString().split('T')[0] : '2026-08-10',
+          uploadedBy: uploaderName,
+          category: (doc.documentType?.name || 'Lab Report') as any,
+          size: sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`,
+          url: doc.filePath,
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
+    } catch (err: any) {
+      console.error('[DOCTOR] Fetch patient documents error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch medical documents.' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/doctor/documents/:id
+ * Deletes a medical document from the system.
+ */
+router.delete(
+  '/documents/:id',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const rawId = parseInt(req.params.id.replace(/\D/g, ''), 10);
+      if (!rawId) {
+        return res.status(400).json({ success: false, error: 'Invalid document ID.' });
+      }
+
+      const existing = await prisma.medicalDocument.findUnique({ where: { id: rawId } });
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Document not found.' });
+      }
+
+      await prisma.medicalDocument.delete({ where: { id: rawId } });
+      const userId = req.user?.userId;
+      await logAudit(userId, 'DELETE_MEDICAL_DOCUMENT', 'medical_documents', rawId);
+
+      return res.json({ success: true, message: 'Document removed successfully.' });
+    } catch (err: any) {
+      console.error('[DOCTOR] Delete document error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to remove document.' });
+    }
+  }
+);
+
 
 /**
  * POST /api/doctor/ai-summary/:patientId
