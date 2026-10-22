@@ -266,8 +266,6 @@ const PatientRecord: React.FC<{
   // ── Medical Document States ──
   const [documents, setDocuments] = useState<MedicalDocument[]>(patient.documents || []);
   const [showAddDocModal, setShowAddDocModal] = useState(false);
-  const [docFilterCategory, setDocFilterCategory] = useState<string>('All');
-  const [docSearchQuery, setDocSearchQuery] = useState('');
   const [docSuccessMsg, setDocSuccessMsg] = useState<string | null>(null);
   const [deletingDocId, setDeletingDocId] = useState<string | null>(null);
 
@@ -1695,93 +1693,32 @@ const PatientRecord: React.FC<{
               )}
             </AnimatePresence>
 
-            {/* Filter & Search Bar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-              {/* Category Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
-                {['All', 'Lab Report', 'Radiology', 'Prescription', 'Discharge Summary', 'Referral', 'Other'].map((cat) => {
-                  const isCatActive = docFilterCategory === cat;
-                  const catCount = cat === 'All' ? documents.length : documents.filter(d => (d.category || '').toLowerCase() === cat.toLowerCase()).length;
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setDocFilterCategory(cat)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                        isCatActive
-                          ? 'bg-cyan-500 text-navy-950 font-bold shadow-sm'
-                          : 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
-                      }`}
-                    >
-                      <span>{cat}</span>
-                      <span className={`text-[10px] px-1 py-0.2 rounded-full ${isCatActive ? 'bg-navy-950/30 text-navy-950 font-extrabold' : 'bg-white/10 text-gray-300'}`}>
-                        {catCount}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Search input */}
-              <div className="relative min-w-[200px]">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={docSearchQuery}
-                  onChange={(e) => setDocSearchQuery(e.target.value)}
-                  placeholder="Filter by title / uploader…"
-                  className="w-full bg-slate-900/80 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-gray-500 focus:border-cyan-400 outline-none"
-                />
-              </div>
-            </div>
-
             {/* Documents List */}
-            {(() => {
-              const filteredDocs = documents.filter((doc) => {
-                const matchesCat = docFilterCategory === 'All' || (doc.category || '').toLowerCase() === docFilterCategory.toLowerCase();
-                const q = docSearchQuery.toLowerCase().trim();
-                const matchesSearch = !q || (doc.name || '').toLowerCase().includes(q) || (doc.uploadedBy || '').toLowerCase().includes(q) || (doc.notes || '').toLowerCase().includes(q);
-                return matchesCat && matchesSearch;
-              });
-
-              if (filteredDocs.length === 0) {
-                return (
-                  <div className="glass-card p-10 border border-white/10 text-center rounded-2xl space-y-3">
-                    <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500 mx-auto">
-                      <FolderOpen className="w-6 h-6 text-gray-400" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-white">No Medical Documents Found</h4>
-                      <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
-                        {documents.length === 0
-                          ? 'No diagnostic reports or clinical attachments have been uploaded for this patient yet.'
-                          : `No documents found matching category "${docFilterCategory}" or search query.`}
-                      </p>
-                    </div>
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (documents.length === 0) {
-                            setShowAddDocModal(true);
-                          } else {
-                            setDocFilterCategory('All');
-                            setDocSearchQuery('');
-                          }
-                        }}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{documents.length === 0 ? 'Attach First Document' : 'Reset Filters'}</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="space-y-2.5">
-                  {filteredDocs.map((doc) => {
+            {documents.length === 0 ? (
+              <div className="glass-card p-10 border border-white/10 text-center rounded-2xl space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-500 mx-auto">
+                  <FolderOpen className="w-6 h-6 text-gray-400" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">No Medical Documents Uploaded</h4>
+                  <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                    No diagnostic reports, imaging scans, or clinical attachments have been uploaded for {patient.firstName} {patient.lastName} yet.
+                  </p>
+                </div>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddDocModal(true)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Attach First Document</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {documents.map((doc) => {
                     const isDeleting = deletingDocId === doc.id;
                     const cat = doc.category || 'Lab Report';
                     const catBadgeColor =
@@ -1883,9 +1820,8 @@ const PatientRecord: React.FC<{
                       </div>
                     );
                   })}
-                </div>
-              );
-            })()}
+              </div>
+            )}
 
             {/* Add Medical Document Modal */}
             <AddMedicalDocumentModal
