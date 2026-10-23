@@ -61,6 +61,41 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
   const [submittingReschedule, setSubmittingReschedule] = useState(false);
   const [rescheduleModalError, setRescheduleModalError] = useState<string | null>(null);
 
+  // Deduplicate appointment notifications: newer rescheduled or cancelled alerts replace older alerts for that appointment/doctor
+  const deduplicateAppointmentNotifications = (notifs: PatientNotification[]): PatientNotification[] => {
+    const seenKeys = new Set<string>();
+    return notifs.filter((n) => {
+      const isAppt =
+        n.type === 'appointment' ||
+        n.title.toLowerCase().includes('appointment') ||
+        n.message.toLowerCase().includes('consultation') ||
+        n.message.toLowerCase().includes('scheduled') ||
+        n.message.toLowerCase().includes('rescheduled');
+
+      if (!isAppt) return true;
+
+      // 1. Match by explicit appointmentId
+      if (n.appointmentId) {
+        const key = `appt_id_${n.appointmentId}`;
+        if (seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        return true;
+      }
+
+      // 2. Match by doctor name in message/title
+      const docMatch = n.message.match(/dr\.?\s+([a-z0-9_\-\s]+?)(?=\s*[\(\.,]|has|is|on|at|\s*$)/i);
+      if (docMatch && docMatch[1]) {
+        const docKey = docMatch[1].trim().toLowerCase().split(/\s+/).slice(0, 2).join(' ');
+        const key = `appt_doc_${docKey}`;
+        if (seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        return true;
+      }
+
+      return true;
+    });
+  };
+
   const loadNotifications = async () => {
     try {
       setLoading(true);
@@ -84,7 +119,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
       } else {
         data = await patientService.getNotifications();
       }
-      setNotifications(data);
+      setNotifications(deduplicateAppointmentNotifications(data));
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Unable to load notifications.');
     } finally {
@@ -171,6 +206,14 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
 
   // Helper: Associate notification with a booked appointment
   const findAssociatedAppointment = (notif: PatientNotification): PatientBookedAppointment | null => {
+    // If notification explicitly says cancelled, do not link for active actions
+    if (
+      notif.title.toLowerCase().includes('cancel') ||
+      notif.message.toLowerCase().includes('cancelled')
+    ) {
+      return null;
+    }
+
     if (notif.appointmentId) {
       const found = appointments.find((a) => a.id === notif.appointmentId);
       if (found) return found;
@@ -194,12 +237,9 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
       });
       if (docMatch) return docMatch;
 
-      // 2. Fallback to active upcoming appointment
-      const eligible = appointments.find(isAppointmentEligible);
-      if (eligible) return eligible;
-
-      // 3. Fallback to any appointment in list
-      if (appointments.length > 0) return appointments[0];
+      // 2. Fallback to active upcoming appointment ONLY if there is exactly 1 eligible appointment
+      const eligible = appointments.filter(isAppointmentEligible);
+      if (eligible.length === 1) return eligible[0];
     }
     return null;
   };
@@ -222,7 +262,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
         prev.map((a) => (a.id === cancelTarget.id ? { ...a, status: 'cancelled' } : a))
       );
 
-      // 2. Append cancellation alert to notifications
+      // 2. Replace older appointment notification with cancellation alert
       const cancellationNotif: PatientNotification = {
         id: `NOTIF-CANCEL-${Date.now()}`,
         patientId: cancelTarget.doctor?.id || 1,
@@ -234,7 +274,27 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
         linkTab: 'appointments',
         appointmentId: cancelTarget.id,
       };
-      setNotifications((prev) => [cancellationNotif, ...prev]);
+
+      const docName = (cancelTarget.doctor?.name || '').toLowerCase();
+      const docLast = (cancelTarget.doctor?.lastName || '').toLowerCase();
+
+      setNotifications((prev) => [
+        cancellationNotif,
+        ...prev.filter((n) => {
+          if (n.appointmentId && n.appointmentId === cancelTarget.id) return false;
+          const isAppt =
+            n.type === 'appointment' ||
+            n.title.toLowerCase().includes('appointment') ||
+            n.message.toLowerCase().includes('consultation');
+          if (isAppt) {
+            const msgLower = n.message.toLowerCase();
+            const titleLower = n.title.toLowerCase();
+            if (docName && (msgLower.includes(docName) || titleLower.includes(docName))) return false;
+            if (docLast && (msgLower.includes(docLast) || titleLower.includes(docLast))) return false;
+          }
+          return true;
+        }),
+      ]);
 
       // 3. Set success notification & close modal
       setSuccessMsg(
@@ -275,7 +335,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
         )
       );
 
-      // 2. Append rescheduled alert to notifications
+      // 2. Replace older appointment notification with rescheduled alert
       const rescheduledNotif: PatientNotification = {
         id: `NOTIF-RESCHED-${Date.now()}`,
         patientId: rescheduleTarget.doctor?.id || 1,
@@ -287,7 +347,27 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
         linkTab: 'appointments',
         appointmentId: rescheduleTarget.id,
       };
-      setNotifications((prev) => [rescheduledNotif, ...prev]);
+
+      const docName = (rescheduleTarget.doctor?.name || '').toLowerCase();
+      const docLast = (rescheduleTarget.doctor?.lastName || '').toLowerCase();
+
+      setNotifications((prev) => [
+        rescheduledNotif,
+        ...prev.filter((n) => {
+          if (n.appointmentId && n.appointmentId === rescheduleTarget.id) return false;
+          const isAppt =
+            n.type === 'appointment' ||
+            n.title.toLowerCase().includes('appointment') ||
+            n.message.toLowerCase().includes('consultation');
+          if (isAppt) {
+            const msgLower = n.message.toLowerCase();
+            const titleLower = n.title.toLowerCase();
+            if (docName && (msgLower.includes(docName) || titleLower.includes(docName))) return false;
+            if (docLast && (msgLower.includes(docLast) || titleLower.includes(docLast))) return false;
+          }
+          return true;
+        }),
+      ]);
 
       // 3. Show success message & close modal
       setSuccessMsg(

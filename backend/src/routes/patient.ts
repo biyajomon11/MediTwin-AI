@@ -1387,7 +1387,26 @@ router.get(
         };
       });
 
-      return res.json({ success: true, data: formatted });
+      // Deduplicate appointment notifications: rescheduled or cancelled alerts replace older scheduled alerts
+      const seenApptDoctors = new Set<string>();
+      const deduplicated = formatted.filter((item) => {
+        if (item.type !== 'appointment' && !item.title.toLowerCase().includes('appointment')) {
+          return true;
+        }
+
+        const docMatch = item.message.match(/Dr\.\s*([A-Za-z]+)\s*([A-Za-z]+)?/i);
+        const key = docMatch ? docMatch[0].toLowerCase() : null;
+        if (key) {
+          if (seenApptDoctors.has(key)) {
+            // Older notification for this doctor appointment is replaced by newer alert
+            return false;
+          }
+          seenApptDoctors.add(key);
+        }
+        return true;
+      });
+
+      return res.json({ success: true, data: deduplicated });
     } catch (err) {
       console.error('[PATIENT] Get notifications error:', err);
       return res.status(500).json({ success: false, error: 'Failed to fetch notifications.' });
@@ -2267,6 +2286,62 @@ router.patch(
         },
         include: { status: true, doctor: true },
       });
+
+      // Replace older notification for this appointment in database so only the rescheduled alert remains
+      try {
+        const notifType = await prisma.notificationType.findFirst({
+          where: { name: { contains: 'appoint', mode: 'insensitive' } },
+        });
+
+        const time12 = formatTime12h(updated.appointmentTime);
+        const doctorName = `Dr. ${appointment.doctor.firstName} ${appointment.doctor.lastName}`;
+
+        // Find existing notifications related to this doctor/appointment for this user
+        const existingNotifs = await prisma.notification.findMany({
+          where: {
+            userId: patient.userId,
+            OR: [
+              { title: { contains: 'Appointment', mode: 'insensitive' } },
+              { message: { contains: appointment.doctor.lastName, mode: 'insensitive' } },
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        if (existingNotifs.length > 0) {
+          // Update the primary notification to be the rescheduled alert
+          const primaryNotif = existingNotifs[0];
+          await prisma.notification.update({
+            where: { id: primaryNotif.id },
+            data: {
+              title: 'Appointment Rescheduled',
+              message: `Your appointment with ${doctorName} has been rescheduled to ${newDate} at ${time12}.`,
+              isRead: false,
+              createdAt: new Date(),
+            },
+          });
+
+          // Delete any extra duplicate notifications for this appointment
+          const extraIds = existingNotifs.slice(1).map((n) => n.id);
+          if (extraIds.length > 0) {
+            await prisma.notification.deleteMany({
+              where: { id: { in: extraIds } },
+            });
+          }
+        } else {
+          await prisma.notification.create({
+            data: {
+              userId: patient.userId,
+              notificationTypeId: notifType?.id || 1,
+              title: 'Appointment Rescheduled',
+              message: `Your appointment with ${doctorName} has been rescheduled to ${newDate} at ${time12}.`,
+              isRead: false,
+            },
+          });
+        }
+      } catch (notifErr) {
+        console.warn('[PATIENT] Reschedule notification replacement error:', notifErr);
+      }
 
       return res.json({
         success: true,

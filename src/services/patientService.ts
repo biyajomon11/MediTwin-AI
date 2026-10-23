@@ -989,6 +989,38 @@ export async function dismissMedicineReminder(reminderId: string): Promise<Medic
   return updated;
 }
 
+function deduplicateApptNotifications(notifs: PatientNotification[]): PatientNotification[] {
+  const seenKeys = new Set<string>();
+  return notifs.filter((n) => {
+    const isAppt =
+      n.type === 'appointment' ||
+      n.title.toLowerCase().includes('appointment') ||
+      n.message.toLowerCase().includes('consultation') ||
+      n.message.toLowerCase().includes('scheduled') ||
+      n.message.toLowerCase().includes('rescheduled');
+
+    if (!isAppt) return true;
+
+    if (n.appointmentId) {
+      const key = `appt_id_${n.appointmentId}`;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    }
+
+    const docMatch = n.message.match(/dr\.?\s+([a-z0-9_\-\s]+?)(?=\s*[\(\.,]|has|is|on|at|\s*$)/i);
+    if (docMatch && docMatch[1]) {
+      const docKey = docMatch[1].trim().toLowerCase().split(/\s+/).slice(0, 2).join(' ');
+      const key = `appt_doc_${docKey}`;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    }
+
+    return true;
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 6. Notifications
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1004,7 +1036,7 @@ export async function getNotifications(
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
-          return json.data;
+          return deduplicateApptNotifications(json.data);
         }
       }
       const errData = await res.json().catch(() => ({}));
@@ -1022,7 +1054,7 @@ export async function getNotifications(
   if (patientId !== _profile.id && patientId !== DEMO_PATIENT_ID) {
     throw new Error('Unauthorized: Cannot view notifications for other patients.');
   }
-  return [..._notifications.filter((n) => n.patientId === patientId || n.patientId === DEMO_PATIENT_ID)];
+  return deduplicateApptNotifications([..._notifications.filter((n) => n.patientId === patientId || n.patientId === DEMO_PATIENT_ID)]);
 }
 
 export async function markNotificationRead(notificationId: string): Promise<void> {
@@ -1457,6 +1489,30 @@ export async function cancelPatientAppointment(
     a.id === appointmentId ? { ...a, status: 'cancelled' } : a
   );
 
+  const appt = _mockAppointments.find((a) => a.id === appointmentId);
+  const docName = appt?.doctor?.name || 'your doctor';
+
+  // Replace older active appointment notifications for this appointment
+  _notifications = _notifications.filter((n) => {
+    if (n.appointmentId === appointmentId) return false;
+    if (n.type === 'appointment' && (n.title.includes('Scheduled') || n.title.includes('Rescheduled')) && n.message.includes(docName)) {
+      return false;
+    }
+    return true;
+  });
+
+  _notifications.unshift({
+    id: `NOTIF-CANCEL-${Date.now()}`,
+    patientId: getCurrentPatientId(),
+    title: 'Appointment Cancelled',
+    message: `Your appointment with ${docName} has been cancelled.`,
+    dateTime: 'Just now',
+    type: 'appointment',
+    isRead: false,
+    linkTab: 'appointments',
+    appointmentId,
+  });
+
   return json;
 }
 
@@ -1482,6 +1538,30 @@ export async function reschedulePatientAppointment(
   _mockAppointments = _mockAppointments.map((a) =>
     a.id === appointmentId ? { ...a, date: newDate, time: newTime, status: 'scheduled' } : a
   );
+
+  const appt = _mockAppointments.find((a) => a.id === appointmentId);
+  const docName = appt?.doctor?.name || 'your doctor';
+
+  // Replace older appointment notifications for this appointment
+  _notifications = _notifications.filter((n) => {
+    if (n.appointmentId === appointmentId) return false;
+    if (n.type === 'appointment' && (n.title.includes('Scheduled') || n.title.includes('Rescheduled')) && n.message.includes(docName)) {
+      return false;
+    }
+    return true;
+  });
+
+  _notifications.unshift({
+    id: `NOTIF-RESCHED-${Date.now()}`,
+    patientId: getCurrentPatientId(),
+    title: 'Appointment Rescheduled',
+    message: `Your appointment with ${docName} has been rescheduled to ${newDate} at ${newTime}.`,
+    dateTime: 'Just now',
+    type: 'appointment',
+    isRead: false,
+    linkTab: 'appointments',
+    appointmentId,
+  });
 
   return json;
 }
