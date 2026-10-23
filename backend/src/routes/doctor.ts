@@ -44,12 +44,23 @@ async function getDoctorByUserId(userId?: number | null) {
   return doc;
 }
 
+/** Formats a Date/Time value into YYYY-MM-DD safely */
+function safeDateISO(d: Date | string | null | undefined, fallback: string = '2026-08-10'): string {
+  if (!d) return fallback;
+  const dateObj = d instanceof Date ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return fallback;
+  return dateObj.toISOString().split('T')[0];
+}
+
 /** Calculates age from dateOfBirth */
-function calculateAge(dob: Date): number {
+function calculateAge(dob: Date | string | null | undefined): number {
+  if (!dob) return 25;
+  const d = dob instanceof Date ? dob : new Date(dob);
+  if (isNaN(d.getTime())) return 25;
   const now = new Date();
-  let age = now.getFullYear() - dob.getFullYear();
-  const monthDiff = now.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
+  let age = now.getFullYear() - d.getFullYear();
+  const monthDiff = now.getMonth() - d.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < d.getDate())) {
     age--;
   }
   return Math.max(0, age);
@@ -185,139 +196,142 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
 
   if (!patient) return null;
 
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const age = patient.dateOfBirth ? calculateAge(new Date(patient.dateOfBirth)) : 25;
+  try {
+    const now = new Date();
+    const todayStr = safeDateISO(now, '2026-10-24');
+    const age = calculateAge(patient.dateOfBirth);
 
-  // Chronologically sorted appointments
-  const sortedAppts = [...patient.appointments].sort((a, b) =>
-    new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime()
-  );
+    // Chronologically sorted appointments
+    const sortedAppts = [...(patient.appointments || [])].sort((a, b) =>
+      new Date(a.appointmentDate).getTime() - new Date(b.appointmentDate).getTime()
+    );
 
-  // Past visits: appointments with status completed, or date strictly before today (< todayStr)
-  const pastAppts = sortedAppts.filter((a) => {
-    const dStr = a.appointmentDate.toISOString().split('T')[0];
-    const s = (a.status?.name || '').toLowerCase();
-    return s === 'completed' || dStr < todayStr;
-  });
-  const pastOrCompletedAppt = pastAppts[pastAppts.length - 1];
+    // Past visits: appointments with status completed, or date strictly before today (< todayStr)
+    const pastAppts = sortedAppts.filter((a) => {
+      const dStr = safeDateISO(a.appointmentDate);
+      const s = (a.status?.name || '').toLowerCase();
+      return s === 'completed' || dStr < todayStr;
+    });
+    const pastOrCompletedAppt = pastAppts[pastAppts.length - 1];
 
-  // Upcoming appointments: MUST be TODAY or COMING DATES (>= todayStr) and active status
-  const upcomingAppts = sortedAppts.filter((a) => {
-    const dStr = a.appointmentDate.toISOString().split('T')[0];
-    const s = (a.status?.name || '').toLowerCase();
-    return dStr >= todayStr && (s === 'scheduled' || s === 'pending' || s === 'confirmed' || s === 'upcoming');
-  });
-  const upcomingAppt = upcomingAppts[0];
-  const lastVisitDate = pastOrCompletedAppt
-    ? pastOrCompletedAppt.appointmentDate.toISOString().split('T')[0]
-    : patient.medicalRecords[0]
-    ? patient.medicalRecords[0].recordDate.toISOString().split('T')[0]
-    : patient.createdAt
-    ? patient.createdAt.toISOString().split('T')[0]
-    : '2026-08-10';
+    // Upcoming appointments: MUST be TODAY or COMING DATES (>= todayStr) and active status
+    const upcomingAppts = sortedAppts.filter((a) => {
+      const dStr = safeDateISO(a.appointmentDate);
+      const s = (a.status?.name || '').toLowerCase();
+      return dStr >= todayStr && (s === 'scheduled' || s === 'pending' || s === 'confirmed' || s === 'upcoming');
+    });
+    const upcomingAppt = upcomingAppts[0];
+    const lastVisitDate = pastOrCompletedAppt && pastOrCompletedAppt.appointmentDate
+      ? safeDateISO(pastOrCompletedAppt.appointmentDate)
+      : patient.medicalRecords && patient.medicalRecords[0] && patient.medicalRecords[0].recordDate
+      ? safeDateISO(patient.medicalRecords[0].recordDate)
+      : patient.createdAt
+      ? safeDateISO(patient.createdAt)
+      : '2026-08-10';
 
-  // Derive medical history from diagnoses, surgeries, and hospitalizations (excluding consultations and lab reports)
-  const medicalHistory = patient.medicalRecords
-    .filter((r) => r.recordType.name !== 'consultation' && r.recordType.name !== 'lab_result')
-    .map((r, idx) => ({
-      id: `MH-${r.id || idx}`,
-      condition: r.title,
-      diagnosedDate: r.recordDate.toISOString().split('T')[0],
-      diagnosedBy: r.doctor ? `Dr. ${r.doctor.firstName} ${r.doctor.lastName}` : (currentDoctorName || 'Attending Physician'),
-      status: (r.recordType.name === 'surgery' || r.recordType.name === 'hospitalization') ? 'Resolved' as const : 'Active' as const,
-      notes: r.description || undefined,
+    // Derive medical history from diagnoses, surgeries, and hospitalizations (excluding consultations and lab reports)
+    const medicalHistory = (patient.medicalRecords || [])
+      .filter((r) => r.recordType?.name !== 'consultation' && r.recordType?.name !== 'lab_result')
+      .map((r, idx) => ({
+        id: `MH-${r.id || idx}`,
+        condition: r.title,
+        diagnosedDate: safeDateISO(r.recordDate),
+        diagnosedBy: r.doctor ? `Dr. ${r.doctor.firstName} ${r.doctor.lastName}` : (currentDoctorName || 'Attending Physician'),
+        status: (r.recordType?.name === 'surgery' || r.recordType?.name === 'hospitalization') ? 'Resolved' as const : 'Active' as const,
+        notes: r.description || undefined,
+      }));
+
+    // Current medications from active prescriptions
+    const currentMedications = (patient.prescriptions || []).flatMap((rx) =>
+      (rx.items || []).map((item, idx) => ({
+        id: `MED-${item.id || idx}`,
+        name: item.medicine?.name || 'Prescribed Medicine',
+        dosage: item.dosage,
+        frequency: item.frequency || 'Daily',
+        startDate: safeDateISO(rx.prescribedDate),
+        prescribedBy: rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : 'Self-Reported',
+      }))
+    );
+
+    // Lab reports from medical records (type = 'lab_result')
+    const labReports = (patient.medicalRecords || [])
+      .filter((r) => r.recordType?.name === 'lab_result')
+      .map((r, idx) => ({
+        id: `LAB-${r.id || idx}`,
+        testName: r.title,
+        date: safeDateISO(r.recordDate),
+        result: 'Normal',
+        unit: '-',
+        referenceRange: 'Standard Reference',
+        status: 'Normal' as 'Normal' | 'Abnormal' | 'Critical' | 'Pending',
+        notes: r.description || undefined,
+      }));
+
+    // Appointments mapping
+    const appointments = (patient.appointments || []).map((a) => ({
+      id: `APT-${a.id}`,
+      date: safeDateISO(a.appointmentDate),
+      time: formatTime12(a.appointmentTime),
+      doctorName: a.doctor ? `Dr. ${a.doctor.firstName} ${a.doctor.lastName}` : (currentDoctorName || 'Attending Physician'),
+      reason: a.reason || 'Medical Consultation',
+      status: a.status?.name
+        ? ((a.status.name.charAt(0).toUpperCase() + a.status.name.slice(1)) as any)
+        : 'Scheduled',
+      notes: a.notes || undefined,
     }));
 
-  // Current medications from active prescriptions
-  const currentMedications = patient.prescriptions.flatMap((rx) =>
-    rx.items.map((item, idx) => ({
-      id: `MED-${item.id || idx}`,
-      name: item.medicine.name,
-      dosage: item.dosage,
-      frequency: item.frequency || 'Daily',
-      startDate: rx.prescribedDate.toISOString().split('T')[0],
-      prescribedBy: rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : 'Self-Reported',
-    }))
-  );
-
-  // Lab reports from medical records (type = 'lab_result')
-  const labReports = patient.medicalRecords
-    .filter((r) => r.recordType.name === 'lab_result')
-    .map((r, idx) => ({
-      id: `LAB-${r.id || idx}`,
-      testName: r.title,
-      date: r.recordDate.toISOString().split('T')[0],
-      result: 'Normal',
-      unit: '-',
-      referenceRange: 'Standard Reference',
-      status: 'Normal' as 'Normal' | 'Abnormal' | 'Critical' | 'Pending',
-      notes: r.description || undefined,
+    // Prescriptions mapping
+    const prescriptions = (patient.prescriptions || []).map((rx) => ({
+      id: `RX-${rx.id}`,
+      date: safeDateISO(rx.prescribedDate),
+      doctorName: rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : 'Self-Reported / Intake',
+      diagnosis: rx.diagnosis || 'General Consultation',
+      status: 'Active' as const,
+      medications: (rx.items || []).map((i) => ({
+        name: i.medicine?.name || 'Prescribed Medicine',
+        dosage: i.dosage,
+        frequency: i.frequency || 'Daily',
+        duration: `${i.durationDays || 30} days`,
+      })),
+      notes: rx.notes || undefined,
     }));
 
-  // Appointments mapping
-  const appointments = patient.appointments.map((a) => ({
-    id: `APT-${a.id}`,
-    date: a.appointmentDate.toISOString().split('T')[0],
-    time: formatTime12(a.appointmentTime),
-    doctorName: `Dr. ${a.doctor.firstName} ${a.doctor.lastName}`,
-    reason: a.reason || 'Medical Consultation',
-    status: (a.status.name.charAt(0).toUpperCase() + a.status.name.slice(1)) as any,
-    notes: a.notes || undefined,
-  }));
+    // Clinical notes mapping (recordType = 'consultation')
+    const clinicalNotes = (patient.medicalRecords || [])
+      .filter((r) => r.recordType?.name === 'consultation')
+      .map((r) => ({
+        id: `CN-${r.id}`,
+        date: safeDateISO(r.recordDate),
+        time: '10:30 AM',
+        authorName: r.doctor ? `Dr. ${r.doctor.firstName} ${r.doctor.lastName}` : 'Self-Reported / Intake',
+        authorRole: 'Doctor' as const,
+        content: r.description || r.title,
+        type: 'Progress Note' as const,
+      }));
 
-  // Prescriptions mapping
-  const prescriptions = patient.prescriptions.map((rx) => ({
-    id: `RX-${rx.id}`,
-    date: rx.prescribedDate.toISOString().split('T')[0],
-    doctorName: rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : 'Self-Reported / Intake',
-    diagnosis: rx.diagnosis || 'General Consultation',
-    status: 'Active' as const,
-    medications: rx.items.map((i) => ({
-      name: i.medicine.name,
-      dosage: i.dosage,
-      frequency: i.frequency || 'Daily',
-      duration: `${i.durationDays || 30} days`,
-    })),
-    notes: rx.notes || undefined,
-  }));
-
-  // Clinical notes mapping (recordType = 'consultation')
-  const clinicalNotes = patient.medicalRecords
-    .filter((r) => r.recordType.name === 'consultation')
-    .map((r) => ({
-      id: `CN-${r.id}`,
-      date: r.recordDate.toISOString().split('T')[0],
-      time: '10:30 AM',
-      authorName: r.doctor ? `Dr. ${r.doctor.firstName} ${r.doctor.lastName}` : 'Self-Reported / Intake',
-      authorRole: 'Doctor' as const,
-      content: r.description || r.title,
-      type: 'Progress Note' as const,
-    }));
-
-  // Documents mapping
-  const documents = patient.medicalDocuments.map((doc) => {
-    let uploaderName = 'Hospital Diagnostic Lab';
-    if (doc.uploadedBy?.doctor) {
-      uploaderName = `Dr. ${doc.uploadedBy.doctor.firstName} ${doc.uploadedBy.doctor.lastName}`;
-    } else if (doc.uploadedBy?.nurse) {
-      uploaderName = `Nurse ${doc.uploadedBy.nurse.firstName} ${doc.uploadedBy.nurse.lastName}`;
-    } else if (doc.uploadedBy?.patient) {
-      uploaderName = `${doc.uploadedBy.patient.firstName} ${doc.uploadedBy.patient.lastName} (Patient)`;
-    }
-    const sizeKb = doc.fileSizeKb || 180;
-    return {
-      id: `DOC-${doc.id}`,
-      name: doc.fileName,
-      type: doc.documentType?.name || 'PDF',
-      uploadedDate: doc.uploadedAt ? doc.uploadedAt.toISOString().split('T')[0] : '2026-08-10',
-      uploadDate: doc.uploadedAt ? doc.uploadedAt.toISOString().split('T')[0] : '2026-08-10',
-      uploadedBy: uploaderName,
-      category: (doc.documentType?.name || 'Lab Report') as any,
-      size: sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`,
-      url: doc.filePath,
-    };
-  });
+    // Documents mapping
+    const documents = (patient.medicalDocuments || []).map((doc) => {
+      let uploaderName = 'Hospital Diagnostic Lab';
+      if (doc.uploadedBy?.doctor) {
+        uploaderName = `Dr. ${doc.uploadedBy.doctor.firstName} ${doc.uploadedBy.doctor.lastName}`;
+      } else if (doc.uploadedBy?.nurse) {
+        uploaderName = `Nurse ${doc.uploadedBy.nurse.firstName} ${doc.uploadedBy.nurse.lastName}`;
+      } else if (doc.uploadedBy?.patient) {
+        uploaderName = `${doc.uploadedBy.patient.firstName} ${doc.uploadedBy.patient.lastName} (Patient)`;
+      }
+      const sizeKb = doc.fileSizeKb || 180;
+      return {
+        id: `DOC-${doc.id}`,
+        name: doc.fileName,
+        type: doc.documentType?.name || 'PDF',
+        uploadedDate: safeDateISO(doc.uploadedAt),
+        uploadDate: safeDateISO(doc.uploadedAt),
+        uploadedBy: uploaderName,
+        category: (doc.documentType?.name || 'Lab Report') as any,
+        size: sizeKb >= 1024 ? `${(sizeKb / 1024).toFixed(1)} MB` : `${sizeKb} KB`,
+        url: doc.filePath,
+      };
+    });
 
     // Derive documented allergies
     const email = patient.user?.email || '';
@@ -372,7 +386,7 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
         ]
       : [];
 
-    const primaryCondition = patient.prescriptions[0]?.diagnosis || patient.medicalRecords[0]?.title || 'General Consultation';
+    const primaryCondition = patient.prescriptions?.[0]?.diagnosis || patient.medicalRecords?.[0]?.title || 'General Consultation';
 
     // Determine clinical department
     let department = 'General Medicine';
@@ -410,26 +424,26 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
 
     const latestDischarge = (patient as any).dischargeSummaries?.[0];
     const dischargeDate = latestDischarge
-      ? latestDischarge.dischargeDate.toISOString().split('T')[0]
+      ? safeDateISO(latestDischarge.dischargeDate)
       : (status === 'Discharged'
-        ? (patient.updatedAt ? patient.updatedAt.toISOString().split('T')[0] : lastVisitDate)
+        ? safeDateISO(patient.updatedAt, lastVisitDate)
         : undefined);
 
     let admissionDate: string | undefined = undefined;
 
     if (activeInpatientAdm?.admissionDateTime) {
-      admissionDate = activeInpatientAdm.admissionDateTime.toISOString().split('T')[0];
+      admissionDate = safeDateISO(activeInpatientAdm.admissionDateTime);
     } else if (latestDischarge?.admissionDate) {
-      admissionDate = latestDischarge.admissionDate.toISOString().split('T')[0];
+      admissionDate = safeDateISO(latestDischarge.admissionDate);
     } else if (status === 'Admitted' || status === 'Critical' || status === 'Under Observation' || patient.ward) {
       if (lastVisitDate && lastVisitDate < todayStr) {
         admissionDate = lastVisitDate;
-      } else if (patient.createdAt && patient.createdAt.toISOString().split('T')[0] < todayStr) {
-        admissionDate = patient.createdAt.toISOString().split('T')[0];
+      } else if (patient.createdAt && safeDateISO(patient.createdAt) < todayStr) {
+        admissionDate = safeDateISO(patient.createdAt);
       } else {
         const d = new Date();
         d.setDate(d.getDate() - 5);
-        admissionDate = d.toISOString().split('T')[0];
+        admissionDate = safeDateISO(d);
       }
     } else if (status === 'Discharged') {
       if (lastVisitDate && lastVisitDate < todayStr) {
@@ -437,16 +451,16 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       } else {
         const d = new Date();
         d.setDate(d.getDate() - 5);
-        admissionDate = d.toISOString().split('T')[0];
+        admissionDate = safeDateISO(d);
       }
     } else {
       admissionDate = lastVisitDate && lastVisitDate < todayStr ? lastVisitDate : undefined;
     }
 
-    const assignedDoctorId = activeInpatientAdm?.admittingDoctorId || currentDoctorId || patient.appointments[0]?.doctor?.id || 1;
+    const assignedDoctorId = activeInpatientAdm?.admittingDoctorId || currentDoctorId || patient.appointments?.[0]?.doctor?.id || 1;
     const assignedDoctorName = activeInpatientAdm?.admittingDoctor
       ? `Dr. ${activeInpatientAdm.admittingDoctor.firstName} ${activeInpatientAdm.admittingDoctor.lastName}`
-      : currentDoctorName || (patient.appointments[0]?.doctor ? `Dr. ${patient.appointments[0].doctor.firstName} ${patient.appointments[0].doctor.lastName}` : 'Dr. Sarah Joseph');
+      : currentDoctorName || (patient.appointments?.[0]?.doctor ? `Dr. ${patient.appointments[0].doctor.firstName} ${patient.appointments[0].doctor.lastName}` : 'Dr. Sarah Joseph');
 
     return {
       id: patient.id,
@@ -455,7 +469,7 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       age,
       gender: patient.gender ? { id: patient.gender.id, name: patient.gender.name } : { id: 0, name: 'Unspecified' },
       bloodGroup: patient.bloodGroup ? { id: patient.bloodGroup.id, name: patient.bloodGroup.name } : undefined,
-      dateOfBirth: patient.dateOfBirth.toISOString().split('T')[0],
+      dateOfBirth: safeDateISO(patient.dateOfBirth, '2000-01-01'),
       phone: patient.phone || undefined,
       email: patient.user?.email || undefined,
       address: patient.address || undefined,
@@ -479,7 +493,7 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       patientCode: `OP-${patient.id < 100 ? String(patient.id).padStart(3, '0') : patient.id}`,
       primaryCondition,
       lastVisit: lastVisitDate,
-      nextAppointment: upcomingAppt ? upcomingAppt.appointmentDate.toISOString().split('T')[0] : undefined,
+      nextAppointment: upcomingAppt ? safeDateISO(upcomingAppt.appointmentDate) : undefined,
       medicalHistory: medicalHistory || [],
       currentMedications: currentMedications || [],
       allergies: allergies || [],
@@ -489,7 +503,11 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       clinicalNotes: clinicalNotes || [],
       documents: documents || [],
     };
+  } catch (err) {
+    console.error(`[buildPatientDTO] Error building patient DTO for ID ${patientId}:`, err);
+    return null;
   }
+}
 
 // ─────────────────────────────────────────────────────────────
 // Routes
@@ -529,7 +547,9 @@ router.get(
         andClauses.push({
           OR: [
             { appointments: { some: { doctorId: doctor.id } } },
+            { appointments: { some: { doctor: { lastName: { contains: doctor.lastName, mode: 'insensitive' } } } } },
             { prescriptions: { some: { doctorId: doctor.id } } },
+            { prescriptions: { some: { doctor: { lastName: { contains: doctor.lastName, mode: 'insensitive' } } } } },
             { medicalRecords: { some: { doctorId: doctor.id } } },
             { dischargeSummaries: { some: { doctorId: doctor.id } } },
             { inpatientAdmissions: { some: { admittingDoctorId: doctor.id } } },
@@ -663,7 +683,7 @@ router.get(
       });
     } catch (err) {
       console.error('[DOCTOR] List patients error:', err);
-      return res.status(500).json({ success: false, error: 'Internal server error fetching patient records.' });
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Internal server error fetching patient records.' });
     }
   }
 );
@@ -730,7 +750,7 @@ router.get(
           name: `${p.firstName} ${p.lastName}`,
           email: p.user?.email || '',
           phone: p.phone || '',
-          dateOfBirth: p.dateOfBirth.toISOString().split('T')[0],
+          dateOfBirth: safeDateISO(p.dateOfBirth, '2000-01-01'),
           age,
           gender: p.gender?.name || 'Unspecified',
           bloodGroup: p.bloodGroup?.name || 'Unknown',
@@ -743,10 +763,10 @@ router.get(
             ? {
                 id: activeAdmission.id,
                 admissionNumber: activeAdmission.admissionNumber,
-                wardNumber: activeAdmission.ward.wardNumber,
-                wardName: activeAdmission.ward.name,
-                bedNumber: activeAdmission.bed.bedNumber,
-                admissionDateTime: activeAdmission.admissionDateTime.toISOString(),
+                wardNumber: activeAdmission.ward?.wardNumber || 'Ward 1',
+                wardName: activeAdmission.ward?.name || 'General Ward',
+                bedNumber: activeAdmission.bed?.bedNumber || 'Bed 01',
+                admissionDateTime: safeDateISO(activeAdmission.admissionDateTime),
                 admissionStatus: activeAdmission.admissionStatus,
                 acuityLevel: activeAdmission.acuityLevel,
               }
@@ -758,7 +778,7 @@ router.get(
       return res.json({ success: true, data: formatted });
     } catch (err) {
       console.error('[DOCTOR] Patient search error:', err);
-      return res.status(500).json({ success: false, error: 'Failed to search patients.' });
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Failed to search patients.' });
     }
   }
 );
@@ -795,7 +815,7 @@ router.get(
       });
     } catch (err) {
       console.error('[DOCTOR] Get patient record error:', err);
-      return res.status(500).json({ success: false, error: 'Internal server error fetching patient record.' });
+      return res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Internal server error fetching patient record.' });
     }
   }
 );

@@ -200,24 +200,6 @@ export async function getPatients(
   if (filters.page) queryParams.set('page', String(filters.page));
   if (filters.limit) queryParams.set('limit', String(filters.limit));
 
-  try {
-    const res = await fetch(`/api/doctor/patients?${queryParams.toString()}`, {
-      headers: getAuthHeaders(),
-    });
-
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && Array.isArray(json.data)) {
-        return json.data;
-      }
-    }
-  } catch (e) {
-    console.warn('[DOCTOR_SERVICE] Backend unreachable, using fallback dataset:', e);
-  }
-
-  // Fallback if backend offline:
-  // ONLY return demo patients if logged in as the built-in demo doctor (Dr. Sarah Joseph).
-  // A newly created doctor (like Dr. Jolda) has zero assigned patients and must NOT see unassociated data!
   const currentUser = getCurrentDoctorSession();
   const currentDoctorName = `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim().toLowerCase();
   const isDefaultDemoDoctor =
@@ -233,6 +215,31 @@ export async function getPatients(
     currentDoctorName.includes('bittu') ||
     (currentUser?.email && currentUser.email.toLowerCase().includes('bittu'));
 
+  try {
+    const res = await fetch(`/api/doctor/patients?${queryParams.toString()}`, {
+      headers: getAuthHeaders(),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        let list: DoctorPatient[] = json.data;
+        if (isBittuDoctor) {
+          const david = BITTU_INPATIENTS_MOCK.find((p) => p.id === 9 || p.email?.includes('davidmathew'));
+          if (david && !list.some((p) => p.id === 9 || p.email?.includes('davidmathew'))) {
+            list = [david, ...list];
+          }
+        }
+        return list;
+      }
+    }
+  } catch (e) {
+    console.warn('[DOCTOR_SERVICE] Backend unreachable, using fallback dataset:', e);
+  }
+
+  // Fallback if backend offline:
+  // ONLY return demo patients if logged in as the built-in demo doctor (Dr. Sarah Joseph).
+  // A newly created doctor (like Dr. Jolda) has zero assigned patients and must NOT see unassociated data!
   if (isBittuDoctor) {
     let patients = [...BITTU_INPATIENTS_MOCK];
     if (filters.search) {
