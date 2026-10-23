@@ -10,10 +10,10 @@ import {
   Edit3,
   Trash2,
   Eye,
-  Check,
   X,
   Loader2,
   Layers,
+  Send,
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import {
@@ -184,22 +184,18 @@ export const HospitalGuidelinesPage: React.FC = () => {
 
       const payload = {
         ...formData,
-        status: overrideStatus || formData.status,
+        status: overrideStatus || formData.status || 'PUBLISHED',
       };
 
       if (editingGuideline) {
         await updateAdminGuideline(editingGuideline.id, payload);
         setSuccessToast(
-          (overrideStatus === 'PUBLISHED' || payload.status === 'PUBLISHED')
-            ? `Guideline "${formData.title}" published and dispatched to ${formData.department || 'All Departments'}.`
-            : `Guideline "${formData.title}" updated successfully.`
+          `Guideline "${formData.title}" sent and dispatched to ${formData.department || 'All Departments'} medical staff.`
         );
       } else {
         await createAdminGuideline(payload);
         setSuccessToast(
-          overrideStatus === 'PUBLISHED'
-            ? `Guideline "${formData.title}" published and dispatched to ${formData.department || 'All Departments'}.`
-            : `Draft guideline "${formData.title}" created successfully.`
+          `Guideline "${formData.title}" drafted and dispatched to ${formData.department || 'All Departments'} medical staff.`
         );
       }
 
@@ -705,6 +701,10 @@ export const HospitalGuidelinesPage: React.FC = () => {
                           <option value={formData.department}>{formData.department}</option>
                         )}
                     </select>
+                    <p className="text-[11px] text-accent mt-1 flex items-center gap-1 font-medium">
+                      <Send className="w-3 h-3 flex-shrink-0" />
+                      Will be dispatched to all doctors & nurses in {formData.department || 'target department'}.
+                    </p>
                   </div>
                 </div>
 
@@ -779,18 +779,18 @@ export const HospitalGuidelinesPage: React.FC = () => {
                   type="button"
                   disabled={saving}
                   onClick={() => handleSaveGuideline('DRAFT')}
-                  className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition-all disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                 >
-                  Save as Draft
+                  <Clock className="w-3.5 h-3.5" /> Save Draft & Dispatch
                 </button>
                 <Button
                   variant="primary"
                   size="sm"
                   disabled={saving}
-                  icon={saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  icon={saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                   onClick={() => handleSaveGuideline('PUBLISHED')}
                 >
-                  {saving ? 'Saving...' : 'Publish Guideline'}
+                  {saving ? 'Sending...' : 'Draft & Send to Department'}
                 </Button>
               </div>
             </motion.div>

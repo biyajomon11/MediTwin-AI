@@ -1199,6 +1199,7 @@ async function dispatchGuidelineToDepartment(guideline: {
   department?: string | null;
   author?: string | null;
   summary?: string | null;
+  status?: string;
 }) {
   try {
     const targetDept = (guideline.department || 'All Departments').trim();
@@ -1237,22 +1238,41 @@ async function dispatchGuidelineToDepartment(guideline: {
       });
       targetUserIds = staffUsers.map((u) => u.id);
     } else {
-      // Clean department token (e.g., "Cardiology Department" -> "Cardiology")
+      // Clean department token (e.g., "General Medicine Department" -> "General Medicine")
       const cleanDept = targetDept.replace(/\s+department$/i, '').trim();
+
+      // Find any department IDs matching the target name
+      const matchingDepts = await prisma.department.findMany({
+        where: {
+          OR: [
+            { name: { contains: cleanDept, mode: 'insensitive' } },
+            { name: { contains: targetDept, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      });
+      const matchingDeptIds = matchingDepts.map((d) => d.id);
 
       const [matchingDoctors, matchingNurses] = await Promise.all([
         prisma.doctor.findMany({
           where: {
             OR: [
+              ...(matchingDeptIds.length > 0 ? [{ departmentId: { in: matchingDeptIds } }] : []),
               { department: { name: { contains: cleanDept, mode: 'insensitive' } } },
+              { department: { name: { contains: targetDept, mode: 'insensitive' } } },
               { specialization: { name: { contains: cleanDept, mode: 'insensitive' } } },
+              { specialization: { name: { contains: targetDept, mode: 'insensitive' } } },
             ],
           },
           select: { userId: true },
         }),
         prisma.nurse.findMany({
           where: {
-            department: { name: { contains: cleanDept, mode: 'insensitive' } },
+            OR: [
+              ...(matchingDeptIds.length > 0 ? [{ departmentId: { in: matchingDeptIds } }] : []),
+              { department: { name: { contains: cleanDept, mode: 'insensitive' } } },
+              { department: { name: { contains: targetDept, mode: 'insensitive' } } },
+            ],
           },
           select: { userId: true },
         }),
@@ -1278,29 +1298,28 @@ async function dispatchGuidelineToDepartment(guideline: {
     }
 
     const notifTitle = `New Clinical Guideline: ${guideline.title}`;
-    const notifMsg = `A new clinical guideline (${guideline.guidelineCode}) for ${guideline.department} has been published by ${guideline.author}: "${guideline.summary || guideline.title}". Please review the updated clinical protocol.`;
+    const notifMsg = `A new clinical guideline (${guideline.guidelineCode}) for ${guideline.department || 'your department'} has been issued by ${guideline.author || 'Hospital Administration'}: "${guideline.summary || guideline.title}". Please review the clinical protocol in your Guidelines workspace.`;
 
     let createdCount = 0;
     for (const uid of targetUserIds) {
-      const existing = await prisma.notification.findFirst({
+      // Remove any duplicate existing notification with the same title for this user so it refreshes as unread
+      await prisma.notification.deleteMany({
         where: {
           userId: uid,
           title: notifTitle,
         },
       });
 
-      if (!existing) {
-        await prisma.notification.create({
-          data: {
-            userId: uid,
-            notificationTypeId: typeId,
-            title: notifTitle,
-            message: notifMsg,
-            isRead: false,
-          },
-        });
-        createdCount++;
-      }
+      await prisma.notification.create({
+        data: {
+          userId: uid,
+          notificationTypeId: typeId,
+          title: notifTitle,
+          message: notifMsg,
+          isRead: false,
+        },
+      });
+      createdCount++;
     }
 
     return { targetCount: targetUserIds.length, createdCount };
@@ -1465,15 +1484,13 @@ router.post(
       });
 
       let dispatchResult = { targetCount: 0, createdCount: 0 };
-      if (status.toUpperCase() === 'PUBLISHED') {
+      if (newGuideline.status !== 'ARCHIVED') {
         dispatchResult = await dispatchGuidelineToDepartment(newGuideline);
       }
 
       return res.status(201).json({
         success: true,
-        message: status.toUpperCase() === 'PUBLISHED'
-          ? `Clinical guideline published and dispatched to ${newGuideline.department} (${dispatchResult.createdCount} notifications sent).`
-          : 'Clinical guideline drafted successfully.',
+        message: `Clinical guideline saved and dispatched to ${newGuideline.department} (${dispatchResult.createdCount} notifications sent).`,
         data: {
           ...newGuideline,
           id: newGuideline.id,
@@ -1552,7 +1569,7 @@ router.put(
       });
 
       let dispatchResult = { targetCount: 0, createdCount: 0 };
-      if (updated.status === 'PUBLISHED') {
+      if (updated.status !== 'ARCHIVED') {
         dispatchResult = await dispatchGuidelineToDepartment(updated);
       }
 
@@ -1566,9 +1583,7 @@ router.put(
 
       return res.json({
         success: true,
-        message: updated.status === 'PUBLISHED'
-          ? `Clinical guideline updated and dispatched to ${updated.department} (${dispatchResult.createdCount} notifications sent).`
-          : 'Clinical guideline updated successfully.',
+        message: `Clinical guideline updated and dispatched to ${updated.department} (${dispatchResult.createdCount} notifications sent).`,
         data: {
           ...updated,
           effectiveDate: updated.createdAt ? updated.createdAt.toISOString().split('T')[0] : updated.lastUpdated.toISOString().split('T')[0],

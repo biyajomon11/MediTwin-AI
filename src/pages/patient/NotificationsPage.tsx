@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   RefreshCw,
+  BookOpen,
 } from 'lucide-react';
 import { Button } from '../../components/Button';
 import * as patientService from '../../services/patientService';
@@ -305,6 +306,8 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
 
   const getNotifIcon = (type: PatientNotificationType | string) => {
     switch (type) {
+      case 'clinical_guideline':
+        return <BookOpen className="w-4 h-4 text-emerald-400" />;
       case 'announcement':
       case 'general':
         return <Megaphone className="w-4 h-4 text-amber-400" />;
@@ -325,6 +328,8 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
 
   const getNotifBadgeClass = (type: PatientNotificationType | string) => {
     switch (type) {
+      case 'clinical_guideline':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
       case 'announcement':
       case 'general':
         return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
@@ -434,6 +439,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
       <div className="glass-card p-4 border border-white/10 flex flex-wrap items-center gap-2">
         {[
           { id: 'All', label: 'All Alerts' },
+          { id: 'clinical_guideline', label: 'Clinical Guidelines' },
           { id: 'appointment', label: 'Appointments' },
           { id: 'announcement', label: 'Hospital Announcements' },
           { id: 'medicine_reminder', label: 'Medicine Reminders' },

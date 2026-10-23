@@ -2749,30 +2749,37 @@ router.get(
       const sortBy = (req.query.sortBy as string) || 'lastUpdated';
       const sortOrder = (req.query.sortOrder as string) === 'asc' ? 'asc' : 'desc';
 
-      const where: any = {
-        status: 'PUBLISHED',
-      };
+      const andConditions: any[] = [
+        { status: { not: 'ARCHIVED' } },
+      ];
 
       if (category && category !== 'All') {
-        where.category = category;
+        andConditions.push({ category });
       }
 
       if (department && department !== 'All' && department !== 'All Departments') {
         const cleanDept = department.replace(/\s+department$/i, '').trim();
-        where.OR = [
-          { department: { contains: cleanDept, mode: 'insensitive' } },
-          { department: { in: ['All Departments', 'All', 'Hospital-wide'] } },
-        ];
+        andConditions.push({
+          OR: [
+            { department: { contains: cleanDept, mode: 'insensitive' } },
+            { department: { contains: department, mode: 'insensitive' } },
+            { department: { in: ['All Departments', 'All', 'Hospital-wide', 'All Departments (Hospital-wide)'] } },
+          ],
+        });
       }
 
       if (search) {
-        where.OR = [
-          { title: { contains: search, mode: 'insensitive' } },
-          { summary: { contains: search, mode: 'insensitive' } },
-          { content: { contains: search, mode: 'insensitive' } },
-          { guidelineCode: { contains: search, mode: 'insensitive' } },
-        ];
+        andConditions.push({
+          OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { summary: { contains: search, mode: 'insensitive' } },
+            { content: { contains: search, mode: 'insensitive' } },
+            { guidelineCode: { contains: search, mode: 'insensitive' } },
+          ],
+        });
       }
+
+      const where: any = { AND: andConditions };
 
       const orderBy: any = {};
       if (sortBy === 'title') {
@@ -2801,6 +2808,7 @@ router.get(
         author: g.author || 'Clinical Governance Committee',
         uploadedBy: g.author || 'Hospital Administration',
         tags: g.tags,
+        status: g.status,
         isDownloadable: false,
       }));
 
@@ -2819,7 +2827,7 @@ router.get(
 
 /**
  * GET /api/doctor/guidelines/:id
- * Retrieves a single published clinical guideline.
+ * Retrieves a single clinical guideline.
  */
 router.get(
   '/guidelines/:id',
@@ -2835,7 +2843,7 @@ router.get(
             { guidelineCode: idParam },
             ...(isNaN(parseInt(idParam)) ? [] : [{ id: parseInt(idParam) }]),
           ],
-          status: 'PUBLISHED',
+          status: { not: 'ARCHIVED' },
         },
       });
 
@@ -4752,8 +4760,13 @@ router.get(
 
       const formatted = notifs.map((n) => {
         const rawType = (n.notificationType?.name || '').toLowerCase();
+        const titleLower = (n.title || '').toLowerCase();
+        const msgLower = (n.message || '').toLowerCase();
+        const isGuideline = titleLower.includes('guideline') || msgLower.includes('guideline');
+
         let mappedType = 'general';
-        if (rawType.includes('medicine') || rawType.includes('remind')) mappedType = 'medicine_reminder';
+        if (isGuideline) mappedType = 'clinical_guideline';
+        else if (rawType.includes('medicine') || rawType.includes('remind')) mappedType = 'medicine_reminder';
         else if (rawType.includes('prescript')) mappedType = 'prescription';
         else if (rawType.includes('lab')) mappedType = 'lab_report';
         else if (rawType.includes('doc')) mappedType = 'document';
@@ -4770,6 +4783,7 @@ router.get(
           timestamp: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
           isRead: n.isRead ?? false,
           type: mappedType,
+          linkTab: isGuideline ? 'guidelines' : undefined,
         };
       });
 

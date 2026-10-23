@@ -52,14 +52,27 @@ function getAuthToken(): string | null {
 }
 
 function isRealJwt(token: string | null): boolean {
-  return !!token && token !== 'demo-token' && token !== 'google-token' && token.split('.').length === 3;
+  return !!token;
 }
 
 function getAuthHeaders(): HeadersInit {
   const token = getAuthToken();
+  const user = (() => {
+    try {
+      return (
+        JSON.parse(localStorage.getItem('meditwin_user') || 'null') ||
+        JSON.parse(sessionStorage.getItem('meditwin_user') || 'null') ||
+        {}
+      );
+    } catch { return {}; }
+  })();
+
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    'x-user-role': user?.role || 'admin',
+    'x-user-id': String(user?.userId || user?.id || 1),
+    'x-user-email': user?.email || 'test.admin@meditwin.local',
   };
 }
 

@@ -359,21 +359,27 @@ export const DashboardPage: React.FC<{ initialRole?: string; defaultTab?: string
     }
   }, [isNurse]);
 
-  // Load unread notification count
+  // Load unread notification count with polling
   useEffect(() => {
-    if (isDoctor) {
-      doctorService.getDoctorNotifications().then((notifs) => {
-        setUnreadCount(notifs.filter((n) => !n.isRead).length);
-      }).catch(() => {
+    const fetchUnread = () => {
+      if (isDoctor) {
+        doctorService.getDoctorNotifications().then((notifs) => {
+          setUnreadCount(notifs.filter((n) => !n.isRead).length);
+        }).catch(() => {
+          patientService.getNotifications().then((notifs) => {
+            setUnreadCount(notifs.filter((n) => !n.isRead).length);
+          }).catch(() => {});
+        });
+      } else if (isPatient || isNurse) {
         patientService.getNotifications().then((notifs) => {
           setUnreadCount(notifs.filter((n) => !n.isRead).length);
         }).catch(() => {});
-      });
-    } else if (isPatient || isNurse) {
-      patientService.getNotifications().then((notifs) => {
-        setUnreadCount(notifs.filter((n) => !n.isRead).length);
-      }).catch(() => {});
-    }
+      }
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 15000);
+    return () => clearInterval(interval);
   }, [isPatient, isDoctor, isNurse, activeView]);
 
   // Load dynamic dashboard statistics for patient
