@@ -237,7 +237,7 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       dosage: item.dosage,
       frequency: item.frequency || 'Daily',
       startDate: rx.prescribedDate.toISOString().split('T')[0],
-      prescribedBy: `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}`,
+      prescribedBy: rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : 'Self-Reported',
     }))
   );
 
@@ -270,7 +270,7 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
   const prescriptions = patient.prescriptions.map((rx) => ({
     id: `RX-${rx.id}`,
     date: rx.prescribedDate.toISOString().split('T')[0],
-    doctorName: `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}`,
+    doctorName: rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : 'Self-Reported / Intake',
     diagnosis: rx.diagnosis || 'General Consultation',
     status: 'Active' as const,
     medications: rx.items.map((i) => ({
@@ -289,7 +289,7 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       id: `CN-${r.id}`,
       date: r.recordDate.toISOString().split('T')[0],
       time: '10:30 AM',
-      authorName: `Dr. ${r.doctor.firstName} ${r.doctor.lastName}`,
+      authorName: r.doctor ? `Dr. ${r.doctor.firstName} ${r.doctor.lastName}` : 'Self-Reported / Intake',
       authorRole: 'Doctor' as const,
       content: r.description || r.title,
       type: 'Progress Note' as const,

@@ -184,7 +184,7 @@ async function buildPatientAISummary(patientId: number) {
   const currentMedications = patient.prescriptions.flatMap((rx, rxIdx) => {
     const hospitalName = rx.doctor?.department?.hospital?.name || 'MediTwin Hospital';
     const deptName = rx.doctor?.department?.name ? ` (${rx.doctor.department.name})` : '';
-    const prescriber = `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}${deptName}`;
+    const prescriber = rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}${deptName}` : 'Self-Reported Active Medication';
 
     return rx.items.map((item, itemIdx) => ({
       id: `MED-${item.id || `${rxIdx}-${itemIdx}`}`,
@@ -498,7 +498,7 @@ router.get(
         reaction: 'Documented sensitivity / allergic reaction',
         severity: 'Moderate' as const,
         verificationStatus: 'Self-Reported (Unverified)' as const,
-        verifiedBy: a.doctor ? `Dr. ${a.doctor.firstName} ${a.doctor.lastName}` : 'Attending Physician',
+        verifiedBy: a.doctor && !a.description?.includes('Reported during patient registration') ? `Dr. ${a.doctor.firstName} ${a.doctor.lastName}` : '',
         verifiedDate: a.recordDate ? a.recordDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         reactionType: 'True IgE Allergy' as const,
         notes: a.description || 'Reported during patient onboarding.',
@@ -517,27 +517,36 @@ router.get(
           name: item.medicine.name,
           dosage: item.dosage,
           frequency: item.frequency || 'Once daily',
-          prescribedBy: `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}`,
+          prescribedBy: rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : 'Self-Reported',
           startDate: rx.prescribedDate ? rx.prescribedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
           status: 'Active',
         }))
       );
 
-      // Primary physician
-      const docObj = patient.prescriptions[0]?.doctor || patient.medicalRecords[0]?.doctor;
-      const primaryPhysician = docObj
+      // Primary physician: Only assigned if the patient has booked an appointment and visited the doctor
+      const attendedAppointment = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.id,
+          status: { name: { in: ['completed', 'Completed', 'visited', 'Visited'] } },
+        },
+        include: {
+          doctor: {
+            include: {
+              department: { include: { hospital: true } },
+            },
+          },
+        },
+        orderBy: { appointmentDate: 'desc' },
+      });
+
+      const primaryPhysician = attendedAppointment?.doctor
         ? {
-            name: `Dr. ${docObj.firstName} ${docObj.lastName}`,
-            department: docObj.department?.name || 'General Internal Medicine',
-            phone: '+91 98765 43210',
-            hospital: docObj.department?.hospital?.name || 'MediTwin Multi-Speciality Hospital',
+            name: `Dr. ${attendedAppointment.doctor.firstName} ${attendedAppointment.doctor.lastName}`,
+            department: attendedAppointment.doctor.department?.name || 'General Internal Medicine',
+            phone: attendedAppointment.doctor.phone || '+91 98765 43210',
+            hospital: attendedAppointment.doctor.department?.hospital?.name || 'MediTwin Multi-Speciality Hospital',
           }
-        : {
-            name: 'Dr. Sarah Joseph',
-            department: 'General Internal Medicine',
-            phone: '+91 98765 43210',
-            hospital: 'MediTwin Multi-Speciality Hospital',
-          };
+        : null;
 
       const profile = {
         id: patient.id,
@@ -707,7 +716,7 @@ router.get(
       });
 
       const formatted = prescriptions.flatMap((rx) => {
-        const doctorName = `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}`;
+        const doctorName = rx.doctor ? `Dr. ${rx.doctor.firstName} ${rx.doctor.lastName}` : '';
         const pDate = rx.prescribedDate ? rx.prescribedDate.toISOString().split('T')[0] : '';
         const vDate = rx.validUntil ? rx.validUntil.toISOString().split('T')[0] : '2026-12-31';
 
@@ -764,6 +773,17 @@ router.get(
 
       const userId = patient.userId || req.user?.userId || 0;
 
+      // Retrieve completed/visited appointments to verify if patient actually visited doctor
+      const completedAppointments = await prisma.appointment.findMany({
+        where: {
+          patientId: patient.id,
+          status: { name: { in: ['completed', 'Completed', 'visited', 'Visited'] } },
+        },
+        select: { doctorId: true, id: true },
+      });
+      const visitedDoctorIds = new Set(completedAppointments.map((a) => a.doctorId));
+      const visitedApptIds = new Set(completedAppointments.map((a) => a.id));
+
       const records = await prisma.medicalRecord.findMany({
         where: { patientId: patient.id },
         include: {
@@ -790,9 +810,22 @@ router.get(
           typeName === 'consultation' ? (rec.title.toLowerCase().startsWith('allergy') ? 'Diagnosis' : 'Clinical Note') :
           typeName === 'treatment_record' ? 'Treatment' : 'Diagnosis';
 
-        const doctorName = rec.doctor ? `Dr. ${rec.doctor.firstName} ${rec.doctor.lastName}` : 'Attending Physician';
-        const hospitalName = rec.doctor?.department?.hospital?.name || 'MediTwin Medical Center';
-        const deptName = rec.doctor?.department?.name || 'General Medicine';
+        const isSelfReported =
+          !rec.doctorId ||
+          (rec.description && (
+            rec.description.includes('Reported during patient registration') ||
+            rec.description.includes('patient onboarding') ||
+            rec.description.includes('Self-Reported')
+          ));
+
+        // Only display Attending Specialist if patient booked an appointment and visited the doctor
+        const hasVisitedDoctor =
+          !isSelfReported &&
+          Boolean(rec.doctor && rec.doctorId && (visitedDoctorIds.has(rec.doctorId) || (rec.appointmentId && visitedApptIds.has(rec.appointmentId))));
+
+        const doctorName = hasVisitedDoctor && rec.doctor ? `Dr. ${rec.doctor.firstName} ${rec.doctor.lastName}` : '';
+        const hospitalName = hasVisitedDoctor && rec.doctor ? (rec.doctor.department?.hospital?.name || 'MediTwin Medical Center') : '';
+        const deptName = hasVisitedDoctor && rec.doctor ? (rec.doctor.department?.name || 'General Medicine') : '';
 
         return {
           id: `HIST-${rec.id}`,
@@ -803,14 +836,14 @@ router.get(
           type: category as any,
           description: rec.description || 'Clinical observation documented by physician.',
           healthcareProvider: doctorName,
-          diagnosedBy: doctorName,
+          diagnosedBy: hasVisitedDoctor ? doctorName : 'Self-Reported by Patient',
           hospitalDepartment: deptName,
           hospital: hospitalName,
-          treatmentOrOutcome: 'Active Care Regimen',
+          treatmentOrOutcome: hasVisitedDoctor ? 'Active Care Regimen' : 'Patient Self-Reported Precaution',
           status: typeName === 'surgery' || typeName === 'hospitalization' ? 'Resolved' as const : 'Active' as const,
-          verificationStatus: 'Verified by Physician',
-          verifiedBy: doctorName,
-          verifiedDate: rec.recordDate.toISOString().split('T')[0],
+          verificationStatus: hasVisitedDoctor ? 'Verified by Physician' : 'Self-Reported (Unverified)',
+          verifiedBy: hasVisitedDoctor ? doctorName : '',
+          verifiedDate: hasVisitedDoctor ? rec.recordDate.toISOString().split('T')[0] : '',
           notes: rec.description || undefined,
           documents: rec.documents.map((d) => d.fileName),
         };

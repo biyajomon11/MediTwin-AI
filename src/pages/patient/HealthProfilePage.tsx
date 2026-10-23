@@ -603,7 +603,13 @@ export const HealthProfilePage: React.FC = () => {
                         <div className="p-2 rounded-lg bg-purple-950/40 border border-purple-500/15 flex items-center justify-between text-[11px]">
                           <div className="flex items-center gap-1.5 text-gray-300">
                             <Stethoscope className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
-                            <span>Prescribed by: <strong className="text-white font-semibold">{m.prescribedBy}</strong></span>
+                            <span>
+                              {m.prescribedBy ? (
+                                <>Prescribed by: <strong className="text-white font-semibold">{m.prescribedBy}</strong></>
+                              ) : (
+                                <span className="text-purple-300 italic">Self-Reported on Registration</span>
+                              )}
+                            </span>
                           </div>
                           {m.startDate && (
                             <span className="text-gray-400 text-[10px] hidden sm:inline">

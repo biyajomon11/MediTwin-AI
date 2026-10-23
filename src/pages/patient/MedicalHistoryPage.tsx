@@ -133,10 +133,17 @@ export const MedicalHistoryPage: React.FC = () => {
           bg: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
           icon: Activity,
         };
+      case 'Self-Reported':
+      case 'Self-Reported (Unverified)':
+        return {
+          label: 'Self-Reported (Unverified)',
+          bg: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+          icon: User,
+        };
       default:
         return {
-          label: status || 'Clinically Verified',
-          bg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+          label: status || 'Pending Consultation',
+          bg: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
           icon: ShieldCheck,
         };
     }
@@ -436,7 +443,7 @@ export const MedicalHistoryPage: React.FC = () => {
                   )}
 
                   {/* ── Clinical Verification Provenance Box (Audit Trail) ── */}
-                  {(item.verifiedBy || item.verificationSource) && (
+                  {item.verifiedBy && item.verifiedBy.trim() ? (
                     <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-1.5 text-xs">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
@@ -450,12 +457,10 @@ export const MedicalHistoryPage: React.FC = () => {
                         )}
                       </div>
 
-                      {item.verifiedBy && (
-                        <p className="text-gray-200 text-xs">
-                          <span className="text-gray-400 font-medium">Verifying Clinician:</span>{' '}
-                          <strong className="text-white font-semibold">{item.verifiedBy}</strong>
-                        </p>
-                      )}
+                      <p className="text-gray-200 text-xs">
+                        <span className="text-gray-400 font-medium">Verifying Clinician:</span>{' '}
+                        <strong className="text-white font-semibold">{item.verifiedBy}</strong>
+                      </p>
 
                       {item.verificationSource && (
                         <p className="text-gray-300 text-[11px] flex items-center gap-1.5">
@@ -464,19 +469,30 @@ export const MedicalHistoryPage: React.FC = () => {
                         </p>
                       )}
                     </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 text-xs text-amber-300/90 flex items-center gap-2">
+                      <User className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                      <span>Documented by patient on registration • Attending specialist assigned upon appointment visit.</span>
+                    </div>
                   )}
 
-                  {/* Footer Metadata */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-400 pt-1">
-                    <div className="flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-accent" />
-                      <span>Attending Specialist: <strong className="text-white">{item.healthcareProvider}</strong></span>
+                  {/* Footer Metadata - Attending specialist is only displayed after booking and visiting the doctor */}
+                  {(item.healthcareProvider?.trim() || item.hospitalDepartment?.trim()) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-400 pt-1">
+                      {item.healthcareProvider && item.healthcareProvider.trim() && !item.healthcareProvider.toLowerCase().includes('attending physician') && (
+                        <div className="flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-accent" />
+                          <span>Attending Specialist: <strong className="text-white">{item.healthcareProvider}</strong></span>
+                        </div>
+                      )}
+                      {item.hospitalDepartment && item.hospitalDepartment.trim() && (
+                        <div className="flex items-center gap-1.5">
+                          <Building className="w-3.5 h-3.5 text-accent" />
+                          <span>Department / Facility: <strong className="text-white">{item.hospitalDepartment}</strong></span>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Building className="w-3.5 h-3.5 text-accent" />
-                      <span>Department / Facility: <strong className="text-white">{item.hospitalDepartment}</strong></span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </motion.div>
             );

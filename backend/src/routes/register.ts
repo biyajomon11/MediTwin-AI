@@ -59,7 +59,7 @@ router.post('/patient', async (req: Request, res: Response) => {
       return res.status(409).json({ success: false, error: 'An account with this email already exists.' });
     }
 
-    // Resolve assigned primary doctor
+    // Resolve assigned primary doctor (only if specifically provided)
     let doctor = null;
     if (d.primaryProvider) {
       const provName = d.primaryProvider.replace(/^Dr\.\s*/i, '').trim();
@@ -71,11 +71,6 @@ router.post('/patient', async (req: Request, res: Response) => {
           ],
         },
       });
-    }
-    if (!doctor) {
-      doctor = await prisma.doctor.findFirst({
-        where: { user: { isActive: true } },
-      }) || await prisma.doctor.findFirst();
     }
 
     const password_hash = await hashPassword(d.password);
@@ -108,14 +103,14 @@ router.post('/patient', async (req: Request, res: Response) => {
       const diagnosisType = await tx.recordType.findFirst({ where: { name: 'diagnosis' } }) || await tx.recordType.findFirst();
       const consultationType = await tx.recordType.findFirst({ where: { name: 'consultation' } }) || diagnosisType;
 
-      // Seed medical conditions as medical records
-      if (d.medicalConditions && doctor && diagnosisType) {
+      // Seed medical conditions as medical records (unassigned doctor until consultation)
+      if (d.medicalConditions && diagnosisType) {
         const conditions = d.medicalConditions.split(/[,;\n]+/).map((c) => c.trim()).filter(Boolean);
         for (const cond of conditions) {
           await tx.medicalRecord.create({
             data: {
               patientId: newPatient.id,
-              doctorId: doctor.id,
+              doctorId: doctor ? doctor.id : null,
               recordTypeId: diagnosisType.id,
               title: cond,
               description: `Documented medical condition reported during patient registration: ${cond}.`,
@@ -125,14 +120,14 @@ router.post('/patient', async (req: Request, res: Response) => {
         }
       }
 
-      // Seed allergies as medical records
-      if (d.allergies && doctor && consultationType) {
+      // Seed allergies as medical records (unassigned doctor until consultation)
+      if (d.allergies && consultationType) {
         const allergiesList = d.allergies.split(/[,;\n]+/).map((a) => a.trim()).filter(Boolean);
         for (const allergy of allergiesList) {
           await tx.medicalRecord.create({
             data: {
               patientId: newPatient.id,
-              doctorId: doctor.id,
+              doctorId: doctor ? doctor.id : null,
               recordTypeId: consultationType.id,
               title: `Allergy: ${allergy}`,
               description: `Documented patient allergy: ${allergy} (Reported during patient registration).`,
@@ -143,13 +138,13 @@ router.post('/patient', async (req: Request, res: Response) => {
       }
 
       // Seed medications as prescriptions & prescription items
-      if (d.medications && doctor) {
+      if (d.medications) {
         const medsList = d.medications.split(/[,;\n]+/).map((m) => m.trim()).filter(Boolean);
         if (medsList.length > 0) {
           const rx = await tx.prescription.create({
             data: {
               patientId: newPatient.id,
-              doctorId: doctor.id,
+              doctorId: doctor ? doctor.id : null,
               prescribedDate: new Date(),
               validUntil: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
               diagnosis: d.medicalConditions || 'Routine Medication Regimen',

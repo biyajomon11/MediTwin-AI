@@ -229,7 +229,7 @@ model Medicine {
 model Prescription {
   id             Int                @id @default(autoincrement())
   patientId      Int                @map("patient_id")
-  doctorId       Int                @map("doctor_id")
+  doctorId       Int?               @map("doctor_id")
   appointmentId  Int?               @map("appointment_id")
   diagnosis      String?
   notes          String?
@@ -238,7 +238,7 @@ model Prescription {
   createdAt      DateTime?          @default(now()) @map("created_at") @db.Timestamp(6)
   items          PrescriptionItem[]
   appointment    Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  doctor         Doctor             @relation(fields: [doctorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  doctor         Doctor?            @relation(fields: [doctorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   patient        Patient            @relation(fields: [patientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@map("prescriptions")
@@ -270,7 +270,7 @@ model RecordType {
 model MedicalRecord {
   id            Int               @id @default(autoincrement())
   patientId     Int               @map("patient_id")
-  doctorId      Int               @map("doctor_id")
+  doctorId      Int?              @map("doctor_id")
   appointmentId Int?              @map("appointment_id")
   recordTypeId  Int               @map("record_type_id")
   title         String            @db.VarChar(255)
@@ -279,7 +279,7 @@ model MedicalRecord {
   createdAt     DateTime?         @default(now()) @map("created_at") @db.Timestamp(6)
   documents     MedicalDocument[]
   appointment   Appointment?      @relation(fields: [appointmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  doctor        Doctor            @relation(fields: [doctorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  doctor        Doctor?           @relation(fields: [doctorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   patient       Patient           @relation(fields: [patientId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   recordType    RecordType        @relation(fields: [recordTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 

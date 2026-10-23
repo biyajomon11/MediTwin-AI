@@ -452,7 +452,9 @@ export type MedicalHistoryVerificationStatus =
   | 'Verified by Pathologist'
   | 'Verified by Nurse'
   | 'Verified by Radiologist'
-  | 'Patient Self-Reported (Unverified)';
+  | 'Patient Self-Reported (Unverified)'
+  | 'Self-Reported'
+  | 'Self-Reported (Unverified)';
 
 export interface PatientUploadedDocument {
   id: string;
