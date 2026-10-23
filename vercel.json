@@ -2,12 +2,13 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://meditwin-ai-backend.onrender.com/api/$1"
+      "source": "/api/:path*",
+      "destination": "https://meditwin-ai-backend.onrender.com/api/:path*"
     },
     {
-      "source": "/(.*)",
-      "destination": "/"
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ]
 }
+
