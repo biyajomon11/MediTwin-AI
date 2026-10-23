@@ -122,7 +122,6 @@ async function resolvePatientId(patientId: number): Promise<number> {
       where: {
         OR: [
           { firstName: { contains: 'Thomas', mode: 'insensitive' }, lastName: { contains: 'Varghese', mode: 'insensitive' } },
-          { inpatientAdmissions: { some: { admissionNumber: 'ADM-2026-0104' } } },
         ],
       },
       select: { id: true },
@@ -183,12 +182,6 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       },
       dischargeSummaries: {
         orderBy: { dischargeDate: 'desc' },
-        take: 1,
-      },
-      inpatientAdmissions: {
-        where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
-        include: { ward: true, bed: true, admittingDoctor: true },
-        orderBy: { admissionDateTime: 'desc' },
         take: 1,
       },
     },
@@ -552,7 +545,6 @@ router.get(
             { prescriptions: { some: { doctor: { lastName: { contains: doctor.lastName, mode: 'insensitive' } } } } },
             { medicalRecords: { some: { doctorId: doctor.id } } },
             { dischargeSummaries: { some: { doctorId: doctor.id } } },
-            { inpatientAdmissions: { some: { admittingDoctorId: doctor.id } } },
           ],
         });
       }
@@ -729,18 +721,11 @@ router.get(
             orderBy: { appointmentDate: 'desc' },
             select: { id: true, appointmentDate: true },
           },
-          inpatientAdmissions: {
-            where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
-            take: 1,
-            orderBy: { admissionDateTime: 'desc' },
-            include: { ward: true, bed: true },
-          },
         },
       });
 
       const formatted = patients.map((p) => {
-        const activeAdmission = p.inpatientAdmissions?.[0];
-        const isAdmitted = Boolean(activeAdmission) || ['Admitted', 'Critical', 'Under Observation'].includes(p.admissionStatus || '');
+        const isAdmitted = ['Admitted', 'Critical', 'Under Observation'].includes(p.admissionStatus || '');
         const age = calculateAge(p.dateOfBirth);
 
         return {
@@ -759,18 +744,7 @@ router.get(
           ward: p.ward,
           bedNumber: p.bedNumber,
           isAdmitted,
-          currentAdmission: activeAdmission
-            ? {
-                id: activeAdmission.id,
-                admissionNumber: activeAdmission.admissionNumber,
-                wardNumber: activeAdmission.ward?.wardNumber || 'Ward 1',
-                wardName: activeAdmission.ward?.name || 'General Ward',
-                bedNumber: activeAdmission.bed?.bedNumber || 'Bed 01',
-                admissionDateTime: safeDateISO(activeAdmission.admissionDateTime),
-                admissionStatus: activeAdmission.admissionStatus,
-                acuityLevel: activeAdmission.acuityLevel,
-              }
-            : null,
+          currentAdmission: null,
           hasOutpatientHistory: p.appointments.length > 0,
         };
       });
