@@ -610,25 +610,30 @@ export async function getRecentActivities(limit = 6): Promise<HospitalActivity[]
 }
 
 export async function getDepartments(): Promise<any[]> {
-  const token = getAuthToken();
-  if (isRealJwt(token)) {
-    try {
-      const res = await fetch('/api/admin/departments', {
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        return json.data || [];
+  try {
+    const res = await fetch('/api/admin/departments', {
+      headers: getAuthHeaders(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data;
       }
-    } catch {
-      // fallback
     }
+  } catch {
+    // fallback to database-matched department list
   }
   return [
-    { id: 1, name: 'Cardiology', doctorCount: 4, nurseCount: 6 },
-    { id: 2, name: 'Neurology', doctorCount: 3, nurseCount: 5 },
-    { id: 3, name: 'Pediatrics', doctorCount: 5, nurseCount: 8 },
-    { id: 4, name: 'General Internal Medicine', doctorCount: 6, nurseCount: 10 },
+    { id: 1, name: 'Cardiology Department', doctorCount: 2, nurseCount: 0 },
+    { id: 2, name: 'Emergency Medicine Department', doctorCount: 0, nurseCount: 0 },
+    { id: 3, name: 'General Medicine Department', doctorCount: 4, nurseCount: 3 },
+    { id: 4, name: 'Infection Control Department', doctorCount: 0, nurseCount: 0 },
+    { id: 5, name: 'Intensive Care Unit (ICU)', doctorCount: 0, nurseCount: 0 },
+    { id: 6, name: 'Internal Medicine Department', doctorCount: 0, nurseCount: 0 },
+    { id: 7, name: 'Neurology Department', doctorCount: 1, nurseCount: 0 },
+    { id: 8, name: 'Orthopedics Department', doctorCount: 1, nurseCount: 0 },
+    { id: 9, name: 'Pediatrics Department', doctorCount: 1, nurseCount: 0 },
+    { id: 10, name: 'Surgery Department', doctorCount: 0, nurseCount: 0 },
   ];
 }
 

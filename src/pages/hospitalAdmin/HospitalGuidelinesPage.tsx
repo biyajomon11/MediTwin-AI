@@ -21,6 +21,7 @@ import {
   createAdminGuideline,
   updateAdminGuideline,
   deleteAdminGuideline,
+  getDepartments,
   type AdminClinicalGuideline,
   type CreateAdminGuidelineInput,
 } from '../../services/hospitalAdminService';
@@ -35,15 +36,17 @@ const CATEGORIES = [
   'Hospital Procedures',
 ];
 
-const DEPARTMENTS = [
-  'All Departments',
-  'Cardiology',
-  'Emergency Medicine',
-  'Infection Control',
-  'Internal Medicine',
-  'Pediatrics',
+const DEFAULT_DEPARTMENTS = [
+  'Cardiology Department',
+  'Emergency Medicine Department',
+  'General Medicine Department',
+  'Infection Control Department',
   'Intensive Care Unit (ICU)',
-  'Surgery',
+  'Internal Medicine Department',
+  'Neurology Department',
+  'Orthopedics Department',
+  'Pediatrics Department',
+  'Surgery Department',
 ];
 
 export const HospitalGuidelinesPage: React.FC = () => {
@@ -53,6 +56,10 @@ export const HospitalGuidelinesPage: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
+
+  // Dynamic departments fetched from PostgreSQL database
+  const [dbDepartments, setDbDepartments] = useState<string[]>([]);
+  const availableDepartments = dbDepartments.length > 0 ? dbDepartments : DEFAULT_DEPARTMENTS;
 
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
@@ -64,7 +71,7 @@ export const HospitalGuidelinesPage: React.FC = () => {
     guidelineCode: '',
     title: '',
     category: 'Emergency Care',
-    department: 'Emergency Medicine',
+    department: 'General Medicine Department',
     version: '1.0',
     summary: '',
     content: '',
@@ -76,6 +83,26 @@ export const HospitalGuidelinesPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [successToast, setSuccessToast] = useState('');
+
+  // Fetch departments from database
+  useEffect(() => {
+    let active = true;
+    getDepartments()
+      .then((data) => {
+        if (!active) return;
+        if (Array.isArray(data) && data.length > 0) {
+          const names = data.map((d: any) => (typeof d === 'string' ? d : d.name)).filter(Boolean);
+          const uniqueNames = Array.from(new Set(names)) as string[];
+          setDbDepartments(uniqueNames);
+        }
+      })
+      .catch((err) => {
+        console.warn('[HOSPITAL_GUIDELINES] Failed to fetch departments from database:', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadData = async () => {
     try {
@@ -104,7 +131,7 @@ export const HospitalGuidelinesPage: React.FC = () => {
       guidelineCode: `CG-${Date.now().toString().slice(-4)}`,
       title: '',
       category: 'Emergency Care',
-      department: 'Emergency Medicine',
+      department: availableDepartments[0] || 'General Medicine Department',
       version: '1.0',
       summary: '',
       content: '',
@@ -162,12 +189,16 @@ export const HospitalGuidelinesPage: React.FC = () => {
 
       if (editingGuideline) {
         await updateAdminGuideline(editingGuideline.id, payload);
-        setSuccessToast(`Guideline "${formData.title}" updated successfully.`);
+        setSuccessToast(
+          (overrideStatus === 'PUBLISHED' || payload.status === 'PUBLISHED')
+            ? `Guideline "${formData.title}" published and dispatched to ${formData.department || 'All Departments'}.`
+            : `Guideline "${formData.title}" updated successfully.`
+        );
       } else {
         await createAdminGuideline(payload);
         setSuccessToast(
           overrideStatus === 'PUBLISHED'
-            ? `Guideline "${formData.title}" published to physicians.`
+            ? `Guideline "${formData.title}" published and dispatched to ${formData.department || 'All Departments'}.`
             : `Draft guideline "${formData.title}" created successfully.`
         );
       }
@@ -351,7 +382,8 @@ export const HospitalGuidelinesPage: React.FC = () => {
               onChange={(e) => setSelectedDepartment(e.target.value)}
               className="px-3 py-2 rounded-xl bg-navy-900 border border-white/15 text-gray-300 text-xs focus:outline-none focus:border-accent"
             >
-              {DEPARTMENTS.map((dept) => (
+              <option value="All Departments">All Departments</option>
+              {availableDepartments.map((dept) => (
                 <option key={dept} value={dept}>
                   {dept}
                 </option>
@@ -657,15 +689,21 @@ export const HospitalGuidelinesPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-gray-300 font-semibold mb-1">Target Department</label>
+                    <label className="block text-gray-300 font-semibold mb-1">Target Department *</label>
                     <select
                       value={formData.department}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                       className="w-full px-3 py-2 rounded-xl bg-navy-900 border border-white/15 text-white text-xs focus:outline-none focus:border-accent"
                     >
-                      {DEPARTMENTS.filter((d) => d !== 'All Departments').map((d) => (
+                      <option value="All Departments">All Departments (Hospital-wide)</option>
+                      {availableDepartments.map((d) => (
                         <option key={d} value={d}>{d}</option>
                       ))}
+                      {formData.department &&
+                        formData.department !== 'All Departments' &&
+                        !availableDepartments.includes(formData.department) && (
+                          <option value={formData.department}>{formData.department}</option>
+                        )}
                     </select>
                   </div>
                 </div>

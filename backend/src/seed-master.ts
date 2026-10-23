@@ -123,9 +123,14 @@ async function main() {
   // 10. Departments
   const deptsH1 = [
     { name: 'Cardiology Department', description: 'Advanced cardiovascular care and diagnostics' },
+    { name: 'Emergency Medicine Department', description: '24/7 Acute trauma, resuscitation, and emergency medical triage' },
     { name: 'General Medicine Department', description: 'Comprehensive inpatient and outpatient medical care' },
+    { name: 'Infection Control Department', description: 'Hospital epidemiology, antimicrobial stewardship, and pathogen surveillance' },
+    { name: 'Intensive Care Unit (ICU)', description: 'Critical care monitoring, mechanical ventilation, and advanced hemodynamic support' },
+    { name: 'Internal Medicine Department', description: 'Subspecialty inpatient adult medicine and multi-organ pathology' },
     { name: 'Neurology Department', description: 'Neurological treatment, stroke care, and cognitive rehabilitation' },
     { name: 'Pediatrics Department', description: 'Child healthcare, vaccinations, and adolescent medicine' },
+    { name: 'Surgery Department', description: 'General, laparoscopic, and specialized operative procedures' },
   ];
   for (const d of deptsH1) {
     const existing = await prisma.department.findFirst({

@@ -181,7 +181,7 @@ router.get(
 router.get(
   '/departments',
   authenticateJWT,
-  requireRoles(['admin', 'doctor']),
+  requireRoles(['admin', 'doctor', 'nurse']),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const depts = await prisma.department.findMany({
@@ -1189,6 +1189,128 @@ router.put(
 // ─────────────────────────────────────────────────────────────
 
 /**
+ * Dispatches a clinical guideline notification to doctors and nurses of the target department.
+ */
+async function dispatchGuidelineToDepartment(guideline: {
+  id?: number;
+  guidelineCode: string;
+  title: string;
+  category: string;
+  department?: string | null;
+  author?: string | null;
+  summary?: string | null;
+}) {
+  try {
+    const targetDept = (guideline.department || 'All Departments').trim();
+    const isAll =
+      targetDept === 'All' ||
+      targetDept === 'All Departments' ||
+      targetDept.toLowerCase().includes('all department') ||
+      targetDept.toLowerCase().includes('hospital-wide');
+
+    // 1. Resolve notification type
+    let notifType = await prisma.notificationType.findFirst({
+      where: {
+        OR: [
+          { name: { contains: 'guideline', mode: 'insensitive' } },
+          { name: { contains: 'clinical', mode: 'insensitive' } },
+          { name: { contains: 'alert', mode: 'insensitive' } },
+          { name: { contains: 'system', mode: 'insensitive' } },
+        ],
+      },
+    });
+    if (!notifType) {
+      notifType = await prisma.notificationType.findFirst();
+    }
+    const typeId = notifType?.id || 3;
+
+    // 2. Find target users (doctors and nurses)
+    let targetUserIds: number[] = [];
+
+    if (isAll) {
+      const staffUsers = await prisma.user.findMany({
+        where: {
+          role: { name: { in: ['doctor', 'nurse'] } },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+      targetUserIds = staffUsers.map((u) => u.id);
+    } else {
+      // Clean department token (e.g., "Cardiology Department" -> "Cardiology")
+      const cleanDept = targetDept.replace(/\s+department$/i, '').trim();
+
+      const [matchingDoctors, matchingNurses] = await Promise.all([
+        prisma.doctor.findMany({
+          where: {
+            OR: [
+              { department: { name: { contains: cleanDept, mode: 'insensitive' } } },
+              { specialization: { name: { contains: cleanDept, mode: 'insensitive' } } },
+            ],
+          },
+          select: { userId: true },
+        }),
+        prisma.nurse.findMany({
+          where: {
+            department: { name: { contains: cleanDept, mode: 'insensitive' } },
+          },
+          select: { userId: true },
+        }),
+      ]);
+
+      const userIdsSet = new Set<number>();
+      matchingDoctors.forEach((d) => userIdsSet.add(d.userId));
+      matchingNurses.forEach((n) => userIdsSet.add(n.userId));
+
+      // Fallback: if no specific department match was found, notify all clinical staff
+      if (userIdsSet.size === 0) {
+        const fallbackUsers = await prisma.user.findMany({
+          where: {
+            role: { name: { in: ['doctor', 'nurse'] } },
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        fallbackUsers.forEach((u) => userIdsSet.add(u.id));
+      }
+
+      targetUserIds = Array.from(userIdsSet);
+    }
+
+    const notifTitle = `New Clinical Guideline: ${guideline.title}`;
+    const notifMsg = `A new clinical guideline (${guideline.guidelineCode}) for ${guideline.department} has been published by ${guideline.author}: "${guideline.summary || guideline.title}". Please review the updated clinical protocol.`;
+
+    let createdCount = 0;
+    for (const uid of targetUserIds) {
+      const existing = await prisma.notification.findFirst({
+        where: {
+          userId: uid,
+          title: notifTitle,
+        },
+      });
+
+      if (!existing) {
+        await prisma.notification.create({
+          data: {
+            userId: uid,
+            notificationTypeId: typeId,
+            title: notifTitle,
+            message: notifMsg,
+            isRead: false,
+          },
+        });
+        createdCount++;
+      }
+    }
+
+    return { targetCount: targetUserIds.length, createdCount };
+  } catch (err) {
+    console.error('[ADMIN] Error dispatching guideline notifications:', err);
+    return { targetCount: 0, createdCount: 0 };
+  }
+}
+
+/**
  * GET /api/admin/guidelines
  * Lists all clinical guidelines (including DRAFT, UNDER_REVIEW, PUBLISHED, ARCHIVED).
  */
@@ -1214,7 +1336,11 @@ router.get(
       }
 
       if (department && department !== 'All' && department !== 'All Departments') {
-        where.department = department;
+        const cleanDept = department.replace(/\s+department$/i, '').trim();
+        where.OR = [
+          { department: { contains: cleanDept, mode: 'insensitive' } },
+          { department: department },
+        ];
       }
 
       if (search) {
@@ -1335,16 +1461,25 @@ router.post(
         guidelineCode: newGuideline.guidelineCode,
         title: newGuideline.title,
         status: newGuideline.status,
+        department: newGuideline.department,
       });
+
+      let dispatchResult = { targetCount: 0, createdCount: 0 };
+      if (status.toUpperCase() === 'PUBLISHED') {
+        dispatchResult = await dispatchGuidelineToDepartment(newGuideline);
+      }
 
       return res.status(201).json({
         success: true,
-        message: status === 'PUBLISHED' ? 'Clinical guideline published successfully.' : 'Clinical guideline drafted successfully.',
+        message: status.toUpperCase() === 'PUBLISHED'
+          ? `Clinical guideline published and dispatched to ${newGuideline.department} (${dispatchResult.createdCount} notifications sent).`
+          : 'Clinical guideline drafted successfully.',
         data: {
           ...newGuideline,
           id: newGuideline.id,
           effectiveDate: newGuideline.createdAt ? newGuideline.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
           lastUpdated: newGuideline.lastUpdated.toISOString().split('T')[0],
+          dispatchedCount: dispatchResult.createdCount,
         },
       });
     } catch (err) {
@@ -1416,19 +1551,29 @@ router.put(
         },
       });
 
+      let dispatchResult = { targetCount: 0, createdCount: 0 };
+      if (updated.status === 'PUBLISHED') {
+        dispatchResult = await dispatchGuidelineToDepartment(updated);
+      }
+
       await logAudit(req.user!.userId, 'UPDATE_CLINICAL_GUIDELINE', 'clinical_guidelines', updated.id, {
         guidelineCode: updated.guidelineCode,
         title: updated.title,
         status: updated.status,
+        department: updated.department,
+        dispatchedCount: dispatchResult.createdCount,
       });
 
       return res.json({
         success: true,
-        message: 'Clinical guideline updated successfully.',
+        message: updated.status === 'PUBLISHED'
+          ? `Clinical guideline updated and dispatched to ${updated.department} (${dispatchResult.createdCount} notifications sent).`
+          : 'Clinical guideline updated successfully.',
         data: {
           ...updated,
           effectiveDate: updated.createdAt ? updated.createdAt.toISOString().split('T')[0] : updated.lastUpdated.toISOString().split('T')[0],
           lastUpdated: updated.lastUpdated.toISOString().split('T')[0],
+          dispatchedCount: dispatchResult.createdCount,
         },
       });
     } catch (err) {

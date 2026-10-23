@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { ClinicalGuideline, GuidelineCategory } from '../../types';
 import { getGuidelines } from '../../services/doctorService';
+import { getDepartments } from '../../services/hospitalAdminService';
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -26,7 +27,19 @@ const CATEGORIES: GuidelineCategory[] = [
   'Medication Guidelines', 'Infection Control', 'Patient Safety', 'Hospital Procedures',
 ];
 
-const DEPARTMENTS = ['All Departments', 'Cardiology', 'General Medicine', 'Oncology', 'Pediatrics'];
+const DEFAULT_DEPARTMENTS = [
+  'All Departments',
+  'Cardiology Department',
+  'Emergency Medicine Department',
+  'General Medicine Department',
+  'Infection Control Department',
+  'Intensive Care Unit (ICU)',
+  'Internal Medicine Department',
+  'Neurology Department',
+  'Orthopedics Department',
+  'Pediatrics Department',
+  'Surgery Department',
+];
 
 const CATEGORY_COLORS: Record<GuidelineCategory, string> = {
   'General Medicine':     'bg-blue-500/20 text-blue-300 border-blue-500/30',
@@ -142,6 +155,29 @@ export const ClinicalGuidelinesPage: React.FC = () => {
   const [department, setDepartment]       = useState('');
   const [sortBy, setSortBy]               = useState<'lastUpdated' | 'title'>('lastUpdated');
 
+  // Dynamic departments fetched from PostgreSQL database
+  const [dbDepartments, setDbDepartments] = useState<string[]>([]);
+  const availableDepartments = dbDepartments.length > 0 ? dbDepartments : DEFAULT_DEPARTMENTS;
+
+  useEffect(() => {
+    let active = true;
+    getDepartments()
+      .then((data) => {
+        if (!active) return;
+        if (Array.isArray(data) && data.length > 0) {
+          const names = data.map((d: any) => (typeof d === 'string' ? d : d.name)).filter(Boolean);
+          const unique = ['All Departments', ...Array.from(new Set(names))];
+          setDbDepartments(unique);
+        }
+      })
+      .catch((err) => {
+        console.warn('[CLINICAL_GUIDELINES] Failed to load database departments:', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const fetchGuidelines = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -205,7 +241,7 @@ export const ClinicalGuidelinesPage: React.FC = () => {
             value={department} onChange={(e) => setDepartment(e.target.value === 'All Departments' ? '' : e.target.value)}
             className="glass-input w-full pl-8 pr-3 py-2.5 text-sm text-white appearance-none"
           >
-            {DEPARTMENTS.map(d => <option key={d} value={d} className="bg-[#0F172A]">{d}</option>)}
+            {availableDepartments.map(d => <option key={d} value={d} className="bg-[#0F172A]">{d}</option>)}
           </select>
         </div>
       </div>

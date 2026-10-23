@@ -2712,6 +2712,28 @@ router.post(
 );
 
 /**
+ * GET /api/doctor/departments
+ * Retrieves clinical departments from PostgreSQL.
+ */
+router.get(
+  '/departments',
+  authenticateJWT,
+  requireRoles(['doctor', 'admin', 'nurse']),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const depts = await prisma.department.findMany({
+        select: { id: true, name: true, description: true },
+        orderBy: { name: 'asc' },
+      });
+      return res.json({ success: true, data: depts });
+    } catch (err) {
+      console.error('[DOCTOR] Departments error:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch departments.' });
+    }
+  }
+);
+
+/**
  * GET /api/doctor/guidelines
  * Lists published clinical guidelines from PostgreSQL.
  */
@@ -2735,8 +2757,12 @@ router.get(
         where.category = category;
       }
 
-      if (department && department !== 'All') {
-        where.department = department;
+      if (department && department !== 'All' && department !== 'All Departments') {
+        const cleanDept = department.replace(/\s+department$/i, '').trim();
+        where.OR = [
+          { department: { contains: cleanDept, mode: 'insensitive' } },
+          { department: { in: ['All Departments', 'All', 'Hospital-wide'] } },
+        ];
       }
 
       if (search) {
