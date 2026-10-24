@@ -4,7 +4,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { authenticateJWT, AuthenticatedRequest } from '../middleware/auth';
 import { requireRoles } from '../middleware/roleGuard';
-import { seedWardsAndBeds } from '../seed-wards-beds';
+import { seedWardsAndBeds, ensureInpatientDatabaseTables } from '../seed-wards-beds';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -1119,6 +1119,9 @@ router.post(
 
       const effectiveDoctorId = doctor ? doctor.id : 1;
       const resolvedPatientId = await resolvePatientId(data.patientId);
+
+      // Ensure inpatient tables and schema exist in PostgreSQL (production self-healing)
+      await ensureInpatientDatabaseTables();
 
       // 1. Verify Patient exists
       const patient = await prisma.patient.findUnique({

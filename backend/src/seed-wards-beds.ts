@@ -42,6 +42,111 @@ export const DEFAULT_WARDS = [
 ];
 
 /**
+ * Idempotently executes raw DDL statements to ensure inpatient tables, columns,
+ * foreign keys, and indexes exist in PostgreSQL (essential for production databases).
+ */
+export async function ensureInpatientDatabaseTables(): Promise<void> {
+  try {
+    // 1. Ensure Wards table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS wards (
+        id SERIAL PRIMARY KEY,
+        ward_number VARCHAR(50) UNIQUE NOT NULL,
+        name VARCHAR(150) NOT NULL,
+        department VARCHAR(150),
+        total_beds INT NOT NULL DEFAULT 50,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMP(6) DEFAULT NOW(),
+        updated_at TIMESTAMP(6) DEFAULT NOW()
+      );
+    `);
+
+    // 2. Ensure Beds table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS beds (
+        id SERIAL PRIMARY KEY,
+        ward_id INT NOT NULL REFERENCES wards(id) ON DELETE CASCADE,
+        bed_number VARCHAR(50) NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'AVAILABLE',
+        created_at TIMESTAMP(6) DEFAULT NOW(),
+        updated_at TIMESTAMP(6) DEFAULT NOW(),
+        CONSTRAINT unique_ward_bed UNIQUE (ward_id, bed_number)
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_beds_ward_id ON beds(ward_id);`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_beds_status ON beds(status);`);
+
+    // 3. Ensure Inpatient Admissions table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS inpatient_admissions (
+        id SERIAL PRIMARY KEY,
+        admission_number VARCHAR(50) UNIQUE NOT NULL,
+        patient_id INT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        admitting_doctor_id INT NOT NULL REFERENCES doctors(id),
+        ward_id INT NOT NULL REFERENCES wards(id),
+        bed_id INT NOT NULL REFERENCES beds(id),
+        admission_date_time TIMESTAMP(6) NOT NULL DEFAULT NOW(),
+        admission_diagnosis VARCHAR(255) NOT NULL,
+        chief_complaint TEXT NOT NULL,
+        nursing_handover_instructions TEXT,
+        admission_status VARCHAR(50) NOT NULL DEFAULT 'ADMITTED',
+        acuity_level VARCHAR(50) NOT NULL DEFAULT 'MODERATE',
+        source_appointment_id INT REFERENCES appointments(id) ON DELETE SET NULL,
+        discharge_date TIMESTAMP(6),
+        created_at TIMESTAMP(6) DEFAULT NOW(),
+        updated_at TIMESTAMP(6) DEFAULT NOW()
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_inpatient_admissions_patient_id ON inpatient_admissions(patient_id);`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_inpatient_admissions_admitting_doctor_id ON inpatient_admissions(admitting_doctor_id);`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_inpatient_admissions_ward_id ON inpatient_admissions(ward_id);`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_inpatient_admissions_bed_id ON inpatient_admissions(bed_id);`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_inpatient_admissions_admission_status ON inpatient_admissions(admission_status);`);
+
+    // 4. Ensure Bed Transfer History table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS bed_transfer_history (
+        id SERIAL PRIMARY KEY,
+        admission_id INT NOT NULL REFERENCES inpatient_admissions(id) ON DELETE CASCADE,
+        from_ward_id INT NOT NULL REFERENCES wards(id),
+        from_bed_id INT NOT NULL REFERENCES beds(id),
+        to_ward_id INT NOT NULL REFERENCES wards(id),
+        to_bed_id INT NOT NULL REFERENCES beds(id),
+        transfer_reason VARCHAR(255),
+        transferred_by_id INT REFERENCES users(id) ON DELETE SET NULL,
+        transferred_at TIMESTAMP(6) DEFAULT NOW()
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_bed_transfer_history_admission_id ON bed_transfer_history(admission_id);`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_bed_transfer_history_from_bed_id ON bed_transfer_history(from_bed_id);`);
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_bed_transfer_history_to_bed_id ON bed_transfer_history(to_bed_id);`);
+
+    // 5. Ensure Patient columns
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS admission_status VARCHAR(50) DEFAULT 'Active';
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS bed_number VARCHAR(50);
+    `);
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE patients ADD COLUMN IF NOT EXISTS ward VARCHAR(100);
+    `);
+
+    // 6. Ensure Record Types
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO record_types (name) VALUES ('nursing_note') ON CONFLICT DO NOTHING;
+    `);
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO record_types (name) VALUES ('Admission Note') ON CONFLICT DO NOTHING;
+    `);
+
+    console.log('[SEED_WARDS_BEDS] ✓ Inpatient tables and schema verified in PostgreSQL.');
+  } catch (err) {
+    console.warn('[SEED_WARDS_BEDS] Warning verifying inpatient tables:', err);
+  }
+}
+
+/**
  * Idempotently upgrades and initializes the hospital bed inventory to 50 beds per ward.
  * Safety requirements:
  * 1. Preserves existing occupied and maintenance beds — does not reset active admissions.
@@ -52,6 +157,9 @@ export const DEFAULT_WARDS = [
  */
 export async function seedWardsAndBeds(): Promise<void> {
   try {
+    // Ensure all tables and columns exist in database
+    await ensureInpatientDatabaseTables();
+
     console.log('[SEED_WARDS_BEDS] Upgrading Ward & Bed inventory to 50 beds per ward in PostgreSQL...');
 
     // 1. Ensure default wards are created or updated
