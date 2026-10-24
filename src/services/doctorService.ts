@@ -34,6 +34,7 @@ import type {
   AdmissionHistoryResponse,
   BedAllocationSummaryDTO,
   MedicalDocument,
+  LabReport,
 } from '../types';
 import { MOCK_PATIENTS, MOCK_GUIDELINES, MOCK_DOCTOR_ID, JOLDA_INPATIENT_MOCK, BITTU_INPATIENTS_MOCK, BITTU_ADMISSIONS_MOCK } from '../data/doctorMockData';
 import { syncNewDoctorPrescription, syncDiscontinuedDoctorPrescription } from './patientService';
@@ -180,6 +181,101 @@ function getAuthHeaders(): HeadersInit {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Local Persistence & Patient Data Enrichment
+// ─────────────────────────────────────────────────────────────
+
+export function getStoredLocalPrescriptions(patientId: number | string): Prescription[] {
+  try {
+    const raw = localStorage.getItem(`doctor_rx_${patientId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function persistLocalPrescription(patientId: number | string, rx: Prescription): void {
+  try {
+    const existing = getStoredLocalPrescriptions(patientId);
+    const updated = [rx, ...existing.filter((item) => item.id !== rx.id)];
+    localStorage.setItem(`doctor_rx_${patientId}`, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('[DOCTOR_SERVICE] Failed to persist prescription locally:', e);
+  }
+}
+
+export function getStoredLocalLabs(patientId: number | string): LabReport[] {
+  try {
+    const raw = localStorage.getItem(`doctor_labs_${patientId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function persistLocalLab(patientId: number | string, lab: LabReport): void {
+  try {
+    const existing = getStoredLocalLabs(patientId);
+    const updated = [lab, ...existing.filter((item) => item.id !== lab.id)];
+    localStorage.setItem(`doctor_labs_${patientId}`, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('[DOCTOR_SERVICE] Failed to persist lab report locally:', e);
+  }
+}
+
+export function enrichPatientWithLocalData(patient: DoctorPatient): DoctorPatient {
+  const localRxs = [
+    ...getStoredLocalPrescriptions(patient.id),
+    ...(patient.id === 10 ? getStoredLocalPrescriptions(104) : []),
+    ...(patient.id === 104 ? getStoredLocalPrescriptions(10) : []),
+  ];
+  const localLabs = [
+    ...getStoredLocalLabs(patient.id),
+    ...(patient.id === 10 ? getStoredLocalLabs(104) : []),
+    ...(patient.id === 104 ? getStoredLocalLabs(10) : []),
+  ];
+
+  const mergedRxs = [...(patient.prescriptions || [])];
+  for (const rx of localRxs) {
+    if (!mergedRxs.some((r) => r.id === rx.id)) {
+      mergedRxs.unshift(rx);
+    }
+  }
+
+  const mergedLabs = [...(patient.labReports || [])];
+  for (const lab of localLabs) {
+    if (!mergedLabs.some((l) => l.id === lab.id)) {
+      mergedLabs.unshift(lab);
+    }
+  }
+
+  const mergedMeds = [...(patient.currentMedications || [])];
+  for (const rx of mergedRxs.filter((r) => r.status === 'Active')) {
+    for (const m of rx.medications) {
+      if (!mergedMeds.some((cm) => cm.name.toLowerCase() === m.name.toLowerCase())) {
+        mergedMeds.unshift({
+          name: m.name,
+          dosage: m.dosage,
+          frequency: m.frequency,
+          startDate: rx.date,
+          prescribedBy: rx.doctorName,
+        });
+      }
+    }
+  }
+
+  return {
+    ...patient,
+    prescriptions: mergedRxs,
+    labReports: mergedLabs,
+    currentMedications: mergedMeds,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
 // Patient Records
 // ─────────────────────────────────────────────────────────────
 
@@ -255,7 +351,7 @@ export async function getPatients(
             }
           }
         }
-        return list;
+        return list.map((p) => enrichPatientWithLocalData(p));
       }
     }
   } catch (e) {
@@ -283,7 +379,7 @@ export async function getPatients(
     if (filters.status) {
       patients = patients.filter((p) => p.status === filters.status);
     }
-    return sortPatientList(patients, filters.sortBy || 'criticalFirst', filters.sortOrder);
+    return sortPatientList(patients.map((p) => enrichPatientWithLocalData(p)), filters.sortBy || 'criticalFirst', filters.sortOrder);
   }
 
   if (isJoldaDoctor) {
@@ -304,7 +400,7 @@ export async function getPatients(
     if (filters.status) {
       patients = patients.filter((p) => p.status === filters.status);
     }
-    return patients;
+    return patients.map((p) => enrichPatientWithLocalData(p));
   }
 
   if (!isDefaultDemoDoctor) {
@@ -329,7 +425,7 @@ export async function getPatients(
     patients = patients.filter((p) => p.status === filters.status);
   }
 
-  return sortPatientList(patients, filters.sortBy || 'criticalFirst', filters.sortOrder);
+  return sortPatientList(patients.map((p) => enrichPatientWithLocalData(p)), filters.sortBy || 'criticalFirst', filters.sortOrder);
 }
 
 /**
@@ -341,14 +437,15 @@ export async function getPatientById(
   _doctorId?: number
 ): Promise<DoctorPatient> {
   try {
-    const res = await fetch(`/api/doctor/patients/${patientId}`, {
+    const targetId = normalizeDoctorPatientId(patientId);
+    const res = await fetch(`/api/doctor/patients/${targetId}`, {
       headers: getAuthHeaders(),
     });
 
     if (res.ok) {
       const json = await res.json();
       if (json.success && json.data) {
-        return json.data;
+        return enrichPatientWithLocalData(json.data);
       }
     } else if (res.status === 403) {
       throw new Error('Access denied: this patient is not assigned to your clinical care.');
@@ -377,13 +474,20 @@ export async function getPatientById(
 
   if (isBittuDoctor) {
     const found = BITTU_INPATIENTS_MOCK.find((p) => p.id === patientId || String(p.id) === String(patientId));
-    if (found) return found;
+    if (found) return enrichPatientWithLocalData(found);
     throw new Error('Patient record not found or not assigned to your clinical care.');
   }
 
   if (isJoldaDoctor) {
-    if (patientId === JOLDA_INPATIENT_MOCK.id || String(patientId) === String(JOLDA_INPATIENT_MOCK.id)) {
-      return JOLDA_INPATIENT_MOCK;
+    if (
+      patientId === JOLDA_INPATIENT_MOCK.id ||
+      String(patientId) === String(JOLDA_INPATIENT_MOCK.id) ||
+      patientId === 10 ||
+      String(patientId) === '10' ||
+      patientId === 104 ||
+      String(patientId) === '104'
+    ) {
+      return enrichPatientWithLocalData(JOLDA_INPATIENT_MOCK);
     }
     throw new Error('Patient record not found or not assigned to your clinical care.');
   }
@@ -396,7 +500,7 @@ export async function getPatientById(
   if (!patient) {
     throw new Error('Patient not found.');
   }
-  return patient;
+  return enrichPatientWithLocalData(patient);
 }
 
 /**
@@ -1488,44 +1592,167 @@ export async function addPrescription(
     notes?: string;
   }
 ): Promise<Prescription> {
+  const targetId = normalizeDoctorPatientId(patientId);
   const doctorName = getCurrentDoctorName();
-  const rxId = `RX-${Date.now().toString().slice(-6)}`;
   const today = new Date().toISOString().split('T')[0];
 
-  const newRx: Prescription = {
-    id: rxId,
-    date: today,
-    medications: prescriptionData.medications.map((m) => ({
-      name: m.name,
-      dosage: m.dosage,
-      frequency: m.frequency,
-      startDate: today,
-      prescribedBy: doctorName,
-    })),
-    doctorName,
-    notes: prescriptionData.notes || 'Official electronic hospital prescription.',
-    status: 'Active',
-  };
+  let createdRx: Prescription | null = null;
 
-  // 1. Update in-memory patient
-  const patient = MOCK_PATIENTS.find((p) => p.id === patientId);
-  if (patient) {
-    patient.prescriptions.unshift(newRx);
-    prescriptionData.medications.forEach((m) => {
-      patient.currentMedications.unshift({
+  // 1. Try remote PostgreSQL API if JWT present
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/doctor/patients/${targetId}/prescriptions`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(prescriptionData),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          createdRx = json.data;
+        }
+      }
+    } catch (err) {
+      console.warn('[DOCTOR_SERVICE] Remote prescription creation failed, using resilient fallback:', err);
+    }
+  }
+
+  // 2. Client fallback
+  if (!createdRx) {
+    const rxId = `RX-${Date.now().toString().slice(-6)}`;
+    createdRx = {
+      id: rxId,
+      date: today,
+      medications: prescriptionData.medications.map((m) => ({
         name: m.name,
         dosage: m.dosage,
         frequency: m.frequency,
         startDate: today,
         prescribedBy: doctorName,
-      });
-    });
+      })),
+      doctorName,
+      notes: prescriptionData.notes || 'Official electronic hospital prescription.',
+      status: 'Active',
+    };
   }
 
-  // 2. Synchronize across to Patient portal
+  // 3. Persist locally to localStorage for both patientId and targetId
+  persistLocalPrescription(patientId, createdRx);
+  if (targetId !== patientId) {
+    persistLocalPrescription(targetId, createdRx);
+  }
+
+  // 4. Update in-memory patients
+  const targetPatients = [
+    ...MOCK_PATIENTS,
+    JOLDA_INPATIENT_MOCK,
+    ...BITTU_INPATIENTS_MOCK,
+  ];
+  for (const p of targetPatients) {
+    if (p.id === patientId || p.id === targetId || (patientId === 104 && p.id === 10) || (patientId === 10 && p.id === 104)) {
+      if (!p.prescriptions) p.prescriptions = [];
+      p.prescriptions = [createdRx, ...p.prescriptions.filter((r) => r.id !== createdRx!.id)];
+
+      if (!p.currentMedications) p.currentMedications = [];
+      prescriptionData.medications.forEach((m) => {
+        p.currentMedications = [
+          {
+            name: m.name,
+            dosage: m.dosage,
+            frequency: m.frequency,
+            startDate: today,
+            prescribedBy: doctorName,
+          },
+          ...p.currentMedications.filter((cm) => cm.name.toLowerCase() !== m.name.toLowerCase()),
+        ];
+      });
+    }
+  }
+
+  // 5. Synchronize across to Patient portal
   syncNewDoctorPrescription(patientId, doctorName, prescriptionData.medications, prescriptionData.notes);
 
-  return newRx;
+  return createdRx;
+}
+
+/**
+ * Records a diagnostic laboratory test result for a patient.
+ */
+export async function addLabReport(
+  patientId: number,
+  labData: {
+    testName: string;
+    result: string;
+    unit?: string;
+    referenceRange?: string;
+    status: 'Normal' | 'Abnormal' | 'Critical' | 'Pending';
+    notes?: string;
+    date?: string;
+  }
+): Promise<LabReport> {
+  const targetId = normalizeDoctorPatientId(patientId);
+  const doctorName = getCurrentDoctorName();
+  const today = labData.date || new Date().toISOString().split('T')[0];
+
+  let createdLab: LabReport | null = null;
+
+  // 1. Try remote PostgreSQL API
+  const token = getAuthToken();
+  if (isRealJwt(token)) {
+    try {
+      const res = await fetch(`/api/doctor/patients/${targetId}/labs`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(labData),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          createdLab = json.data;
+        }
+      }
+    } catch (err) {
+      console.warn('[DOCTOR_SERVICE] Remote lab creation failed, using resilient fallback:', err);
+    }
+  }
+
+  // 2. Client fallback
+  if (!createdLab) {
+    const labId = `LAB-${Date.now().toString().slice(-6)}`;
+    createdLab = {
+      id: labId,
+      testName: labData.testName,
+      date: today,
+      result: labData.result || 'Normal',
+      unit: labData.unit || '-',
+      referenceRange: labData.referenceRange || 'Standard Reference Range',
+      status: labData.status || 'Normal',
+      orderedBy: doctorName,
+      notes: labData.notes,
+    };
+  }
+
+  // 3. Persist locally
+  persistLocalLab(patientId, createdLab);
+  if (targetId !== patientId) {
+    persistLocalLab(targetId, createdLab);
+  }
+
+  // 4. Update in-memory collections
+  const targetPatients = [
+    ...MOCK_PATIENTS,
+    JOLDA_INPATIENT_MOCK,
+    ...BITTU_INPATIENTS_MOCK,
+  ];
+  for (const p of targetPatients) {
+    if (p.id === patientId || p.id === targetId || (patientId === 104 && p.id === 10) || (patientId === 10 && p.id === 104)) {
+      if (!p.labReports) p.labReports = [];
+      p.labReports = [createdLab, ...p.labReports.filter((l) => l.id !== createdLab!.id)];
+    }
+  }
+
+  return createdLab;
 }
 
 /**

@@ -17,9 +17,15 @@ import {
   Stethoscope,
   ChevronRight,
   ClipboardList,
+  FlaskConical,
+  Plus,
+  CheckCircle2,
 } from 'lucide-react';
-import type { InpatientAdmissionRecord, AdmissionTimelineEvent, DoctorPatient } from '../../types';
-import { getAdmissionTimeline } from '../../services/doctorService';
+import type { InpatientAdmissionRecord, AdmissionTimelineEvent, DoctorPatient, Prescription, LabReport } from '../../types';
+import { getAdmissionTimeline, getPatientById } from '../../services/doctorService';
+import { CreatePrescriptionModal } from '../../components/doctor/CreatePrescriptionModal';
+import { CreateLabReportModal } from '../../components/doctor/CreateLabReportModal';
+import { getTallManName } from '../../utils/medicationSafety';
 
 interface InpatientDetailPageProps {
   admission: InpatientAdmissionRecord;
@@ -69,6 +75,92 @@ export const InpatientDetailPage: React.FC<InpatientDetailPageProps> = ({
   const [activeTab, setActiveTab] = useState<'details' | 'timeline'>('details');
   const [timeline, setTimeline] = useState<AdmissionTimelineEvent[]>([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
+
+  // Inpatient Clinical Record States
+  const [currentPatient, setCurrentPatient] = useState<DoctorPatient | null>(patient || null);
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [showLabModal, setShowLabModal] = useState(false);
+  const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (patient) {
+      setCurrentPatient(patient);
+    }
+    const pid = patient?.id || admission.patientId;
+    if (pid) {
+      getPatientById(pid)
+        .then((p) => {
+          if (p) setCurrentPatient(p);
+        })
+        .catch((e) => console.warn('[INPATIENT_DETAIL] Could not fetch detailed patient:', e));
+    }
+  }, [patient, admission.patientId]);
+
+  const handlePrescriptionCreated = (newRx: Prescription) => {
+    if (currentPatient) {
+      const updated: DoctorPatient = {
+        ...currentPatient,
+        prescriptions: [newRx, ...(currentPatient.prescriptions || [])],
+        currentMedications: [
+          ...newRx.medications.map((m) => ({
+            name: m.name,
+            dosage: m.dosage,
+            frequency: m.frequency,
+            startDate: newRx.date,
+            prescribedBy: newRx.doctorName,
+          })),
+          ...(currentPatient.currentMedications || []),
+        ],
+      };
+      setCurrentPatient(updated);
+    }
+    setActionSuccessMsg(`Prescription #${newRx.id} created and available in Inpatient Medical Records.`);
+    setTimeout(() => setActionSuccessMsg(null), 5000);
+  };
+
+  const handleLabReportCreated = (newLab: LabReport) => {
+    if (currentPatient) {
+      const updated: DoctorPatient = {
+        ...currentPatient,
+        labReports: [newLab, ...(currentPatient.labReports || []).filter((l) => l.id !== newLab.id)],
+      };
+      setCurrentPatient(updated);
+    }
+    setActionSuccessMsg(`Laboratory report "${newLab.testName}" recorded in Inpatient Medical Records.`);
+    setTimeout(() => setActionSuccessMsg(null), 5000);
+  };
+
+  const resolvedPatientId = currentPatient?.id || admission.patientId;
+  const activeMeds =
+    currentPatient?.currentMedications && currentPatient.currentMedications.length > 0
+      ? currentPatient.currentMedications
+      : (currentPatient?.prescriptions || []).filter((r) => r.status === 'Active').flatMap((r) => r.medications || []);
+  const labReports = currentPatient?.labReports || [];
+
+  const fallbackPatient: DoctorPatient = currentPatient || ({
+    id: admission.patientId,
+    firstName: admission.patientName?.split(' ')[0] || 'Inpatient',
+    lastName: admission.patientName?.split(' ').slice(1).join(' ') || '',
+    age: admission.patientAge || admission.age || 45,
+    gender: { name: admission.patientGender || admission.gender || 'Unknown' },
+    bloodGroup: { name: admission.bloodGroup || 'O+' },
+    phone: admission.patientPhone || admission.phone || '',
+    email: admission.email || '',
+    department: admission.wardDepartment || 'General Medicine',
+    ward: `${admission.wardName} (${admission.bedNumber})`,
+    bedNumber: admission.bedNumber,
+    status: 'Admitted',
+    assignedDoctorId: 0,
+    lastVisit: admission.admissionDateTime || new Date().toISOString(),
+    allergies: [],
+    currentMedications: [],
+    medicalHistory: [],
+    prescriptions: [],
+    labReports: [],
+    appointments: [],
+    clinicalNotes: [],
+    documents: [],
+  } as unknown as DoctorPatient);
 
   useEffect(() => {
     const loadTimeline = async () => {
@@ -469,21 +561,55 @@ export const InpatientDetailPage: React.FC<InpatientDetailPageProps> = ({
             )}
           </div>
 
-          {/* Grid 3: Quick Navigation to Patient EMR Modules */}
-          {onNavigateToPatient && (
-            <div className="p-5 rounded-2xl bg-gradient-to-r from-navy-950 via-navy-900 to-navy-950 border border-white/10 shadow-lg space-y-3">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+          {/* Grid 3: Quick Navigation to Patient EMR Modules & Medical Records */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-navy-950 via-navy-900 to-navy-950 border border-white/10 shadow-lg space-y-4">
+            {/* Header with Title and Direct Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div>
                 <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-accent" />
                   <span>Inpatient Care Shortcuts & Medical Records</span>
                 </span>
-                <span className="text-xs text-gray-400">Direct Doctor Workflows</span>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Direct clinical workflows, active medications, and diagnostic investigation records
+                </p>
               </div>
 
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPrescriptionModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary-light text-xs font-semibold transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Prescribe Medication</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowLabModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold transition-all cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Order / Add Lab Test</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Action Feedback Banner */}
+            {actionSuccessMsg && (
+              <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-medium flex items-center gap-2 animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
+                <span>{actionSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* 4 Shortcut Buttons */}
+            {onNavigateToPatient && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
                 <button
                   type="button"
-                  onClick={() => onNavigateToPatient(admission.patientId, 'overview')}
+                  onClick={() => onNavigateToPatient(resolvedPatientId, 'overview')}
                   className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-accent/15 border border-white/10 hover:border-accent/40 text-left transition-all group cursor-pointer"
                 >
                   <FileText className="w-5 h-5 text-accent mb-2 group-hover:scale-110 transition-transform" />
@@ -493,27 +619,37 @@ export const InpatientDetailPage: React.FC<InpatientDetailPageProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => onNavigateToPatient(admission.patientId, 'prescriptions')}
+                  onClick={() => onNavigateToPatient(resolvedPatientId, 'prescriptions')}
                   className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-primary-light/15 border border-white/10 hover:border-primary-light/40 text-left transition-all group cursor-pointer"
                 >
-                  <Pill className="w-5 h-5 text-primary-light mb-2 group-hover:scale-110 transition-transform" />
+                  <div className="flex items-center justify-between mb-2">
+                    <Pill className="w-5 h-5 text-primary-light group-hover:scale-110 transition-transform" />
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary-light font-bold">
+                      {activeMeds.length}
+                    </span>
+                  </div>
                   <div className="font-semibold text-white text-xs group-hover:text-primary-light">Prescriptions</div>
                   <div className="text-[10px] text-gray-400 mt-0.5">Active Medications</div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => onNavigateToPatient(admission.patientId, 'labs')}
+                  onClick={() => onNavigateToPatient(resolvedPatientId, 'labs')}
                   className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-emerald-400/15 border border-white/10 hover:border-emerald-400/40 text-left transition-all group cursor-pointer"
                 >
-                  <HeartPulse className="w-5 h-5 text-emerald-400 mb-2 group-hover:scale-110 transition-transform" />
+                  <div className="flex items-center justify-between mb-2">
+                    <HeartPulse className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+                      {labReports.length}
+                    </span>
+                  </div>
                   <div className="font-semibold text-white text-xs group-hover:text-emerald-300">Vitals & Labs</div>
                   <div className="text-[10px] text-gray-400 mt-0.5">Diagnostics & Labs</div>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => onNavigateToPatient(admission.patientId, 'discharge-summary')}
+                  onClick={() => onNavigateToPatient(resolvedPatientId, 'discharge-summary')}
                   className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-emerald-500/15 border border-white/10 hover:border-emerald-500/40 text-left transition-all group cursor-pointer"
                 >
                   <LogOut className="w-5 h-5 text-emerald-300 mb-2 group-hover:scale-110 transition-transform" />
@@ -521,8 +657,153 @@ export const InpatientDetailPage: React.FC<InpatientDetailPageProps> = ({
                   <div className="text-[10px] text-gray-400 mt-0.5">Summary & Orders</div>
                 </button>
               </div>
+            )}
+
+            {/* Inpatient Medical Records: Active Medications & Lab Reports */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+              {/* Card 1: Active Prescriptions & Medications */}
+              <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Pill className="w-4 h-4 text-primary-light" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Active Inpatient Medications ({activeMeds.length})
+                    </span>
+                  </div>
+                  {onNavigateToPatient && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateToPatient(resolvedPatientId, 'prescriptions')}
+                      className="text-[11px] text-primary-light hover:underline font-semibold"
+                    >
+                      View All in Chart →
+                    </button>
+                  )}
+                </div>
+
+                {activeMeds.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-gray-400 space-y-2">
+                    <p>No active medications entered yet for this inpatient.</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowPrescriptionModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary/20 text-primary-light text-xs font-semibold hover:bg-primary/30"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Prescribe First Medicine
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {activeMeds.map((med: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-lg bg-white/[0.03] border border-white/5 flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-white font-mono">
+                              {getTallManName(med.name)}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-accent/20 text-accent font-semibold text-[10px]">
+                              {med.dosage}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-400">
+                            {med.frequency || 'Daily schedule'} {med.startDate ? `· Started ${med.startDate}` : ''}
+                          </p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-[10px] font-bold flex-shrink-0">
+                          Active
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Card 2: Diagnostic Laboratory Reports */}
+              <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <div className="flex items-center gap-2">
+                    <FlaskConical className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Diagnostic Lab Reports ({labReports.length})
+                    </span>
+                  </div>
+                  {onNavigateToPatient && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateToPatient(resolvedPatientId, 'labs')}
+                      className="text-[11px] text-emerald-300 hover:underline font-semibold"
+                    >
+                      View All in Chart →
+                    </button>
+                  )}
+                </div>
+
+                {labReports.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-gray-400 space-y-2">
+                    <p>No laboratory reports recorded yet for this inpatient.</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowLabModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/30"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Record First Lab Test
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {labReports.map((lab: any) => {
+                      const statusColor =
+                        lab.status === 'Critical'
+                          ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          : lab.status === 'Abnormal'
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          : lab.status === 'Pending'
+                          ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                          : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+
+                      return (
+                        <div
+                          key={lab.id}
+                          className="p-3 rounded-lg bg-white/[0.03] border border-white/5 flex items-start justify-between gap-3 text-xs"
+                        >
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-white text-xs">{lab.testName}</p>
+                            <p className="text-sm font-semibold text-teal-300">
+                              {lab.result} {lab.unit && lab.unit !== '-' ? <span className="text-xs text-gray-400">{lab.unit}</span> : ''}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                              {lab.date} {lab.orderedBy ? `· ${lab.orderedBy}` : ''}
+                            </p>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${statusColor} flex-shrink-0`}>
+                            {lab.status || 'Normal'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+
+            {/* Modals for Direct Inpatient Creation */}
+            <CreatePrescriptionModal
+              isOpen={showPrescriptionModal}
+              onClose={() => setShowPrescriptionModal(false)}
+              patient={fallbackPatient}
+              onPrescriptionCreated={handlePrescriptionCreated}
+            />
+
+            <CreateLabReportModal
+              isOpen={showLabModal}
+              onClose={() => setShowLabModal(false)}
+              patient={fallbackPatient}
+              onLabReportCreated={handleLabReportCreated}
+            />
+          </div>
         </div>
       ) : (
         /* ── Timeline Tab ───────────────────────────────────────────── */
