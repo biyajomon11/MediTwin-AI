@@ -224,6 +224,28 @@ export async function getPatients(
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         let list: DoctorPatient[] = json.data;
+
+        // Strictly ensure doctor only sees their assigned patients
+        if (currentUser?.firstName) {
+          const docFirst = currentUser.firstName.toLowerCase();
+          list = list.filter((p) => {
+            // David Mathew is strictly assigned to Dr. Bittu Jomon
+            const isDavid = (p.firstName?.toLowerCase() === 'david' && p.lastName?.toLowerCase() === 'mathew') || p.email?.toLowerCase().includes('davidmathew');
+            if (isDavid && !isBittuDoctor) {
+              return false;
+            }
+            const assigned = (p.assignedDoctorName || '').toLowerCase();
+            if (assigned.startsWith('dr.') && !assigned.includes(docFirst) && !assigned.includes('attending')) {
+              return false;
+            }
+            const apptDoc = (p.appointments?.[0]?.doctorName || '').toLowerCase();
+            if (apptDoc.startsWith('dr.') && !apptDoc.includes(docFirst) && !apptDoc.includes('attending')) {
+              return false;
+            }
+            return true;
+          });
+        }
+
         if (isBittuDoctor) {
           const hasDavid = list.some((p) => p.email?.toLowerCase().includes('davidmathew'));
           if (!hasDavid) {
@@ -743,9 +765,37 @@ export async function getInpatientAdmissions(params?: {
 
   let merged = Array.from(combinedMap.values());
 
+  const currentUser = getCurrentDoctorSession();
+  const currentDoctorName = `${currentUser?.firstName || ''} ${currentUser?.lastName || ''}`.trim().toLowerCase();
+  const isBittuDoctor =
+    currentDoctorName.includes('bittu') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('bittu'));
+  const isJoldaDoctor =
+    currentDoctorName.includes('jolda') ||
+    (currentUser?.email && currentUser.email.toLowerCase().includes('jolda'));
+
   // Fallback to default admitted patients if empty
   if (merged.length === 0) {
-    merged = [...BITTU_ADMISSIONS_MOCK];
+    if (isBittuDoctor) {
+      merged = [...BITTU_ADMISSIONS_MOCK];
+    } else if (isJoldaDoctor) {
+      merged = BITTU_ADMISSIONS_MOCK.filter((a) => (a.admittingDoctorName || a.doctorName || '').toLowerCase().includes('jolda'));
+    }
+  }
+
+  // Ensure doctors only see admissions strictly under their clinical care
+  if (currentUser?.firstName) {
+    const docFirst = currentUser.firstName.toLowerCase();
+    merged = merged.filter((a) => {
+      if (isJoldaDoctor && (a.patientName?.toLowerCase().includes('david') || a.admissionDiagnosis?.toLowerCase().includes('latex'))) {
+        return false;
+      }
+      const admDoc = (a.doctorName || a.admittingDoctorName || '').toLowerCase();
+      if (admDoc.startsWith('dr.') && !admDoc.includes(docFirst) && !admDoc.includes('attending')) {
+        return false;
+      }
+      return true;
+    });
   }
 
   // Apply filters

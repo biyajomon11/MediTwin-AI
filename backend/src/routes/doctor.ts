@@ -465,10 +465,19 @@ async function buildPatientDTO(patientId: number, currentDoctorId?: number, curr
       admissionDate = lastVisitDate && lastVisitDate < todayStr ? lastVisitDate : undefined;
     }
 
-    const assignedDoctorId = activeInpatientAdm?.admittingDoctorId || currentDoctorId || patient.appointments?.[0]?.doctor?.id || 1;
-    const assignedDoctorName = activeInpatientAdm?.admittingDoctor
-      ? `Dr. ${activeInpatientAdm.admittingDoctor.firstName} ${activeInpatientAdm.admittingDoctor.lastName}`
-      : currentDoctorName || (patient.appointments?.[0]?.doctor ? `Dr. ${patient.appointments[0].doctor.firstName} ${patient.appointments[0].doctor.lastName}` : 'Dr. Sarah Joseph');
+    const assignedDoctor =
+      activeInpatientAdm?.admittingDoctor
+        ? activeInpatientAdm.admittingDoctor
+        : patient.appointments?.[0]?.doctor
+        ? patient.appointments[0].doctor
+        : patient.prescriptions?.[0]?.doctor
+        ? patient.prescriptions[0].doctor
+        : null;
+
+    const assignedDoctorId = assignedDoctor?.id || currentDoctorId || 1;
+    const assignedDoctorName = assignedDoctor
+      ? `Dr. ${assignedDoctor.firstName} ${assignedDoctor.lastName}`
+      : (currentDoctorName || 'Dr. Sarah Joseph');
 
     return {
       id: patient.id,
@@ -550,16 +559,47 @@ router.get(
 
       const andClauses: any[] = [];
 
-      // When accessed by a doctor, only return patients assigned to this doctor
+      // When accessed by a doctor, only return patients assigned strictly to this doctor
       if (req.user!.role === 'doctor' && doctor) {
         andClauses.push({
           OR: [
             { appointments: { some: { doctorId: doctor.id } } },
-            { appointments: { some: { doctor: { lastName: { contains: doctor.lastName, mode: 'insensitive' } } } } },
+            {
+              appointments: {
+                some: {
+                  doctor: {
+                    firstName: { equals: doctor.firstName, mode: 'insensitive' },
+                    lastName: { equals: doctor.lastName, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
             { prescriptions: { some: { doctorId: doctor.id } } },
-            { prescriptions: { some: { doctor: { lastName: { contains: doctor.lastName, mode: 'insensitive' } } } } },
-            { medicalRecords: { some: { doctorId: doctor.id } } },
-            { dischargeSummaries: { some: { doctorId: doctor.id } } },
+            {
+              prescriptions: {
+                some: {
+                  doctor: {
+                    firstName: { equals: doctor.firstName, mode: 'insensitive' },
+                    lastName: { equals: doctor.lastName, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
+            {
+              inpatientAdmissions: {
+                some: {
+                  OR: [
+                    { admittingDoctorId: doctor.id },
+                    {
+                      admittingDoctor: {
+                        firstName: { equals: doctor.firstName, mode: 'insensitive' },
+                        lastName: { equals: doctor.lastName, mode: 'insensitive' },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
           ],
         });
       }
@@ -597,6 +637,22 @@ router.get(
 
       if (statusFilter) {
         validDTOs = validDTOs.filter((p) => p.status === statusFilter);
+      }
+
+      // Enforce strict doctor patient assignment isolation
+      if (req.user!.role === 'doctor' && doctor) {
+        const docFirst = doctor.firstName.toLowerCase();
+        validDTOs = validDTOs.filter((p) => {
+          const assigned = (p.assignedDoctorName || '').toLowerCase();
+          if (assigned.startsWith('dr.') && !assigned.includes(docFirst) && !assigned.includes('attending')) {
+            return false;
+          }
+          const apptDoc = (p.appointments?.[0]?.doctorName || '').toLowerCase();
+          if (apptDoc.startsWith('dr.') && !apptDoc.includes(docFirst) && !apptDoc.includes('attending')) {
+            return false;
+          }
+          return true;
+        });
       }
 
       // Sort DTOs
@@ -794,6 +850,18 @@ router.get(
       const dto = await buildPatientDTO(patientId, doctor?.id, doctorName);
       if (!dto) {
         return res.status(404).json({ success: false, error: 'Patient not found.' });
+      }
+
+      // Check if patient is assigned to this doctor
+      if (req.user!.role === 'doctor' && doctor) {
+        const docFirst = doctor.firstName.toLowerCase();
+        const assigned = (dto.assignedDoctorName || '').toLowerCase();
+        if (assigned.startsWith('dr.') && !assigned.includes(docFirst) && !assigned.includes('attending')) {
+          return res.status(403).json({
+            success: false,
+            error: 'Access denied: This patient is assigned to another attending physician.',
+          });
+        }
       }
 
       await logAudit(userId, 'VIEW_PATIENT_RECORD', 'patients', patientId);

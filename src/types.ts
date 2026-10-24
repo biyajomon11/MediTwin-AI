@@ -231,6 +231,7 @@ export interface MedicalDocument {
 /** Full patient record visible to the assigned doctor */
 export interface DoctorPatient extends PatientSummary {
   assignedDoctorId: number;
+  assignedDoctorName?: string;
   status: PatientStatus;
   email?: string;
   address?: string;
