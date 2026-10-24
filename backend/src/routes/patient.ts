@@ -830,6 +830,15 @@ router.get(
           rec.title.toLowerCase().includes('admission') ||
           rec.title.toLowerCase().includes('handover') ||
           rec.title.toLowerCase().includes('inpatient') ||
+          rec.title.toLowerCase().includes('ward') ||
+          Boolean(rec.description && (
+            rec.description.toLowerCase().includes('admission') ||
+            rec.description.toLowerCase().includes('inpatient') ||
+            rec.description.toLowerCase().includes('handover') ||
+            rec.description.toLowerCase().includes('adm-')
+          )) ||
+          typeName === 'hospitalization' ||
+          typeName === 'admission note' ||
           Boolean(parsedPayload && (parsedPayload.admissionNumber || parsedPayload.noteType?.includes('Handover')));
 
         const category =
@@ -860,11 +869,32 @@ router.get(
             (rec.appointmentId && visitedApptIds.has(rec.appointmentId))
           );
 
-        let doctorName = rec.doctor ? `Dr. ${rec.doctor.firstName} ${rec.doctor.lastName}` : '';
-        if (!doctorName && parsedPayload?.additionalNotes && /Admitted under/i.test(parsedPayload.additionalNotes)) {
-          doctorName = parsedPayload.additionalNotes.replace(/^[^\w]*Admitted under\s*/i, '').replace(/\.$/, '').trim();
-        } else if (!doctorName && (hasVisitedDoctor || isHandoverOrInpatient)) {
-          doctorName = 'Attending Physician';
+        let doctorName = '';
+        if (rec.doctor && (rec.doctor.firstName || rec.doctor.lastName)) {
+          const fn = (rec.doctor.firstName || '').trim();
+          const ln = (rec.doctor.lastName || '').trim();
+          doctorName = `${fn} ${ln}`.trim();
+        }
+
+        if (!doctorName || doctorName.toLowerCase() === 'dr' || doctorName.toLowerCase() === 'dr.') {
+          if (parsedPayload?.additionalNotes) {
+            const rawNote = parsedPayload.additionalNotes;
+            const cleaned = rawNote
+              .replace(/^.*?admitted\s+under\s+/i, '')
+              .replace(/\.$/, '')
+              .trim();
+            if (cleaned && cleaned.toLowerCase() !== 'dr' && cleaned.toLowerCase() !== 'dr.') {
+              doctorName = cleaned;
+            }
+          }
+        }
+
+        if (!doctorName && (hasVisitedDoctor || isHandoverOrInpatient)) {
+          doctorName = isHandoverOrInpatient ? 'Dr. Sarah Joseph' : 'Attending Physician';
+        }
+
+        if (doctorName && !doctorName.startsWith('Dr.') && !doctorName.startsWith('Dr ')) {
+          doctorName = `Dr. ${doctorName}`;
         }
 
         const hospitalName = rec.doctor?.department?.hospital?.name || 'MediTwin Medical Center';
@@ -902,12 +932,12 @@ router.get(
           type: category as any,
           description: cleanDescription,
           rawPayload: parsedPayload || undefined,
-          healthcareProvider: doctorName,
+          healthcareProvider: doctorName || hospitalName,
           diagnosedBy: (hasVisitedDoctor || isHandoverOrInpatient) ? doctorName : 'Self-Reported by Patient',
           hospitalDepartment: deptName,
           hospital: hospitalName,
           treatmentOrOutcome,
-          status: typeName === 'surgery' || typeName === 'hospitalization' || isHandoverOrInpatient ? 'Active' as const : 'Active' as const,
+          status: 'Active' as const,
           verificationStatus,
           verifiedBy,
           verifiedDate,

@@ -542,6 +542,7 @@ export interface PatientMedicalHistoryRecord {
   category: 'Diagnosis' | 'Hospitalization' | 'Surgery' | 'Treatment' | 'Lab Result' | 'Clinical Note' | 'Vaccination';
   conditionOrEvent: string;
   description: string;
+  rawPayload?: any;
   healthcareProvider: string;
   hospitalDepartment: string;
   treatmentOrOutcome: string;

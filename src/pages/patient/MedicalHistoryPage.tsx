@@ -39,8 +39,14 @@ interface InpatientHandoverData {
   additionalNotes?: string;
 }
 
-function tryParseHandoverJson(raw?: string): InpatientHandoverData | null {
-  if (!raw || typeof raw !== 'string') return null;
+function tryParseHandoverJson(raw?: any): InpatientHandoverData | null {
+  if (!raw) return null;
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    if (raw.admissionNumber || raw.noteType || raw.ward || raw.chiefComplaint || raw.diagnosis) {
+      return raw as InpatientHandoverData;
+    }
+  }
+  if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   if (!trimmed.startsWith('{')) return null;
   try {
@@ -50,6 +56,101 @@ function tryParseHandoverJson(raw?: string): InpatientHandoverData | null {
     }
   } catch {}
   return null;
+}
+
+function parseAttendingDoctor(rawNotes?: string): string {
+  if (!rawNotes) return '';
+  const cleaned = rawNotes
+    .replace(/^.*?admitted\s+under\s+/i, '')
+    .replace(/\.$/, '')
+    .trim();
+  if (cleaned && cleaned.toLowerCase() !== 'dr' && cleaned.toLowerCase() !== 'dr.') {
+    return cleaned.startsWith('Dr.') || cleaned.startsWith('Dr ') ? cleaned : `Dr. ${cleaned}`;
+  }
+  return '';
+}
+
+function resolveEffectiveDoctor(
+  item: PatientMedicalHistoryRecord,
+  handover?: InpatientHandoverData | null,
+  isHandover?: boolean
+): string {
+  // 1. First priority: Check handover / additionalNotes for explicit doctor name
+  const fromNotes = parseAttendingDoctor(handover?.additionalNotes);
+  if (fromNotes) return fromNotes;
+
+  // 2. Second priority: item.verifiedBy if valid and not truncated to just 'Dr' / 'Dr.'
+  if (
+    item.verifiedBy &&
+    item.verifiedBy.trim() &&
+    item.verifiedBy.trim().toLowerCase() !== 'dr' &&
+    item.verifiedBy.trim().toLowerCase() !== 'dr.'
+  ) {
+    const v = item.verifiedBy.trim();
+    return v.startsWith('Dr.') || v.startsWith('Dr ') ? v : `Dr. ${v}`;
+  }
+
+  // 3. Third priority: item.healthcareProvider if it refers to a doctor (not hospital)
+  if (
+    item.healthcareProvider &&
+    item.healthcareProvider.trim() &&
+    !item.healthcareProvider.toLowerCase().includes('hospital') &&
+    !item.healthcareProvider.toLowerCase().includes('center') &&
+    !item.healthcareProvider.toLowerCase().includes('clinic') &&
+    item.healthcareProvider.trim().toLowerCase() !== 'dr' &&
+    item.healthcareProvider.trim().toLowerCase() !== 'dr.'
+  ) {
+    const hp = item.healthcareProvider.trim();
+    return hp.startsWith('Dr.') || hp.startsWith('Dr ') ? hp : `Dr. ${hp}`;
+  }
+
+  // 4. Inpatient handover / admission default
+  if (isHandover) {
+    return 'Dr. Sarah Joseph';
+  }
+
+  return '';
+}
+
+function normalizeRecordCategory(rec: PatientMedicalHistoryRecord): 'Hospitalization' | 'Diagnosis' | 'Surgery' | 'Treatment' | 'Lab Result' | 'Clinical Note' | 'Vaccination' {
+  const title = (rec.conditionOrEvent || '').toLowerCase();
+  const desc = (rec.description || '').toLowerCase();
+  const cat = (rec.category || '').toLowerCase();
+  const rawNoteType = (rec.rawPayload?.noteType || '').toLowerCase();
+
+  if (
+    title.includes('admission') ||
+    title.includes('handover') ||
+    title.includes('inpatient') ||
+    title.includes('ward') ||
+    desc.includes('inpatient admission') ||
+    desc.includes('doctor admission handover') ||
+    desc.includes('admissionnumber') ||
+    desc.includes('adm-') ||
+    rawNoteType.includes('admission') ||
+    rawNoteType.includes('handover') ||
+    cat === 'hospitalization'
+  ) {
+    return 'Hospitalization';
+  }
+
+  if (cat === 'surgery' || title.includes('surgery') || title.includes('operation')) {
+    return 'Surgery';
+  }
+  if (cat === 'treatment' || title.includes('treatment') || title.includes('procedure')) {
+    return 'Treatment';
+  }
+  if (cat === 'lab result' || title.includes('lab') || title.includes('blood test') || title.includes('pathology')) {
+    return 'Lab Result';
+  }
+  if (cat === 'vaccination' || title.includes('vaccin') || title.includes('immuniz')) {
+    return 'Vaccination';
+  }
+  if (cat === 'clinical note' || title.includes('clinical note') || title.includes('consultation')) {
+    return 'Clinical Note';
+  }
+
+  return (rec.category as any) || 'Diagnosis';
 }
 
 const CATEGORIES = [
@@ -79,7 +180,11 @@ export const MedicalHistoryPage: React.FC = () => {
         patientService.getMedicalHistory(),
         patientService.getPatientProfile(),
       ]);
-      setHistoryRecords(histData);
+      const normalizedHistory = histData.map((rec) => ({
+        ...rec,
+        category: normalizeRecordCategory(rec),
+      }));
+      setHistoryRecords(normalizedHistory);
       setProfile(profileData);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Unable to load your medical history.');
@@ -180,6 +285,7 @@ export const MedicalHistoryPage: React.FC = () => {
 
   const filteredRecords = historyRecords.filter((rec) => {
     const query = searchQuery.toLowerCase().trim();
+    const itemCat = normalizeRecordCategory(rec);
     const matchesSearch =
       !query ||
       rec.conditionOrEvent.toLowerCase().includes(query) ||
@@ -188,7 +294,7 @@ export const MedicalHistoryPage: React.FC = () => {
       rec.hospitalDepartment.toLowerCase().includes(query) ||
       (rec.verificationSource && rec.verificationSource.toLowerCase().includes(query)) ||
       (rec.verifiedBy && rec.verifiedBy.toLowerCase().includes(query));
-    const matchesCategory = selectedCategory === 'All' || rec.category === selectedCategory;
+    const matchesCategory = selectedCategory === 'All' || itemCat === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
@@ -356,7 +462,7 @@ export const MedicalHistoryPage: React.FC = () => {
             const count =
               cat.id === 'All'
                 ? historyRecords.length
-                : historyRecords.filter((r) => r.category === cat.id).length;
+                : historyRecords.filter((r) => normalizeRecordCategory(r) === cat.id).length;
             const Icon = cat.icon;
             const isSelected = selectedCategory === cat.id;
 
@@ -408,23 +514,17 @@ export const MedicalHistoryPage: React.FC = () => {
       ) : (
         <div className="space-y-4 relative before:absolute before:inset-0 before:left-6 before:w-0.5 before:bg-white/10 before:hidden sm:before:block">
           {filteredRecords.map((item, idx) => {
-            const handover = tryParseHandoverJson(item.description);
+            const handover = tryParseHandoverJson(item.rawPayload || item.description);
+            const effectiveCategory = normalizeRecordCategory(item);
             const isHandover = Boolean(
               handover ||
-              item.conditionOrEvent.toLowerCase().includes('doctor admission handover') ||
-              item.conditionOrEvent.toLowerCase().includes('inpatient admission')
+              effectiveCategory === 'Hospitalization' ||
+              item.conditionOrEvent.toLowerCase().includes('admission') ||
+              item.conditionOrEvent.toLowerCase().includes('handover') ||
+              item.conditionOrEvent.toLowerCase().includes('inpatient')
             );
 
-            const effectiveCategory = isHandover ? 'Hospitalization' : item.category;
-
-            let effectiveDoctor = item.verifiedBy || item.healthcareProvider;
-            if (!effectiveDoctor && handover?.additionalNotes) {
-              const match = handover.additionalNotes.match(/Admitted under\s+([^.]+)/i);
-              if (match) effectiveDoctor = match[1].trim();
-            }
-            if (!effectiveDoctor && isHandover) {
-              effectiveDoctor = 'Dr. Sarah Joseph';
-            }
+            const effectiveDoctor = resolveEffectiveDoctor(item, handover, isHandover);
 
             const effectiveVerStatus = (isHandover || Boolean(item.verifiedBy)) ? 'Verified by Physician' : item.verificationStatus;
             const verBadge = getVerificationBadge(effectiveVerStatus);
@@ -553,7 +653,7 @@ export const MedicalHistoryPage: React.FC = () => {
                       {handover.additionalNotes && (
                         <div className="text-gray-400 text-xs flex items-center gap-1.5 pt-0.5">
                           <User className="w-3.5 h-3.5 text-accent" />
-                          <span>Attending Doctor: <strong className="text-white">{handover.additionalNotes}</strong></span>
+                          <span>Attending Doctor: <strong className="text-white">{effectiveDoctor || handover.additionalNotes}</strong></span>
                         </div>
                       )}
                     </div>
