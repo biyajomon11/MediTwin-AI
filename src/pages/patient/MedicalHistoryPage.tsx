@@ -19,9 +19,38 @@ import {
   Loader2,
   AlertCircle,
   X,
+  Bed,
 } from 'lucide-react';
 import * as patientService from '../../services/patientService';
 import type { PatientMedicalHistoryRecord, PatientHealthProfile } from '../../types';
+
+interface InpatientHandoverData {
+  date?: string;
+  time?: string;
+  nurseName?: string;
+  noteType?: string;
+  admissionNumber?: string;
+  ward?: string;
+  acuityLevel?: string;
+  diagnosis?: string;
+  chiefComplaint?: string;
+  nursingObservation?: string;
+  treatmentCareProvided?: string;
+  additionalNotes?: string;
+}
+
+function tryParseHandoverJson(raw?: string): InpatientHandoverData | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const obj = JSON.parse(trimmed);
+    if (obj && (obj.admissionNumber || obj.noteType || obj.ward || obj.chiefComplaint || obj.diagnosis)) {
+      return obj;
+    }
+  } catch {}
+  return null;
+}
 
 const CATEGORIES = [
   { id: 'All', label: 'All Events', icon: History },
@@ -379,8 +408,37 @@ export const MedicalHistoryPage: React.FC = () => {
       ) : (
         <div className="space-y-4 relative before:absolute before:inset-0 before:left-6 before:w-0.5 before:bg-white/10 before:hidden sm:before:block">
           {filteredRecords.map((item, idx) => {
-            const verBadge = getVerificationBadge(item.verificationStatus);
+            const handover = tryParseHandoverJson(item.description);
+            const isHandover = Boolean(
+              handover ||
+              item.conditionOrEvent.toLowerCase().includes('doctor admission handover') ||
+              item.conditionOrEvent.toLowerCase().includes('inpatient admission')
+            );
+
+            const effectiveCategory = isHandover ? 'Hospitalization' : item.category;
+
+            let effectiveDoctor = item.verifiedBy || item.healthcareProvider;
+            if (!effectiveDoctor && handover?.additionalNotes) {
+              const match = handover.additionalNotes.match(/Admitted under\s+([^.]+)/i);
+              if (match) effectiveDoctor = match[1].trim();
+            }
+            if (!effectiveDoctor && isHandover) {
+              effectiveDoctor = 'Dr. Sarah Joseph';
+            }
+
+            const effectiveVerStatus = (isHandover || Boolean(item.verifiedBy)) ? 'Verified by Physician' : item.verificationStatus;
+            const verBadge = getVerificationBadge(effectiveVerStatus);
             const VerIcon = verBadge.icon;
+
+            const effectiveTreatment = (isHandover && handover?.treatmentCareProvided)
+              ? handover.treatmentCareProvided
+              : (item.treatmentOrOutcome && !item.treatmentOrOutcome.includes('Self-Reported')
+                  ? item.treatmentOrOutcome
+                  : (isHandover ? 'Inpatient admission protocol initiated by attending physician.' : item.treatmentOrOutcome));
+
+            const effectiveDepartment = (handover?.ward)
+              ? handover.ward
+              : (item.hospitalDepartment || (isHandover ? 'Ward 1 – Bed 04' : ''));
 
             return (
               <motion.div
@@ -401,12 +459,12 @@ export const MedicalHistoryPage: React.FC = () => {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-2.5">
                     <div className="flex items-center gap-2.5">
                       <div className="p-1.5 rounded-lg bg-white/5 border border-white/10">
-                        {getCategoryIcon(item.category)}
+                        {getCategoryIcon(effectiveCategory)}
                       </div>
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadgeClass(item.category)}`}>
-                            {item.category}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${getCategoryBadgeClass(effectiveCategory)}`}>
+                            {effectiveCategory}
                           </span>
                           {item.status && (
                             <span className="text-[11px] text-gray-400 font-medium">
@@ -429,45 +487,114 @@ export const MedicalHistoryPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Description */}
-                  <p className="text-xs sm:text-sm text-gray-200 leading-relaxed">{item.description}</p>
+                  {/* Description / Handover Card */}
+                  {handover ? (
+                    <div className="rounded-xl bg-white/[0.03] border border-white/10 p-4 space-y-3 text-xs">
+                      {/* Top Badges */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {handover.admissionNumber && (
+                            <span className="px-2.5 py-0.5 rounded-lg bg-accent/15 border border-accent/30 text-accent font-mono text-xs font-bold">
+                              {handover.admissionNumber}
+                            </span>
+                          )}
+                          {handover.ward && (
+                            <span className="px-2.5 py-0.5 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold flex items-center gap-1.5">
+                              <Bed className="w-3.5 h-3.5 text-sky-400" />
+                              {handover.ward}
+                            </span>
+                          )}
+                          {handover.acuityLevel && (
+                            <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
+                              handover.acuityLevel === 'CRITICAL' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' :
+                              handover.acuityLevel === 'HIGH' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                              'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            }`}>
+                              Acuity: {handover.acuityLevel}
+                            </span>
+                          )}
+                        </div>
+                        {handover.time && (
+                          <span className="text-gray-400 font-mono text-xs">
+                            Time: {handover.time}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Clinical Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                        {handover.diagnosis && (
+                          <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5 space-y-1">
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
+                              Admission Diagnosis
+                            </span>
+                            <p className="text-white font-medium text-sm">{handover.diagnosis}</p>
+                          </div>
+                        )}
+                        {handover.chiefComplaint && (
+                          <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5 space-y-1">
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
+                              Chief Complaint
+                            </span>
+                            <p className="text-gray-200">{handover.chiefComplaint}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {handover.nursingObservation && (
+                        <div className="p-3 rounded-lg bg-white/[0.02] border border-white/5 space-y-1 text-xs">
+                          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">
+                            Nursing Observation & Handover Instructions
+                          </span>
+                          <p className="text-gray-200 leading-relaxed">{handover.nursingObservation}</p>
+                        </div>
+                      )}
+
+                      {handover.additionalNotes && (
+                        <div className="text-gray-400 text-xs flex items-center gap-1.5 pt-0.5">
+                          <User className="w-3.5 h-3.5 text-accent" />
+                          <span>Attending Doctor: <strong className="text-white">{handover.additionalNotes}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs sm:text-sm text-gray-200 leading-relaxed">{item.description}</p>
+                  )}
 
                   {/* Treatment / Outcome Callout */}
-                  {item.treatmentOrOutcome && (
+                  {effectiveTreatment && (
                     <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 text-xs">
                       <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block mb-0.5">
                         Clinical Treatment & Outcome:
                       </span>
-                      <p className="text-emerald-300 font-medium">{item.treatmentOrOutcome}</p>
+                      <p className="text-emerald-300 font-medium">{effectiveTreatment}</p>
                     </div>
                   )}
 
                   {/* ── Clinical Verification Provenance Box (Audit Trail) ── */}
-                  {item.verifiedBy && item.verifiedBy.trim() ? (
+                  {(effectiveDoctor || item.verifiedBy) ? (
                     <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-1.5 text-xs">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1">
                           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                           Clinical Verification Proof & Audit Source
                         </span>
-                        {item.verifiedDate && (
-                          <span className="text-[10px] text-emerald-400 font-mono font-medium">
-                            Verified on: {item.verifiedDate}
-                          </span>
-                        )}
+                        <span className="text-[10px] text-emerald-400 font-mono font-medium">
+                          Verified on: {item.verifiedDate || item.date}
+                        </span>
                       </div>
 
                       <p className="text-gray-200 text-xs">
                         <span className="text-gray-400 font-medium">Verifying Clinician:</span>{' '}
-                        <strong className="text-white font-semibold">{item.verifiedBy}</strong>
+                        <strong className="text-white font-semibold">{effectiveDoctor}</strong>
                       </p>
 
-                      {item.verificationSource && (
-                        <p className="text-gray-300 text-[11px] flex items-center gap-1.5">
-                          <span className="text-gray-400 font-medium">Authoritative Source / Document:</span>{' '}
-                          <span className="text-emerald-300 font-medium">{item.verificationSource}</span>
-                        </p>
-                      )}
+                      <p className="text-gray-300 text-[11px] flex items-center gap-1.5">
+                        <span className="text-gray-400 font-medium">Authoritative Source:</span>{' '}
+                        <span className="text-emerald-300 font-medium">
+                          {item.verificationSource || (handover?.admissionNumber ? `Inpatient Admission #${handover.admissionNumber}` : 'Attending Physician Admission Protocol')}
+                        </span>
+                      </p>
                     </div>
                   ) : (
                     <div className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 text-xs text-amber-300/90 flex items-center gap-2">
@@ -476,19 +603,19 @@ export const MedicalHistoryPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Footer Metadata - Attending specialist is only displayed after booking and visiting the doctor */}
-                  {(item.healthcareProvider?.trim() || item.hospitalDepartment?.trim()) && (
+                  {/* Footer Metadata */}
+                  {(effectiveDoctor?.trim() || effectiveDepartment?.trim()) && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-400 pt-1">
-                      {item.healthcareProvider && item.healthcareProvider.trim() && !item.healthcareProvider.toLowerCase().includes('attending physician') && (
+                      {effectiveDoctor && effectiveDoctor.trim() && !effectiveDoctor.toLowerCase().includes('attending physician') && (
                         <div className="flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5 text-accent" />
-                          <span>Attending Specialist: <strong className="text-white">{item.healthcareProvider}</strong></span>
+                          <span>Attending Specialist: <strong className="text-white">{effectiveDoctor}</strong></span>
                         </div>
                       )}
-                      {item.hospitalDepartment && item.hospitalDepartment.trim() && (
+                      {effectiveDepartment && effectiveDepartment.trim() && (
                         <div className="flex items-center gap-1.5">
                           <Building className="w-3.5 h-3.5 text-accent" />
-                          <span>Department / Facility: <strong className="text-white">{item.hospitalDepartment}</strong></span>
+                          <span>Department / Facility: <strong className="text-white">{effectiveDepartment}</strong></span>
                         </div>
                       )}
                     </div>

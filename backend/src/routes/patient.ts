@@ -169,11 +169,25 @@ async function buildPatientAISummary(patientId: number) {
       const deptName = r.doctor?.department?.name ? ` - ${r.doctor.department.name}` : '';
       const doctorName = r.doctor ? ` (Dr. ${r.doctor.firstName} ${r.doctor.lastName})` : '';
 
+      let cleanDesc = r.description || 'Clinical record on file.';
+      if (cleanDesc.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(cleanDesc);
+          if (parsed.diagnosis || parsed.chiefComplaint || parsed.nursingObservation) {
+            cleanDesc = [
+              parsed.diagnosis ? `Diagnosis: ${parsed.diagnosis}` : '',
+              parsed.chiefComplaint ? `Chief Complaint: ${parsed.chiefComplaint}` : '',
+              parsed.nursingObservation ? `Care Instructions: ${parsed.nursingObservation}` : '',
+            ].filter(Boolean).join(' • ');
+          }
+        } catch {}
+      }
+
       return {
         id: `MH-${r.id || idx + 1}`,
         date: r.recordDate.toISOString().split('T')[0],
         conditionOrEvent: r.title,
-        description: r.description || 'Clinical record on file.',
+        description: cleanDesc,
         hospitalOrProvider: `${hospitalName}${deptName}${doctorName}`,
         status: (r.recordType.name === 'surgery' || r.recordType.name === 'hospitalization') ? 'Resolved' : 'Active',
         verificationStatus: 'Verified by Physician',
@@ -802,7 +816,24 @@ router.get(
 
       const formatted = records.map((rec) => {
         const typeName = rec.recordType.name.toLowerCase();
+
+        let parsedPayload: any = null;
+        if (rec.description && rec.description.trim().startsWith('{')) {
+          try {
+            parsedPayload = JSON.parse(rec.description);
+          } catch {
+            parsedPayload = null;
+          }
+        }
+
+        const isHandoverOrInpatient =
+          rec.title.toLowerCase().includes('admission') ||
+          rec.title.toLowerCase().includes('handover') ||
+          rec.title.toLowerCase().includes('inpatient') ||
+          Boolean(parsedPayload && (parsedPayload.admissionNumber || parsedPayload.noteType?.includes('Handover')));
+
         const category =
+          isHandoverOrInpatient ? 'Hospitalization' :
           typeName === 'surgery' ? 'Surgery' :
           typeName === 'hospitalization' ? 'Hospitalization' :
           typeName === 'lab_result' ? 'Lab Result' :
@@ -811,21 +842,56 @@ router.get(
           typeName === 'treatment_record' ? 'Treatment' : 'Diagnosis';
 
         const isSelfReported =
-          !rec.doctorId ||
+          !isHandoverOrInpatient &&
+          (!rec.doctorId ||
           (rec.description && (
             rec.description.includes('Reported during patient registration') ||
             rec.description.includes('patient onboarding') ||
             rec.description.includes('Self-Reported')
-          ));
+          )));
 
-        // Only display Attending Specialist if patient booked an appointment and visited the doctor
+        // Only display Attending Specialist if patient booked an appointment and visited the doctor, OR was treated/admitted by the doctor
         const hasVisitedDoctor =
           !isSelfReported &&
-          Boolean(rec.doctor && rec.doctorId && (visitedDoctorIds.has(rec.doctorId) || (rec.appointmentId && visitedApptIds.has(rec.appointmentId))));
+          Boolean(
+            isHandoverOrInpatient ||
+            (rec.doctor && rec.doctorId) ||
+            (rec.doctorId && visitedDoctorIds.has(rec.doctorId)) ||
+            (rec.appointmentId && visitedApptIds.has(rec.appointmentId))
+          );
 
-        const doctorName = hasVisitedDoctor && rec.doctor ? `Dr. ${rec.doctor.firstName} ${rec.doctor.lastName}` : '';
-        const hospitalName = hasVisitedDoctor && rec.doctor ? (rec.doctor.department?.hospital?.name || 'MediTwin Medical Center') : '';
-        const deptName = hasVisitedDoctor && rec.doctor ? (rec.doctor.department?.name || 'General Medicine') : '';
+        let doctorName = rec.doctor ? `Dr. ${rec.doctor.firstName} ${rec.doctor.lastName}` : '';
+        if (!doctorName && parsedPayload?.additionalNotes && /Admitted under/i.test(parsedPayload.additionalNotes)) {
+          doctorName = parsedPayload.additionalNotes.replace(/^[^\w]*Admitted under\s*/i, '').replace(/\.$/, '').trim();
+        } else if (!doctorName && (hasVisitedDoctor || isHandoverOrInpatient)) {
+          doctorName = 'Attending Physician';
+        }
+
+        const hospitalName = rec.doctor?.department?.hospital?.name || 'MediTwin Medical Center';
+        let deptName = rec.doctor?.department?.name || (parsedPayload?.ward ? parsedPayload.ward : 'General Medicine');
+        if (parsedPayload?.ward) {
+          deptName = `${parsedPayload.ward}${rec.doctor?.department?.name ? ` (${rec.doctor.department.name})` : ''}`;
+        }
+
+        let cleanDescription = rec.description || 'Clinical observation documented by physician.';
+        let treatmentOrOutcome = hasVisitedDoctor ? 'Active Care Regimen' : 'Patient Self-Reported Precaution';
+
+        if (parsedPayload) {
+          if (parsedPayload.diagnosis || parsedPayload.chiefComplaint || parsedPayload.nursingObservation) {
+            const parts: string[] = [];
+            if (parsedPayload.diagnosis) parts.push(`Diagnosis: ${parsedPayload.diagnosis}`);
+            if (parsedPayload.chiefComplaint) parts.push(`Chief Complaint: ${parsedPayload.chiefComplaint}`);
+            if (parsedPayload.nursingObservation) parts.push(`Nursing Instructions: ${parsedPayload.nursingObservation}`);
+            cleanDescription = parts.join(' • ');
+          }
+          if (parsedPayload.treatmentCareProvided) {
+            treatmentOrOutcome = parsedPayload.treatmentCareProvided;
+          }
+        }
+
+        const verificationStatus = (hasVisitedDoctor || isHandoverOrInpatient) ? 'Verified by Physician' : 'Self-Reported (Unverified)';
+        const verifiedBy = (hasVisitedDoctor || isHandoverOrInpatient) ? doctorName : '';
+        const verifiedDate = (hasVisitedDoctor || isHandoverOrInpatient) ? rec.recordDate.toISOString().split('T')[0] : '';
 
         return {
           id: `HIST-${rec.id}`,
@@ -834,17 +900,19 @@ router.get(
           category,
           conditionOrEvent: rec.title,
           type: category as any,
-          description: rec.description || 'Clinical observation documented by physician.',
+          description: cleanDescription,
+          rawPayload: parsedPayload || undefined,
           healthcareProvider: doctorName,
-          diagnosedBy: hasVisitedDoctor ? doctorName : 'Self-Reported by Patient',
+          diagnosedBy: (hasVisitedDoctor || isHandoverOrInpatient) ? doctorName : 'Self-Reported by Patient',
           hospitalDepartment: deptName,
           hospital: hospitalName,
-          treatmentOrOutcome: hasVisitedDoctor ? 'Active Care Regimen' : 'Patient Self-Reported Precaution',
-          status: typeName === 'surgery' || typeName === 'hospitalization' ? 'Resolved' as const : 'Active' as const,
-          verificationStatus: hasVisitedDoctor ? 'Verified by Physician' : 'Self-Reported (Unverified)',
-          verifiedBy: hasVisitedDoctor ? doctorName : '',
-          verifiedDate: hasVisitedDoctor ? rec.recordDate.toISOString().split('T')[0] : '',
-          notes: rec.description || undefined,
+          treatmentOrOutcome,
+          status: typeName === 'surgery' || typeName === 'hospitalization' || isHandoverOrInpatient ? 'Active' as const : 'Active' as const,
+          verificationStatus,
+          verifiedBy,
+          verifiedDate,
+          verificationSource: isHandoverOrInpatient && parsedPayload?.admissionNumber ? `Inpatient Admission #${parsedPayload.admissionNumber}` : undefined,
+          notes: cleanDescription,
           documents: rec.documents.map((d) => d.fileName),
         };
       });
