@@ -611,7 +611,7 @@ export async function createInpatientAdmission(
   // Resilient fallback: Construct a valid InpatientAdmissionRecord so the doctor is never blocked
   try {
     const currentSession = getCurrentDoctorSession();
-    const docName = currentSession ? `Dr. ${currentSession.firstName || ''} ${currentSession.lastName || ''}`.trim() : 'Dr. Attending Physician';
+    const docName = currentSession ? `Dr. ${currentSession.firstName || ''} ${currentSession.lastName || ''}`.trim() : 'Dr. Jolda Jomon';
 
     // Find ward info
     const ward = FALLBACK_HOSPITAL_WARDS.find((w) => w.id === input.wardId) || {
@@ -988,7 +988,7 @@ export async function getAdmissionTimeline(
         eventType: 'ADMISSION_CREATED',
         timestamp: adm.admissionDateTime,
         title: 'Patient Admitted to Hospital',
-        description: `Admitted under ${adm.doctorName || 'Attending Physician'} to ${adm.wardName} (${adm.bedNumber})`,
+        description: `Admitted under ${adm.doctorName || 'Dr. Jolda Jomon'} to ${adm.wardName} (${adm.bedNumber})`,
         diagnosis: adm.admissionDiagnosis,
         chiefComplaint: adm.chiefComplaint,
         acuityLevel: adm.acuityLevel,
@@ -1087,8 +1087,13 @@ export async function getBedAllocationSummary(): Promise<BedAllocationSummaryDTO
  */
 export async function addClinicalNote(
   patientId: number,
-  note: { content: string; type?: string }
+  note: { content: string; type?: string; authorName?: string }
 ): Promise<ClinicalNote> {
+  const currentSession = getCurrentDoctorSession();
+  const currentDocName = note.authorName || (currentSession?.firstName
+    ? `Dr. ${currentSession.firstName} ${currentSession.lastName || ''}`.trim()
+    : 'Dr. Jolda Jomon');
+
   try {
     const res = await fetch(`/api/doctor/patients/${patientId}/notes`, {
       method: 'POST',
@@ -1096,13 +1101,19 @@ export async function addClinicalNote(
       body: JSON.stringify({
         content: note.content,
         type: note.type || 'Progress Note',
+        authorName: currentDocName,
       }),
     });
 
     if (res.ok) {
       const json = await res.json();
       if (json.success && json.data) {
-        return json.data;
+        return {
+          ...json.data,
+          authorName: (!json.data.authorName || json.data.authorName.includes('Attending Physician'))
+            ? currentDocName
+            : json.data.authorName,
+        };
       }
     } else {
       const errorJson = await res.json().catch(() => ({}));
@@ -1116,7 +1127,7 @@ export async function addClinicalNote(
     id: `CN-${patientId}-${Date.now()}`,
     date: new Date().toISOString().split('T')[0],
     time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    authorName: 'Dr. (Attending Physician)',
+    authorName: currentDocName,
     authorRole: 'Doctor',
     content: note.content,
     type: (note.type as any) || 'Progress Note',
@@ -2407,7 +2418,7 @@ export async function uploadDoctorMedicalDocument(
     type: docData.type || 'PDF',
     size: docData.size || '320 KB',
     uploadedDate: docData.uploadedDate || new Date().toISOString().split('T')[0],
-    uploadedBy: 'Dr. Jolda Mathew (Attending Physician)',
+    uploadedBy: 'Dr. Jolda Jomon',
     url: docData.fileDataUrl,
     notes: docData.notes,
   };

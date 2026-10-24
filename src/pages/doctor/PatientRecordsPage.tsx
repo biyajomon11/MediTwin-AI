@@ -87,7 +87,7 @@ export const getPatientAppointmentInfo = (p: DoctorPatient): PatientAppointmentI
         status: 'Scheduled',
         date: p.nextAppointment,
         time: '10:00 AM',
-        doctorName: 'Attending Physician',
+        doctorName: p.appointments?.[0]?.doctorName || resolveDoctorAuthorName('', p),
         department: p.department || 'General Medicine',
         reason: 'Scheduled Consultation',
         isUpcoming: true,
@@ -120,7 +120,7 @@ export const getPatientAppointmentInfo = (p: DoctorPatient): PatientAppointmentI
       status: 'Scheduled',
       date: p.nextAppointment,
       time: '10:00 AM',
-      doctorName: 'Attending Physician',
+      doctorName: p.appointments?.[0]?.doctorName || resolveDoctorAuthorName('', p),
       department: p.department || 'General Medicine',
       reason: 'Scheduled Consultation',
       isUpcoming: true,
@@ -154,6 +154,60 @@ const NOTE_TYPE_COLORS = {
   'Discharge Summary':  'bg-emerald-500/20 text-emerald-300',
   'Referral':           'bg-amber-500/20 text-amber-300',
   'General':            'bg-gray-500/20 text-gray-300',
+};
+
+/**
+ * Resolves the display author name for a clinical note or record to the corresponding doctor's actual name.
+ * Prevents generic placeholder text like "Dr. (Attending Physician)" or "(Attending Physician)" from appearing.
+ */
+export const resolveDoctorAuthorName = (authorName?: string, patientObj?: DoctorPatient): string => {
+  // If authorName is already a valid specific doctor name (not a generic placeholder), format and return it
+  if (
+    authorName &&
+    !authorName.includes('(Attending Physician)') &&
+    !authorName.includes('Attending Physician') &&
+    authorName.trim() !== 'Dr.' &&
+    authorName.trim() !== ''
+  ) {
+    return authorName.startsWith('Dr.') ? authorName : `Dr. ${authorName}`;
+  }
+
+  // 1. Resolve from active doctor user session (localStorage / sessionStorage)
+  try {
+    const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+    if (raw) {
+      const u = JSON.parse(raw);
+      if (u?.firstName) {
+        const full = `${u.firstName} ${u.lastName || ''}`.trim();
+        return full.startsWith('Dr.') ? full : `Dr. ${full}`;
+      }
+    }
+  } catch {}
+
+  // 2. Resolve from patient's appointments
+  const aptDoc = patientObj?.appointments?.find(
+    (a) => a.doctorName && !a.doctorName.includes('Attending Physician')
+  )?.doctorName;
+  if (aptDoc) {
+    return aptDoc.startsWith('Dr.') ? aptDoc : `Dr. ${aptDoc}`;
+  }
+
+  // 3. Resolve from patient's prescriptions
+  const rxDoc = patientObj?.prescriptions?.find(
+    (p) => p.doctorName && !p.doctorName.includes('Attending Physician')
+  )?.doctorName;
+  if (rxDoc) {
+    return rxDoc.startsWith('Dr.') ? rxDoc : `Dr. ${rxDoc}`;
+  }
+
+  // 4. Resolve from admitting doctor or admission record
+  const admDoc = (patientObj as any)?.admittingDoctorName || (patientObj as any)?.doctorName;
+  if (admDoc && !admDoc.includes('Attending Physician')) {
+    return admDoc.startsWith('Dr.') ? admDoc : `Dr. ${admDoc}`;
+  }
+
+  // 5. Default attending physician in this clinical care context
+  return 'Dr. Jolda Jomon';
 };
 
 const TABS = [
@@ -516,11 +570,17 @@ const PatientRecord: React.FC<{
   const handleConfirmNote = async () => {
     setSavingNote(true);
     try {
+      const activeDoctor = resolveDoctorAuthorName(undefined, patient);
       const savedNote = await addClinicalNote(patient.id, {
         content: noteText.trim(),
         type: noteType,
+        authorName: activeDoctor,
       });
-      onNoteAdded(savedNote);
+      const resolvedNote: ClinicalNote = {
+        ...savedNote,
+        authorName: resolveDoctorAuthorName(savedNote.authorName, patient),
+      };
+      onNoteAdded(resolvedNote);
       setShowConfirm(false);
       setShowNoteForm(false);
       setNoteText('');
@@ -767,7 +827,7 @@ const PatientRecord: React.FC<{
                         </div>
                       </div>
                       <div className="text-[11px] text-gray-300 pt-2 border-t border-cyan-500/20 truncate">
-                        {aptInfo.doctorName || 'Attending Physician'} · {aptInfo.department || patient.department || 'General Medicine'}
+                        {resolveDoctorAuthorName(aptInfo.doctorName, patient)} · {aptInfo.department || patient.department || 'General Medicine'}
                       </div>
                     </div>
 
@@ -1239,7 +1299,7 @@ const PatientRecord: React.FC<{
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1">
                     <p className="text-sm font-bold text-white">{l.testName}</p>
-                    <p className="text-xs text-gray-400">{fmtDate(l.date)} · Requisitioned by {l.orderedBy || 'Attending Physician'}</p>
+                    <p className="text-xs text-gray-400">{fmtDate(l.date)} · Requisitioned by {resolveDoctorAuthorName(l.orderedBy, patient)}</p>
                     <p className="text-sm text-white mt-2">{l.result} <span className="text-xs text-gray-400">{l.unit && l.unit !== '-' ? l.unit : ''}</span></p>
                     <p className="text-xs text-gray-400 mt-0.5">Reference: {l.referenceRange || 'Standard Reference Range'}</p>
                     {l.notes && <p className="text-xs text-amber-300 mt-1 italic">{l.notes}</p>}
@@ -1275,7 +1335,7 @@ const PatientRecord: React.FC<{
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-bold text-white">{a.reason}</p>
-                      <p className="text-xs text-gray-400">{a.time || '10:00 AM'} · {a.doctorName || 'Attending Physician'} · {a.department || 'General Medicine'}</p>
+                      <p className="text-xs text-gray-400">{a.time || '10:00 AM'} · {resolveDoctorAuthorName(a.doctorName, patient)} · {a.department || 'General Medicine'}</p>
                       {a.notes && <p className="text-xs text-gray-300 mt-1">{a.notes}</p>}
                     </div>
                   </div>
@@ -1628,7 +1688,7 @@ const PatientRecord: React.FC<{
               <div key={n.id} className="glass-card p-5 border border-white/10 space-y-2">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-xs font-bold text-white">{n.authorName || 'Attending Physician'} <span className="font-normal text-gray-400">({n.authorRole || 'Doctor'})</span></p>
+                    <p className="text-xs font-bold text-white">{resolveDoctorAuthorName(n.authorName, patient)} <span className="font-normal text-gray-400">({n.authorRole || 'Doctor'})</span></p>
                     <p className="text-[11px] text-gray-500">{fmtDate(n.date)}{n.time ? ` at ${n.time}` : ''}</p>
                   </div>
                   <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${NOTE_TYPE_COLORS[n.type as keyof typeof NOTE_TYPE_COLORS] || 'bg-gray-500/20 text-gray-300'}`}>
@@ -1755,7 +1815,7 @@ const PatientRecord: React.FC<{
                               <span>•</span>
                               <span>Date: <strong className="text-gray-300">{fmtDate(doc.uploadedDate)}</strong></span>
                               <span>•</span>
-                              <span>Uploaded by: <strong className="text-emerald-400">{doc.uploadedBy || 'Attending Physician'}</strong></span>
+                              <span>Uploaded by: <strong className="text-emerald-400">{resolveDoctorAuthorName(doc.uploadedBy, patient)}</strong></span>
                             </p>
                             {doc.notes && (
                               <p className="text-[11px] text-cyan-300/80 italic mt-1 line-clamp-1 border-l-2 border-cyan-500/30 pl-2">
