@@ -68,7 +68,7 @@ app.get('/api/schema-summary', (_req: Request, res: Response) => {
   });
 });
 
-import { ensureInpatientJoldaAndAngel, ensureInpatientsForBittuJomon } from './init-inpatient';
+import { ensureInpatientJoldaAndAngel, ensureInpatientsForBittuJomon, ensureDavidMathewOutpatient } from './init-inpatient';
 import { seedWardsAndBeds } from './seed-wards-beds';
 
 app.listen(Number(PORT), '0.0.0.0', async () => {
@@ -87,6 +87,11 @@ app.listen(Number(PORT), '0.0.0.0', async () => {
     await ensureInpatientsForBittuJomon();
   } catch (err) {
     console.warn('[INIT_INPATIENT] Dr. Bittu Jomon inpatient initialization note:', err);
+  }
+  try {
+    await ensureDavidMathewOutpatient();
+  } catch (err) {
+    console.warn('[INIT_INPATIENT] David Mathew outpatient initialization note:', err);
   }
 });
 

@@ -756,9 +756,179 @@ export async function ensureInpatientsForBittuJomon(): Promise<void> {
       console.log(`[INIT_INPATIENT] ✓ Established Inpatient ${spec.firstName} ${spec.lastName} (#${patient.id}) in ${spec.wardNumber} ${spec.bedNumber} [${spec.acuityLevel}] under Dr. Bittu Jomon.`);
     }
 
-    console.log('[INIT_INPATIENT] ✓ All 5 Inpatients successfully seeded and linked to Dr. Bittu Jomon.');
+    // Also establish David Mathew as an eligible registered outpatient under Dr. Bittu Jomon
+    await ensureDavidMathewOutpatient();
+
+    console.log('[INIT_INPATIENT] ✓ All 5 Inpatients and outpatient David Mathew successfully seeded and linked to Dr. Bittu Jomon.');
   } catch (err) {
     console.error('[INIT_INPATIENT] Error establishing Inpatients for Dr. Bittu Jomon (non-fatal):', err);
+  }
+}
+
+/**
+ * Ensures David Mathew is seeded as a verified registered outpatient under Dr. Bittu Jomon.
+ * Status is set to 'Active' (unadmitted outpatient) so he can be admitted via Inpatient Admission modal.
+ */
+export async function ensureDavidMathewOutpatient() {
+  try {
+    const defaultPassword = await bcrypt.hash('Patient@123', 10);
+    const patientRole = await prisma.role.findFirst({ where: { name: { equals: 'patient', mode: 'insensitive' } } });
+    if (!patientRole) return;
+
+    const maleGender = await prisma.gender.findFirst({
+      where: { name: { contains: 'Male', mode: 'insensitive' } },
+    });
+    const bloodGroupAMinus = await prisma.bloodGroup.findFirst({
+      where: { name: { contains: 'A-', mode: 'insensitive' } },
+    }) || await prisma.bloodGroup.findFirst();
+
+    // 1. Ensure User Account
+    let user = await prisma.user.findFirst({
+      where: { email: 'davidmathew05@gmail.com' },
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: 'davidmathew05@gmail.com',
+          password_hash: defaultPassword,
+          roleId: patientRole.id,
+          isActive: true,
+        },
+      });
+    }
+
+    // 2. Ensure Patient Profile
+    let patient = await prisma.patient.findFirst({
+      where: {
+        OR: [
+          { userId: user.id },
+          { firstName: 'David', lastName: 'Mathew' },
+        ],
+      },
+    });
+
+    if (!patient) {
+      patient = await prisma.patient.create({
+        data: {
+          userId: user.id,
+          firstName: 'David',
+          lastName: 'Mathew',
+          dateOfBirth: new Date('2010-10-10'),
+          genderId: maleGender ? maleGender.id : null,
+          bloodGroupId: bloodGroupAMinus ? bloodGroupAMinus.id : null,
+          phone: '+91 7865341290',
+          address: 'Grace House, Idukki, Kerala',
+          city: 'Idukki',
+          state: 'Kerala',
+          emergencyContactName: 'Mary Mathew (Emergency Contact)',
+          emergencyContactPhone: '+91 8953783217',
+          admissionStatus: 'Active',
+          ward: null,
+          bedNumber: null,
+        },
+      });
+    } else {
+      // If patient is not actively admitted, ensure status is 'Active' and demographic info is accurate
+      const activeAdmission = await prisma.inpatientAdmission.findFirst({
+        where: {
+          patientId: patient.id,
+          admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+        },
+      });
+
+      if (!activeAdmission) {
+        patient = await prisma.patient.update({
+          where: { id: patient.id },
+          data: {
+            dateOfBirth: new Date('2010-10-10'),
+            genderId: maleGender ? maleGender.id : null,
+            bloodGroupId: bloodGroupAMinus ? bloodGroupAMinus.id : null,
+            phone: '+91 7865341290',
+            address: 'Grace House, Idukki, Kerala',
+            city: 'Idukki',
+            state: 'Kerala',
+            emergencyContactName: 'Mary Mathew (Emergency Contact)',
+            emergencyContactPhone: '+91 8953783217',
+            admissionStatus: 'Active',
+            ward: null,
+            bedNumber: null,
+          },
+        });
+      }
+    }
+
+    // 3. Resolve Dr. Bittu Jomon
+    const doctorBittu = await prisma.doctor.findFirst({
+      where: {
+        OR: [
+          { userId: 6 },
+          { firstName: { contains: 'Bittu', mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    if (doctorBittu) {
+      // 4. Ensure Scheduled Outpatient Appointment
+      const apptStatus = await prisma.appointmentStatus.findFirst({
+        where: { name: { in: ['Scheduled', 'Confirmed'] } },
+      }) || await prisma.appointmentStatus.findFirst();
+
+      if (apptStatus) {
+        const existingAppt = await prisma.appointment.findFirst({
+          where: {
+            patientId: patient.id,
+            doctorId: doctorBittu.id,
+          },
+        });
+
+        if (!existingAppt) {
+          await prisma.appointment.create({
+            data: {
+              patientId: patient.id,
+              doctorId: doctorBittu.id,
+              appointmentDate: new Date('2026-10-24'),
+              appointmentTime: new Date('1970-01-01T10:00:00Z'),
+              statusId: apptStatus.id,
+              reason: 'General Follow-up / Consultation',
+            },
+          });
+        }
+      }
+
+      // 5. Ensure Consultation Medical Record with Latex Allergy Documented
+      const noteType = await prisma.recordType.findFirst({
+        where: { name: { in: ['consultation', 'Consultation', 'nursing_note'] } },
+      });
+
+      if (noteType) {
+        const existingMR = await prisma.medicalRecord.findFirst({
+          where: {
+            patientId: patient.id,
+            doctorId: doctorBittu.id,
+            title: { contains: 'General Follow-up Consultation' },
+          },
+        });
+
+        if (!existingMR) {
+          await prisma.medicalRecord.create({
+            data: {
+              patientId: patient.id,
+              doctorId: doctorBittu.id,
+              recordTypeId: noteType.id,
+              title: 'General Follow-up Consultation & Medical Evaluation',
+              description: 'Patient David Mathew allocated to Dr. Bittu Jomon. In-person appointment scheduled on Oct 24, 2026 at 10:00 AM in General Medicine. Documented patient allergy: Latex.',
+              recordDate: new Date('2026-10-23'),
+            },
+          });
+        }
+      }
+    }
+
+    console.log(`[INIT_INPATIENT] ✓ David Mathew outpatient established (#${patient.id}) ready for inpatient admission.`);
+    return patient;
+  } catch (err) {
+    console.error('[INIT_INPATIENT] Error ensuring David Mathew outpatient:', err);
   }
 }
 
@@ -766,6 +936,7 @@ if (require.main === module) {
   (async () => {
     await ensureInpatientJoldaAndAngel();
     await ensureInpatientsForBittuJomon();
+    await ensureDavidMathewOutpatient();
   })()
     .then(() => {
       console.log('[INIT_INPATIENT] Done!');

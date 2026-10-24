@@ -225,9 +225,12 @@ export async function getPatients(
       if (json.success && Array.isArray(json.data)) {
         let list: DoctorPatient[] = json.data;
         if (isBittuDoctor) {
-          const david = BITTU_INPATIENTS_MOCK.find((p) => p.id === 9 || p.email?.includes('davidmathew'));
-          if (david && !list.some((p) => p.id === 9 || p.email?.includes('davidmathew'))) {
-            list = [david, ...list];
+          const hasDavid = list.some((p) => p.email?.toLowerCase().includes('davidmathew'));
+          if (!hasDavid) {
+            const david = BITTU_INPATIENTS_MOCK.find((p) => p.email?.includes('davidmathew'));
+            if (david) {
+              list = [david, ...list];
+            }
           }
         }
         return list;
