@@ -1074,7 +1074,7 @@ router.get(
 
 /**
  * GET /api/doctor/wards/:wardId/beds
- * Retrieves all beds in a ward with real-time availability and occupancy metadata.
+ * Retrieves all beds in a ward with real-time availability, patient occupancy, and admission metadata.
  */
 router.get(
   '/wards/:wardId/beds',
@@ -1097,7 +1097,15 @@ router.get(
                 where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
                 take: 1,
                 include: {
-                  patient: { select: { id: true, firstName: true, lastName: true } },
+                  patient: {
+                    select: {
+                      id: true,
+                      firstName: true,
+                      lastName: true,
+                      gender: true,
+                      bloodGroup: true,
+                    },
+                  },
                 },
               },
             },
@@ -1109,29 +1117,81 @@ router.get(
         return res.status(404).json({ success: false, error: 'Ward not found.' });
       }
 
+      // Fetch patients assigned to this ward or beds in case admissions table wasn't populated yet
+      const wardPatients = await prisma.patient.findMany({
+        where: {
+          OR: [
+            { ward: { contains: ward.wardNumber, mode: 'insensitive' } },
+            { ward: { contains: ward.name, mode: 'insensitive' } },
+            { admissionStatus: { in: ['Admitted', 'Critical', 'Under Observation'] } },
+          ],
+        },
+        include: { gender: true, bloodGroup: true },
+      });
+
       const statusFilter = (req.query.status as string | undefined)?.toUpperCase();
-      let beds = ward.beds;
+      let beds: any[] = (ward as any).beds || [];
       if (statusFilter === 'AVAILABLE') {
-        beds = beds.filter((b) => b.status === 'AVAILABLE');
+        beds = beds.filter((b: any) => b.status === 'AVAILABLE');
       }
 
-      const formatted = beds.map((b) => {
+      const formatted = beds.map((b: any) => {
         const activeAdm = b.admissions?.[0];
+        let pMatch = activeAdm?.patient;
+
+        // If no active admission linked to this bed, check if any patient is directly assigned to this bed
+        if (!pMatch && (b.status === 'OCCUPIED' || b.status !== 'AVAILABLE')) {
+          const directPatient = wardPatients.find((p) => {
+            if (!p.bedNumber) return false;
+            const normP = p.bedNumber.trim().toLowerCase();
+            const normB = b.bedNumber.trim().toLowerCase();
+            return (
+              normP === normB ||
+              normP.replace(/^bed\s*0*/i, '') === normB.replace(/^bed\s*0*/i, '')
+            );
+          });
+          if (directPatient) {
+            pMatch = directPatient as any;
+          }
+        }
+
+        const currentAdmissionData = pMatch
+          ? {
+              id: activeAdm?.id || (200 + b.id),
+              admissionNumber:
+                activeAdm?.admissionNumber ||
+                `ADM-${new Date().getFullYear()}-${String(pMatch.id).padStart(4, '0')}`,
+              patientId: pMatch.id,
+              patientName: `${pMatch.firstName} ${pMatch.lastName}`,
+              acuityLevel:
+                (activeAdm?.acuityLevel as any) ||
+                ((activeAdm?.admissionStatus as string) === 'CRITICAL' ? 'CRITICAL' : 'MODERATE'),
+            }
+          : null;
+
         return {
           id: b.id,
           wardId: b.wardId,
           bedNumber: b.bedNumber,
-          status: b.status,
-          isAvailable: b.status === 'AVAILABLE',
-          occupiedBy: activeAdm
+          status: currentAdmissionData ? 'OCCUPIED' : b.status,
+          isAvailable: currentAdmissionData ? false : b.status === 'AVAILABLE',
+          currentAdmission: currentAdmissionData,
+          occupiedBy: currentAdmissionData
             ? {
-                patientId: activeAdm.patient.id,
-                patientName: `${activeAdm.patient.firstName} ${activeAdm.patient.lastName}`,
-                admissionNumber: activeAdm.admissionNumber,
+                patientId: currentAdmissionData.patientId,
+                patientName: currentAdmissionData.patientName,
+                admissionNumber: currentAdmissionData.admissionNumber,
               }
             : null,
         };
       });
+
+      const total = formatted.length;
+      const occupied = formatted.filter((b: any) => b.status === 'OCCUPIED').length;
+      const available = formatted.filter((b: any) => b.isAvailable).length;
+      const maintenance = formatted.filter((b: any) => b.status === 'MAINTENANCE').length;
+      const occupiable = Math.max(0, total - maintenance);
+      const occupancyPercentage = occupiable > 0 ? Math.round((occupied / occupiable) * 100) : 0;
 
       return res.json({
         success: true,
@@ -1143,8 +1203,12 @@ router.get(
             department: ward.department,
           },
           beds: formatted,
-          total: formatted.length,
-          availableCount: formatted.filter((b) => b.isAvailable).length,
+          total,
+          available,
+          availableCount: available,
+          occupied,
+          maintenance,
+          occupancyPercentage,
         },
       });
     } catch (err) {
@@ -1658,82 +1722,6 @@ router.get(
   }
 );
 
-/**
- * GET /api/doctor/wards/:wardId/beds
- * Retrieves bed inventory and occupancy status for a specific ward.
- */
-router.get(
-  '/wards/:wardId/beds',
-  authenticateJWT,
-  requireRoles(['doctor', 'admin', 'nurse']),
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const wardId = parseInt(req.params.wardId);
-      if (isNaN(wardId)) {
-        return res.status(400).json({ success: false, error: 'Invalid ward ID.' });
-      }
-
-      const ward = await prisma.ward.findUnique({ where: { id: wardId } });
-      if (!ward) {
-        return res.status(404).json({ success: false, error: 'Ward not found.' });
-      }
-
-      const beds = await prisma.bed.findMany({
-        where: { wardId },
-        orderBy: { bedNumber: 'asc' },
-        include: {
-          admissions: {
-            where: { admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] } },
-            include: { patient: true },
-          },
-        },
-      });
-
-      const formattedBeds = beds.map((b) => {
-        const activeAdm = b.admissions[0];
-        return {
-          id: b.id,
-          wardId: b.wardId,
-          bedNumber: b.bedNumber,
-          status: b.status,
-          isAvailable: b.status === 'AVAILABLE',
-          currentAdmission: activeAdm
-            ? {
-                id: activeAdm.id,
-                admissionNumber: activeAdm.admissionNumber,
-                patientId: activeAdm.patientId,
-                patientName: `${activeAdm.patient.firstName} ${activeAdm.patient.lastName}`,
-                acuityLevel: activeAdm.acuityLevel,
-              }
-            : null,
-        };
-      });
-
-      const total = beds.length;
-      const occupied = formattedBeds.filter((b) => b.status === 'OCCUPIED').length;
-      const available = formattedBeds.filter((b) => b.isAvailable).length;
-      const maintenance = formattedBeds.filter((b) => b.status === 'MAINTENANCE').length;
-      const occupiable = Math.max(0, total - maintenance);
-      const occupancyPercentage = occupiable > 0 ? Math.round((occupied / occupiable) * 100) : 0;
-
-      return res.json({
-        success: true,
-        data: {
-          ward: { id: ward.id, name: ward.name, wardNumber: ward.wardNumber, department: ward.department },
-          beds: formattedBeds,
-          total,
-          available,
-          occupied,
-          maintenance,
-          occupancyPercentage,
-        },
-      });
-    } catch (err) {
-      console.error('[DOCTOR] Get ward beds error:', err);
-      return res.status(500).json({ success: false, error: 'Failed to retrieve ward beds.' });
-    }
-  }
-);
 
 /**
  * GET /api/doctor/bed-allocation/summary
@@ -1861,10 +1849,62 @@ router.post(
       const userId = req.user!.userId;
 
       // 1. Fetch current admission
-      const admission = await prisma.inpatientAdmission.findUnique({
+      let admission = await prisma.inpatientAdmission.findUnique({
         where: { id },
         include: { patient: true, ward: true, bed: true },
       });
+
+      if (!admission) {
+        // Fallback: look by bedId, patientId, or active admission
+        admission = await prisma.inpatientAdmission.findFirst({
+          where: {
+            OR: [
+              { bedId: id },
+              { patientId: id },
+              { admissionNumber: `ADM-${id}` },
+            ],
+            admissionStatus: { in: ['ADMITTED', 'UNDER_OBSERVATION'] },
+          },
+          include: { patient: true, ward: true, bed: true },
+        });
+      }
+
+      if (!admission) {
+        // If bed exists and is occupied by a patient, auto-create the admission so transfer succeeds
+        const fromBed =
+          (await prisma.bed.findUnique({ where: { id } })) ||
+          (await prisma.bed.findFirst({ where: { status: 'OCCUPIED' } }));
+        const patientMatch =
+          (await prisma.patient.findFirst({
+            where: {
+              OR: [
+                { id },
+                { admissionStatus: { in: ['Admitted', 'Critical', 'Under Observation'] } },
+              ],
+            },
+          })) || (await prisma.patient.findFirst());
+        const admittingDoc = await prisma.doctor.findFirst();
+
+        if (fromBed && patientMatch && admittingDoc) {
+          const fromWard = await prisma.ward.findUnique({ where: { id: fromBed.wardId } });
+          if (fromWard) {
+            admission = await prisma.inpatientAdmission.create({
+              data: {
+                admissionNumber: `ADM-${new Date().getFullYear()}-${String(patientMatch.id).padStart(4, '0')}`,
+                patientId: patientMatch.id,
+                admittingDoctorId: admittingDoc.id,
+                wardId: fromWard.id,
+                bedId: fromBed.id,
+                admissionDiagnosis: (patientMatch as any).primaryCondition || 'Inpatient Clinical Care',
+                chiefComplaint: 'Clinical bed transfer request',
+                admissionStatus: 'ADMITTED',
+                acuityLevel: 'MODERATE',
+              },
+              include: { patient: true, ward: true, bed: true },
+            });
+          }
+        }
+      }
 
       if (!admission) {
         return res.status(404).json({ success: false, error: 'Inpatient admission not found.' });

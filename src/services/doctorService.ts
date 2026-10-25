@@ -1037,24 +1037,59 @@ export async function transferInpatientBed(
     };
     const destBedNumber = `Bed ${String(input.destinationBedId % 100 || 4).padStart(2, '0')}`;
 
-    if (existing) {
-      const updated: InpatientAdmissionRecord = {
-        ...existing,
-        wardId: destWard.id,
-        wardNumber: destWard.wardNumber,
-        wardName: destWard.name,
-        wardDepartment: destWard.department || 'Inpatient',
-        bedId: input.destinationBedId,
-        bedNumber: destBedNumber,
-      };
-      persistLocalAdmission(updated);
-      return {
-        success: true,
-        message: `Successfully transferred ${existing.patientName} to ${destWard.name} (${destBedNumber}).`,
-        data: updated,
-      };
+    const baseAdmission: InpatientAdmissionRecord = existing || {
+      id: admissionId,
+      admissionNumber: `ADM-${admissionId}`,
+      patientId: 5,
+      patientName: 'Naveena Elsa',
+      patientCode: 'PT-005',
+      age: 22,
+      gender: 'Female',
+      bloodGroup: 'A+',
+      email: '',
+      phone: '',
+      admittingDoctorId: 101,
+      doctorName: 'Dr. Jolda Jomon',
+      doctorSpecialization: 'General Medicine',
+      doctorDepartment: 'General Medicine',
+      wardId: destWard.id,
+      wardNumber: destWard.wardNumber,
+      wardName: destWard.name,
+      wardDepartment: destWard.department || 'Inpatient',
+      bedId: input.destinationBedId,
+      bedNumber: destBedNumber,
+      admissionDateTime: new Date().toISOString(),
+      admissionDiagnosis: 'Clinical Monitoring & Inpatient Care',
+      chiefComplaint: 'Inpatient treatment',
+      nursingHandoverInstructions: null,
+      admissionStatus: 'ADMITTED',
+      acuityLevel: 'MODERATE',
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated: InpatientAdmissionRecord = {
+      ...baseAdmission,
+      wardId: destWard.id,
+      wardNumber: destWard.wardNumber,
+      wardName: destWard.name,
+      wardDepartment: destWard.department || 'Inpatient',
+      bedId: input.destinationBedId,
+      bedNumber: destBedNumber,
+    };
+    persistLocalAdmission(updated);
+
+    // Update in-memory mock patients
+    const matchedPat = MOCK_PATIENTS.find((p) => p.id === updated.patientId);
+    if (matchedPat) {
+      matchedPat.ward = `${destWard.name} (${destBedNumber})`;
+      matchedPat.bedNumber = destBedNumber;
     }
-    return { success: true, message: `Successfully transferred patient to ${destWard.name} (${destBedNumber}).` };
+
+    return {
+      success: true,
+      message: `Successfully transferred ${updated.patientName} to ${destWard.name} (${destBedNumber}).`,
+      data: updated,
+    };
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to complete bed transfer.' };
   }

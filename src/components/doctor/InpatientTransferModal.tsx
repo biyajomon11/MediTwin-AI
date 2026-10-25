@@ -101,7 +101,9 @@ export const InpatientTransferModal: React.FC<InpatientTransferModalProps> = ({
 
         // Auto select first available bed that isn't current bed
         const availableBeds = bedList.filter(
-          (b) => (b.isAvailable || b.status === 'AVAILABLE') && b.id !== admission?.bedId
+          (b) =>
+            (b.isAvailable || b.status === 'AVAILABLE') &&
+            !(selectedWardId === admission?.wardId && (b.id === admission?.bedId || b.bedNumber.toLowerCase() === (admission?.bedNumber || '').toLowerCase()))
         );
         setSelectedBedId(availableBeds.length > 0 ? availableBeds[0].id : null);
       } catch (err) {
@@ -135,8 +137,13 @@ export const InpatientTransferModal: React.FC<InpatientTransferModalProps> = ({
       return;
     }
 
-    if (selectedBedId === admission.bedId) {
-      setErrorMessage('Destination bed cannot be the patient’s current bed.');
+    const destBed = beds.find((b) => b.id === selectedBedId);
+    if (
+      selectedWardId === admission.wardId &&
+      (selectedBedId === admission.bedId ||
+        (destBed && destBed.bedNumber.toLowerCase() === (admission.bedNumber || '').toLowerCase()))
+    ) {
+      setErrorMessage('Destination bed cannot be the patient’s current bed in the same ward.');
       return;
     }
 
