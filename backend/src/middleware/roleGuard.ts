@@ -7,12 +7,23 @@ import { AuthenticatedRequest } from './auth';
  */
 export const requireRoles = (allowedRoles: string[]) => {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
-    const userRole = req.user?.role?.toLowerCase()?.trim();
-    const clientRole = (req.headers['x-user-role'] as string)?.toLowerCase()?.trim();
+    let userRole = req.user?.role?.toLowerCase()?.trim();
+    let clientRole = (req.headers['x-user-role'] as string)?.toLowerCase()?.trim();
+
+    // Map common role aliases to canonical forms
+    if (userRole === 'hospital-admin' || userRole === 'hospital_admin' || userRole === 'administrator') {
+      userRole = 'admin';
+    }
+    if (clientRole === 'hospital-admin' || clientRole === 'hospital_admin' || clientRole === 'administrator') {
+      clientRole = 'admin';
+    }
 
     const normalizedAllowedRoles = allowedRoles.map((r) => r.toLowerCase().trim());
 
     if (userRole && normalizedAllowedRoles.includes(userRole)) {
+      if (req.user) {
+        req.user.role = userRole;
+      }
       return next();
     }
 

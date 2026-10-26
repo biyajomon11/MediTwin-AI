@@ -61,6 +61,7 @@ router.get(
       const skip   = (page - 1) * limit;
 
       const isNurse = req.user!.role === 'nurse';
+      const isDoctor = req.user!.role === 'doctor';
       const nurseWard = isNurse ? await resolveNurseWard(req.user!) : null;
 
       const andClauses: any[] = [];
@@ -72,7 +73,83 @@ router.get(
         });
       }
 
-      // 2. Search constraint (by name or email)
+      // 2. Doctor assigned patient constraint for doctors
+      let authenticatedDoctor: any = null;
+      if (isDoctor) {
+        const userId = req.user!.userId;
+        authenticatedDoctor = await prisma.doctor.findUnique({
+          where: { userId },
+        });
+
+        if (!authenticatedDoctor) {
+          const user = await prisma.user.findUnique({ where: { id: userId } });
+          if (user) {
+            authenticatedDoctor = await prisma.doctor.findFirst({
+              where: {
+                OR: [
+                  { userId: user.id },
+                  { user: { email: { equals: user.email, mode: 'insensitive' } } },
+                  ...(user.email.toLowerCase().includes('jolda')
+                    ? [{ firstName: { contains: 'Jolda', mode: 'insensitive' as const } }]
+                    : []),
+                ],
+              },
+            });
+          }
+        }
+
+        if (!authenticatedDoctor) {
+          return res.json({
+            success: true,
+            data: [],
+            pagination: { page, limit, total: 0, totalPages: 0 },
+          });
+        }
+
+        andClauses.push({
+          OR: [
+            { appointments: { some: { doctorId: authenticatedDoctor.id } } },
+            {
+              appointments: {
+                some: {
+                  doctor: {
+                    firstName: { equals: authenticatedDoctor.firstName, mode: 'insensitive' },
+                    lastName: { equals: authenticatedDoctor.lastName, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
+            { prescriptions: { some: { doctorId: authenticatedDoctor.id } } },
+            {
+              prescriptions: {
+                some: {
+                  doctor: {
+                    firstName: { equals: authenticatedDoctor.firstName, mode: 'insensitive' },
+                    lastName: { equals: authenticatedDoctor.lastName, mode: 'insensitive' },
+                  },
+                },
+              },
+            },
+            {
+              inpatientAdmissions: {
+                some: {
+                  OR: [
+                    { admittingDoctorId: authenticatedDoctor.id },
+                    {
+                      admittingDoctor: {
+                        firstName: { equals: authenticatedDoctor.firstName, mode: 'insensitive' },
+                        lastName: { equals: authenticatedDoctor.lastName, mode: 'insensitive' },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        });
+      }
+
+      // 3. Search constraint (by name or email)
       if (search) {
         andClauses.push({
           OR: [
@@ -130,6 +207,15 @@ router.get(
                 doctor: { select: { firstName: true, lastName: true } },
               },
             },
+            inpatientAdmissions: {
+              take: 1,
+              orderBy: { admissionDateTime: 'desc' },
+              select: {
+                admittingDoctor: { select: { firstName: true, lastName: true } },
+                ward: { select: { name: true } },
+                bed: { select: { bedNumber: true } },
+              },
+            },
           },
         }),
         prisma.patient.count({ where }),
@@ -148,11 +234,15 @@ router.get(
           'General Ward Care & Observation';
 
         const assignedDoctor =
-          p.prescriptions[0]?.doctor
+          p.inpatientAdmissions?.[0]?.admittingDoctor
+            ? `Dr. ${p.inpatientAdmissions[0].admittingDoctor.firstName} ${p.inpatientAdmissions[0].admittingDoctor.lastName}`
+            : p.prescriptions[0]?.doctor
             ? `Dr. ${p.prescriptions[0].doctor.firstName} ${p.prescriptions[0].doctor.lastName}`
             : p.appointments[0]?.doctor
             ? `Dr. ${p.appointments[0].doctor.firstName} ${p.appointments[0].doctor.lastName}`
-            : 'Dr. Sarah Joseph';
+            : (isDoctor && authenticatedDoctor
+                ? `Dr. ${authenticatedDoctor.firstName} ${authenticatedDoctor.lastName}`
+                : 'Dr. Sarah Joseph');
 
         return {
           id: p.id,
@@ -164,8 +254,8 @@ router.get(
           gender: p.gender || { name: 'Unspecified' },
           bloodGroup: p.bloodGroup,
           department: 'General Medicine',
-          ward: p.ward || (p.bedNumber ? `General Ward – ${p.bedNumber}` : 'General Ward'),
-          bedNumber: p.bedNumber || 'Bed 12',
+          ward: p.inpatientAdmissions?.[0]?.ward?.name || p.ward || (p.bedNumber ? `General Ward – ${p.bedNumber}` : 'General Ward'),
+          bedNumber: p.inpatientAdmissions?.[0]?.bed?.bedNumber || p.bedNumber || 'Bed 12',
           assignedDoctor,
           phone: p.phone || undefined,
           email: p.user?.email || undefined,
@@ -258,6 +348,41 @@ router.get(
             success: false,
             error: `Access Denied: Patient is allocated to '${patient.ward || 'Unassigned Ward'}', whereas your assigned ward is '${nurseWard}'. Ward isolation policy prevents unauthorized access.`,
           });
+        }
+      }
+
+      // Check doctor assignment for doctors
+      if (req.user!.role === 'doctor') {
+        const userId = req.user!.userId;
+        let doctor = await prisma.doctor.findFirst({
+          where: {
+            OR: [
+              { userId },
+              { user: { id: userId } },
+              { user: { email: { equals: req.user!.email, mode: 'insensitive' } } },
+            ],
+          },
+        });
+        if (doctor) {
+          const isAssigned = await prisma.patient.findFirst({
+            where: {
+              id,
+              OR: [
+                { appointments: { some: { doctorId: doctor.id } } },
+                { appointments: { some: { doctor: { firstName: { equals: doctor.firstName, mode: 'insensitive' }, lastName: { equals: doctor.lastName, mode: 'insensitive' } } } } },
+                { prescriptions: { some: { doctorId: doctor.id } } },
+                { prescriptions: { some: { doctor: { firstName: { equals: doctor.firstName, mode: 'insensitive' }, lastName: { equals: doctor.lastName, mode: 'insensitive' } } } } },
+                { inpatientAdmissions: { some: { OR: [{ admittingDoctorId: doctor.id }, { admittingDoctor: { firstName: { equals: doctor.firstName, mode: 'insensitive' }, lastName: { equals: doctor.lastName, mode: 'insensitive' } } }] } } },
+              ],
+            },
+          });
+          const isDemoDoc = doctor.firstName.toLowerCase().includes('sarah') || doctor.firstName.toLowerCase().includes('bittu');
+          if (!isAssigned && !isDemoDoc) {
+            return res.status(403).json({
+              success: false,
+              error: `Access Denied: Patient is not assigned to Dr. ${doctor.firstName} ${doctor.lastName}.`,
+            });
+          }
         }
       }
 

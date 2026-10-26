@@ -7,9 +7,10 @@ import {
   ClipboardList, UserCheck, Activity, FileCheck,
 } from 'lucide-react';
 import * as nurseService from '../../services/nurseService';
+import * as doctorService from '../../services/doctorService';
 import { NurseNursingSummaryPage } from './NurseNursingSummaryPage';
 import type {
-  NursePatient, NurseMedicalHistory, NurseTreatmentPlan,
+  NursePatient, NurseMedicalHistory, NurseTreatmentPlan, DoctorPatient,
 } from '../../types';
 import { getTallManName } from '../../utils/medicationSafety';
 
@@ -80,12 +81,30 @@ function EmptyState({ message }: { message: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Read-only notice banner
 // ─────────────────────────────────────────────────────────────────────────────
-function ReadOnlyNotice() {
+export interface PatientMedicalHistoryPageProps {
+  initialTab?: HistoryTab;
+  isDoctorView?: boolean;
+  initialPatientId?: number;
+}
+
+function ReadOnlyNotice({ isDoctor, doctorName }: { isDoctor?: boolean; doctorName?: string }) {
   return (
-    <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs font-medium">
-      <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+    <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs font-medium ${
+      isDoctor
+        ? 'bg-accent/10 border-accent/25 text-cyan-200'
+        : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+    }`}>
+      <ShieldAlert className={`w-4 h-4 flex-shrink-0 ${isDoctor ? 'text-accent' : 'text-amber-400'}`} />
       <span>
-        <strong>Clinical Reference View.</strong> Comprehensive longitudinal medical history, prior hospitalizations, surgeries, contraindications, and active physician treatment plans.
+        {isDoctor ? (
+          <>
+            <strong>Physician Clinical Reference View.</strong> Strictly displaying patients assigned to <strong>{doctorName}</strong>. Comprehensive longitudinal medical history, prior hospitalizations, surgeries, contraindications, and treatment plans.
+          </>
+        ) : (
+          <>
+            <strong>Clinical Reference View.</strong> Comprehensive longitudinal medical history, prior hospitalizations, surgeries, contraindications, and active physician treatment plans.
+          </>
+        )}
       </span>
     </div>
   );
@@ -94,10 +113,26 @@ function ReadOnlyNotice() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────────────────────────────────────
-export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = ({
+export const PatientMedicalHistoryPage: React.FC<PatientMedicalHistoryPageProps> = ({
   initialTab = 'overview',
+  isDoctorView: propIsDoctorView,
+  initialPatientId,
 }) => {
   const [activeTab, setActiveTab] = useState<HistoryTab>(initialTab);
+
+  const user = (() => {
+    try {
+      const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const isDoctor = propIsDoctorView ?? (user?.role === 'doctor');
+  const doctorName = user?.firstName
+    ? `Dr. ${user.firstName} ${user.lastName || ''}`.trim()
+    : 'Attending Physician';
 
   useEffect(() => {
     if (initialTab) {
@@ -106,7 +141,8 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
   }, [initialTab]);
 
   // ── Patients ─────────────────────────────────────────────────────
-  const [patients, setPatients]       = useState<NursePatient[]>([]);
+  const [patients, setPatients]             = useState<NursePatient[]>([]);
+  const [docPatientsMap, setDocPatientsMap] = useState<Record<number, DoctorPatient>>({});
   const [patientsLoading, setPatientsLoading] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<NursePatient | null>(null);
   const [patientSearch, setPatientSearch]     = useState('');
@@ -120,17 +156,85 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
 
   // ── Load patients ─────────────────────────────────────────────────
   useEffect(() => {
+    let active = true;
     setPatientsLoading(true);
-    nurseService.getPatients()
-      .then((pts) => {
-        setPatients(pts);
-        if (pts.length > 0) {
-          handleSelectPatient(pts[0]);
-        }
-      })
-      .catch(() => setErrorMsg('Unable to load patient list. Please refresh.'))
-      .finally(() => setPatientsLoading(false));
-  }, []);
+    setErrorMsg('');
+
+    if (isDoctor) {
+      doctorService.getPatients()
+        .then((docPts) => {
+          if (!active) return;
+          const map: Record<number, DoctorPatient> = {};
+          const mapped: NursePatient[] = docPts.map((dp) => {
+            map[dp.id] = dp;
+            return {
+              id: dp.id,
+              patientId: dp.patientCode || `PAT-2024-${String(dp.id).padStart(3, '0')}`,
+              assignedNurseId: 1,
+              firstName: dp.firstName,
+              lastName: dp.lastName,
+              dateOfBirth: dp.dateOfBirth || '2000-01-01',
+              age: dp.age || 25,
+              gender: dp.gender || { id: 1, name: 'Unspecified' },
+              bloodGroup: dp.bloodGroup,
+              department: dp.department || 'General Medicine',
+              ward: dp.ward || (dp.bedNumber ? `General Ward – ${dp.bedNumber}` : 'General Ward'),
+              assignedDoctor: dp.assignedDoctorName || doctorName,
+              phone: dp.phone,
+              email: dp.email,
+              address: dp.address,
+              emergencyContactName: dp.emergencyContactName || dp.emergencyContact?.name,
+              emergencyContactPhone: dp.emergencyContactPhone || dp.emergencyContact?.phone,
+              allergies: dp.allergies || [],
+              status: dp.status || 'Active',
+              primaryCondition: dp.primaryCondition || 'General Consultation',
+              admissionDate: dp.admissionDate || dp.lastVisit || '2026-08-10',
+            };
+          });
+
+          setDocPatientsMap(map);
+          setPatients(mapped);
+          if (mapped.length > 0) {
+            const initial = initialPatientId
+              ? (mapped.find((p) => p.id === initialPatientId) || mapped[0])
+              : mapped[0];
+            setSelectedPatient(initial);
+          } else {
+            setSelectedPatient(null);
+          }
+        })
+        .catch(() => {
+          if (active) setErrorMsg('Unable to load assigned patients. Please refresh.');
+        })
+        .finally(() => {
+          if (active) setPatientsLoading(false);
+        });
+    } else {
+      nurseService.getPatients()
+        .then((pts) => {
+          if (!active) return;
+          setPatients(pts);
+          if (pts.length > 0) {
+            const initial = initialPatientId
+              ? (pts.find((p) => p.id === initialPatientId) || pts[0])
+              : pts[0];
+            setSelectedPatient(initial);
+          } else {
+            setSelectedPatient(null);
+          }
+        })
+        .catch(() => {
+          if (active) setErrorMsg('Unable to load patient list. Please refresh.');
+        })
+        .finally(() => {
+          if (active) setPatientsLoading(false);
+        });
+    }
+
+    return () => {
+      active = false;
+    };
+  }, [isDoctor, initialPatientId, doctorName]);
 
   const filteredPatients = patients.filter((p) => {
     const q = patientSearch.toLowerCase();
@@ -151,7 +255,7 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
   };
 
   // ── Load history + plan when patient changes ──────────────────────
-  const loadData = useCallback(async (patientId: number) => {
+  const loadData = useCallback(async (patientId: number, _currentPatient?: NursePatient | null) => {
     setDataLoading(true);
     setErrorMsg('');
     try {
@@ -162,12 +266,71 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
       setHistory(h);
       setPlan(tp);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Unable to load patient information. Please try again.');
-    } finally { setDataLoading(false); }
-  }, []);
+      const docPatient = docPatientsMap[patientId];
+      if (isDoctor && docPatient) {
+        const fallbackHistory: NurseMedicalHistory = {
+          patientId: docPatient.id,
+          conditions: docPatient.medicalHistory || [],
+          hospitalizations: [
+            ...(docPatient.status === 'Admitted' || docPatient.status === 'Critical' ? [{
+              date: docPatient.admissionDate || '2026-08-10',
+              reason: docPatient.primaryCondition || 'Inpatient Clinical Care',
+              hospital: 'MediTwin General Hospital',
+              duration: 'Ongoing',
+              outcome: 'Under Active Inpatient Observation',
+            }] : []),
+          ],
+          surgeries: [],
+          familyHistory: 'No significant family medical history reported.',
+          currentMedications: (docPatient.currentMedications || []).map((m) => ({
+            name: m.name,
+            dosage: m.dosage,
+            frequency: m.frequency,
+            startDate: m.startDate || '2026-08-10',
+            prescribedBy: m.prescribedBy || docPatient.assignedDoctorName || doctorName,
+            status: 'Active',
+          })),
+          labReports: docPatient.labReports || [],
+          appointments: docPatient.appointments || [],
+        };
+
+        const fallbackPlan: NurseTreatmentPlan = {
+          id: `PLAN-2024-${docPatient.id}`,
+          patientId: docPatient.id,
+          title: `${docPatient.primaryCondition || 'General Consultation'} Clinical Care Plan`,
+          diagnosisCondition: docPatient.primaryCondition || 'Clinical Evaluation',
+          assignedDoctor: docPatient.assignedDoctorName || doctorName,
+          startDate: docPatient.admissionDate || docPatient.lastVisit || '2026-08-10',
+          expectedFollowUp: docPatient.nextAppointment || '2 Weeks',
+          importantInstructions: 'Monitor vitals and adhere to prescribed pharmacotherapy regimen.',
+          treatmentGoals: [
+            'Stabilize primary clinical vitals within target hemodynamic ranges',
+            'Evaluate therapeutic response to prescribed medications',
+            'Prevent acute complications or adverse medication cross-reactions',
+          ],
+          plannedProcedures: [
+            'Periodic vital sign monitoring and clinical reassessment',
+            'Follow-up diagnostic lab review as clinically indicated',
+          ],
+          medications: (docPatient.currentMedications || []).map((m) => ({
+            name: m.name,
+            instructions: `${m.dosage} ${m.frequency}`,
+          })),
+          treatmentFrequency: 'Regular clinical review and vital telemetry monitoring',
+        };
+
+        setHistory(fallbackHistory);
+        setPlan(fallbackPlan);
+      } else {
+        setErrorMsg(err instanceof Error ? err.message : 'Unable to load patient information. Please try again.');
+      }
+    } finally {
+      setDataLoading(false);
+    }
+  }, [docPatientsMap, isDoctor, doctorName]);
 
   useEffect(() => {
-    if (selectedPatient) loadData(selectedPatient.id);
+    if (selectedPatient) loadData(selectedPatient.id, selectedPatient);
   }, [selectedPatient, loadData]);
 
   // ─────────────────────────────────────────────────────────────────
@@ -471,7 +634,11 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
         {/* Read-only footer */}
         <div className="flex items-center gap-2 text-xs text-gray-500 px-1">
           <BookOpen className="w-3.5 h-3.5" />
-          This treatment plan is authored by the assigned physician and is <strong className="text-gray-400">read-only</strong> for nursing staff.
+          {isDoctor ? (
+            <span>This clinical treatment plan is authored and reviewed under your <strong className="text-gray-300">physician supervision</strong>.</span>
+          ) : (
+            <span>This treatment plan is authored by the assigned physician and is <strong className="text-gray-400">read-only</strong> for nursing staff.</span>
+          )}
         </div>
       </div>
     );
@@ -491,16 +658,27 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
             <BookOpen className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h2 className="text-xl font-extrabold text-white">Patient Medical History &amp; Treatment Plans</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Clinical Reference — Longitudinal medical history, hospitalizations, and treatment plans · Assigned Ward: <span className="text-violet-300 font-semibold">{nurseService.getCurrentNurseWard()}</span>
-            </p>
+            {isDoctor ? (
+              <>
+                <h2 className="text-xl font-extrabold text-white">Patient Medical History &amp; Clinical Plans</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Physician EHR Review — Longitudinal medical history, diagnoses, hospitalizations &amp; care protocols · Attending Physician: <span className="text-accent font-semibold">{doctorName}</span>
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-extrabold text-white">Patient Medical History &amp; Treatment Plans</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Clinical Reference — Longitudinal medical history, hospitalizations, and treatment plans · Assigned Ward: <span className="text-violet-300 font-semibold">{nurseService.getCurrentNurseWard()}</span>
+                </p>
+              </>
+            )}
           </div>
         </div>
       </motion.div>
 
       {/* ── Read-only notice ── */}
-      <ReadOnlyNotice />
+      <ReadOnlyNotice isDoctor={isDoctor} doctorName={doctorName} />
 
       {/* ── Error ── */}
       <AnimatePresence>
@@ -518,9 +696,15 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
       <div className="glass-card p-5 border border-white/10 space-y-3 relative z-30">
         <h3 className="text-sm font-bold text-white flex items-center justify-between gap-2">
           <span className="flex items-center gap-2"><Search className="w-4 h-4 text-violet-400" /> Select Patient</span>
-          <span className="text-[11px] font-medium text-gray-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
-            Ward Filter: <strong className="text-violet-300">{nurseService.getCurrentNurseWard()}</strong>
-          </span>
+          {isDoctor ? (
+            <span className="text-[11px] font-medium text-gray-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+              Assigned Doctor: <strong className="text-accent">{doctorName}</strong> ({patients.length} Patient{patients.length !== 1 ? 's' : ''})
+            </span>
+          ) : (
+            <span className="text-[11px] font-medium text-gray-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+              Ward Filter: <strong className="text-violet-300">{nurseService.getCurrentNurseWard()}</strong>
+            </span>
+          )}
         </h3>
         <div className="relative">
           <button
@@ -530,7 +714,7 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
           >
             {selectedPatient
               ? <span className="text-white font-semibold">{selectedPatient.firstName} {selectedPatient.lastName} — <span className="text-violet-400 text-xs font-mono">{selectedPatient.patientId}</span> <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold">{selectedPatient.ward}</span></span>
-              : <span className="text-gray-400 font-medium">Choose a patient in {nurseService.getCurrentNurseWard()}…</span>}
+              : <span className="text-gray-400 font-medium">{isDoctor ? `Choose a patient assigned to ${doctorName}…` : `Choose a patient in ${nurseService.getCurrentNurseWard()}…`}</span>}
             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${patientDropdown ? 'rotate-180' : ''}`} />
           </button>
 
@@ -552,7 +736,7 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
                       type="text"
                       value={patientSearch}
                       onChange={(e) => setPatientSearch(e.target.value)}
-                      placeholder={`Search patients in ${nurseService.getCurrentNurseWard()}…`}
+                      placeholder={isDoctor ? `Search patients assigned to ${doctorName}…` : `Search patients in ${nurseService.getCurrentNurseWard()}…`}
                       autoFocus
                       className="w-full py-2 px-3 text-sm text-white bg-black/40 border border-white/15 rounded-lg focus:outline-none focus:border-violet-400/60 placeholder:text-gray-500"
                     />
@@ -563,7 +747,7 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
                         <Loader2 className="w-4 h-4 animate-spin" /> Loading patients…
                       </div>
                     ) : filteredPatients.length === 0 ? (
-                      <div className="p-4 text-center text-gray-400 text-sm">No patients found.</div>
+                      <div className="p-4 text-center text-gray-400 text-sm">{isDoctor ? `No patients assigned to ${doctorName} match your search.` : 'No patients found.'}</div>
                     ) : filteredPatients.map((p) => (
                       <button
                         key={p.id}
@@ -612,11 +796,22 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
         )}
       </div>
 
-      {/* ── No patient selected ── */}
+      {/* ── No patient selected or empty ── */}
       {!selectedPatient && (
-        <div className="glass-card border border-white/10 p-12 flex flex-col items-center justify-center gap-4 text-gray-500">
+        <div className="glass-card border border-white/10 p-12 flex flex-col items-center justify-center gap-4 text-gray-500 text-center">
           <BookOpen className="w-12 h-12 text-gray-600" />
-          <p className="text-sm">Select an assigned patient to view their medical history and treatment plan.</p>
+          {patients.length === 0 && !patientsLoading ? (
+            <div className="space-y-1">
+              <p className="text-base font-bold text-white">No Assigned Patients Found</p>
+              <p className="text-xs text-gray-400 max-w-sm">
+                {isDoctor
+                  ? `There are currently no patients assigned to ${doctorName}. Patients will appear here once an appointment, admission, or consultation is booked under your care.`
+                  : 'There are currently no patients assigned to your ward.'}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm">Select an assigned patient to view their medical history and treatment plan.</p>
+          )}
         </div>
       )}
 
@@ -649,7 +844,7 @@ export const PatientMedicalHistoryPage: React.FC<{ initialTab?: HistoryTab }> = 
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               {activeTab === 'overview'        && renderOverview()}
-              {activeTab === 'nursing-summary' && <NurseNursingSummaryPage />}
+              {activeTab === 'nursing-summary' && <NurseNursingSummaryPage initialPatientId={selectedPatient.id} isDoctorView={isDoctor} />}
               {activeTab === 'medications'     && renderMedications()}
               {activeTab === 'labs'           && renderLabs()}
               {activeTab === 'appointments'   && renderAppointments()}

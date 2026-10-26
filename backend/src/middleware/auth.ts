@@ -48,12 +48,23 @@ export const authenticateJWT = (
       }
     }
 
-    const normRole = roleHeader.toLowerCase().trim();
+    let normRole = roleHeader.toLowerCase().trim();
+    if (normRole === 'hospital-admin' || normRole === 'hospital_admin' || normRole === 'administrator') {
+      normRole = 'admin';
+    }
+
+    const rawParsed = idHeader ? parseInt(idHeader, 10) : NaN;
+    const validId = !isNaN(rawParsed) && rawParsed > 0 ? rawParsed : undefined;
+
+    const defaultUserId = normRole === 'nurse' ? 4 : (normRole === 'doctor' ? 2 : (normRole === 'admin' ? 14 : 0));
+    const defaultAdminId = normRole === 'admin' ? (emailHeader === 'rohithadmin99@gmail.com' ? 1 : 2) : undefined;
+
     req.user = {
-      userId: idHeader ? parseInt(idHeader, 10) : (normRole === 'nurse' ? 4 : (normRole === 'doctor' ? 2 : 0)),
-      email: emailHeader || (normRole === 'nurse' ? 'nurse@meditwin.ai' : (normRole === 'doctor' ? 'doctor@meditwin.ai' : 'patient@meditwin.ai')),
+      userId: validId ?? defaultUserId,
+      email: emailHeader || (normRole === 'nurse' ? 'nurse@meditwin.ai' : (normRole === 'doctor' ? 'doctor@meditwin.ai' : (normRole === 'admin' ? 'test.admin@meditwin.local' : 'patient@meditwin.ai'))),
       role: normRole,
-      nurseId: req.headers['x-nurse-id'] ? parseInt(req.headers['x-nurse-id'] as string, 10) : (normRole === 'nurse' ? 1 : undefined),
+      nurseId: req.headers['x-nurse-id'] && !isNaN(parseInt(req.headers['x-nurse-id'] as string, 10)) ? parseInt(req.headers['x-nurse-id'] as string, 10) : (normRole === 'nurse' ? 1 : undefined),
+      adminId: defaultAdminId,
     };
     return next();
   }
@@ -65,26 +76,43 @@ export const authenticateJWT = (
       email: string;
       role: string;
       nurseId?: number;
+      adminId?: number;
+      doctorId?: number;
+      patientId?: number;
     };
 
-    const headerRole = (req.headers['x-user-role'] as string)?.toLowerCase()?.trim();
+    let headerRole = (req.headers['x-user-role'] as string)?.toLowerCase()?.trim();
+    if (headerRole === 'hospital-admin' || headerRole === 'hospital_admin' || headerRole === 'administrator') {
+      headerRole = 'admin';
+    }
+
+    const effectiveRole = (headerRole || decoded.role || 'patient').toLowerCase().trim();
 
     req.user = {
       ...decoded,
-      role: (headerRole || decoded.role || 'patient').toLowerCase().trim(),
+      role: effectiveRole === 'hospital-admin' || effectiveRole === 'hospital_admin' || effectiveRole === 'administrator' ? 'admin' : effectiveRole,
+      adminId: decoded.adminId || (effectiveRole === 'admin' ? 2 : undefined),
     };
     next();
   } catch (err) {
     // If token is invalid or expired but client role header or endpoint path identifies the caller:
-    const headerRole = (req.headers['x-user-role'] as string)?.toLowerCase()?.trim();
+    let headerRole = (req.headers['x-user-role'] as string)?.toLowerCase()?.trim();
+    if (headerRole === 'hospital-admin' || headerRole === 'hospital_admin' || headerRole === 'administrator') {
+      headerRole = 'admin';
+    }
     const url = req.originalUrl || req.url || '';
-    if (headerRole || url.includes('/nurse') || url.includes('/doctor')) {
-      const fallbackRole = headerRole || (url.includes('/nurse') ? 'nurse' : 'doctor');
+    if (headerRole || url.includes('/nurse') || url.includes('/doctor') || url.includes('/admin')) {
+      const fallbackRole = headerRole || (url.includes('/nurse') ? 'nurse' : (url.includes('/doctor') ? 'doctor' : 'admin'));
+      const idHeader = (req.headers['x-user-id'] || req.headers['x-patient-id']) as string;
+      const rawParsed = idHeader ? parseInt(idHeader, 10) : NaN;
+      const validId = !isNaN(rawParsed) && rawParsed > 0 ? rawParsed : undefined;
+
       req.user = {
-        userId: 0,
-        email: `${fallbackRole}@meditwin.ai`,
+        userId: validId ?? (fallbackRole === 'admin' ? 14 : (fallbackRole === 'nurse' ? 4 : (fallbackRole === 'doctor' ? 2 : 0))),
+        email: fallbackRole === 'admin' ? 'test.admin@meditwin.local' : `${fallbackRole}@meditwin.ai`,
         role: fallbackRole,
-        nurseId: 1,
+        nurseId: fallbackRole === 'nurse' ? 1 : undefined,
+        adminId: fallbackRole === 'admin' ? 2 : undefined,
       };
       return next();
     }

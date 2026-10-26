@@ -19,6 +19,7 @@ import {
   MOCK_TREATMENT_PLANS,
   MOCK_NURSE_SELF_ID,
 } from '../data/nurseMockData';
+import { getPatients as getDoctorPatients } from './doctorService';
 
 import type {
   NursePatient,
@@ -207,8 +208,46 @@ export function matchesNurseWard(patientWard?: string | null, nurseWard?: string
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getPatients(_nurseId?: number): Promise<NursePatient[]> {
   const currentWard = getCurrentNurseWard();
+  const token = localStorage.getItem('meditwin_token') || sessionStorage.getItem('meditwin_token');
+  let role = '';
   try {
-    const token = localStorage.getItem('meditwin_token') || sessionStorage.getItem('meditwin_token');
+    const raw = localStorage.getItem('meditwin_user') || sessionStorage.getItem('meditwin_user');
+    if (raw) role = JSON.parse(raw).role;
+  } catch {}
+
+  // If active user is doctor, always retrieve their assigned patients strictly
+  if (role === 'doctor') {
+    try {
+      const docPts = await getDoctorPatients();
+      return docPts.map((p) => ({
+        id: p.id,
+        patientId: p.patientCode || `PAT-2024-${String(p.id).padStart(3, '0')}`,
+        assignedNurseId: 1,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        dateOfBirth: p.dateOfBirth || '2000-01-01',
+        age: p.age || 25,
+        gender: p.gender || { id: 1, name: 'Unspecified' },
+        bloodGroup: p.bloodGroup,
+        department: p.department || 'General Medicine',
+        ward: p.ward || (p.bedNumber ? `General Ward – ${p.bedNumber}` : 'General Ward'),
+        assignedDoctor: p.assignedDoctorName || 'Attending Physician',
+        phone: p.phone,
+        email: p.email,
+        address: p.address,
+        emergencyContactName: p.emergencyContactName || p.emergencyContact?.name,
+        emergencyContactPhone: p.emergencyContactPhone || p.emergencyContact?.phone,
+        allergies: p.allergies || [],
+        status: p.status || 'Active',
+        primaryCondition: p.primaryCondition || 'General Consultation',
+        admissionDate: p.admissionDate || p.lastVisit || '2026-08-10',
+      }));
+    } catch {
+      // fallback
+    }
+  }
+
+  try {
     // First, call dedicated nurse patients endpoint with ward scoping
     const res = await fetch('/api/nurse/patients', {
       headers: {
@@ -243,6 +282,10 @@ export async function getPatients(_nurseId?: number): Promise<NursePatient[]> {
           primaryCondition: p.primaryCondition || 'General Consultation',
           admissionDate: p.admissionDate || p.lastVisit || '2026-08-10',
         }));
+
+        if (role === 'doctor') {
+          return mapped;
+        }
 
         // Strict ward allocation filter on client side
         return mapped.filter((p) => matchesNurseWard(p.ward, currentWard));

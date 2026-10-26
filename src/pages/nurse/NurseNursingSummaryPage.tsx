@@ -16,7 +16,15 @@ import type {
   PainStatus,
 } from '../../types';
 
-export const NurseNursingSummaryPage: React.FC = () => {
+export interface NurseNursingSummaryPageProps {
+  initialPatientId?: number;
+  isDoctorView?: boolean;
+}
+
+export const NurseNursingSummaryPage: React.FC<NurseNursingSummaryPageProps> = ({
+  initialPatientId,
+  isDoctorView: _isDoctorView,
+}) => {
   // ── State: Patient Selection ───────────────────────────────────────────────
   const [patients, setPatients] = useState<NursePatient[]>([]);
   const [patientsLoading, setPatientsLoading] = useState(false);
@@ -79,7 +87,10 @@ export const NurseNursingSummaryPage: React.FC = () => {
         if (mounted) {
           setPatients(list);
           if (list.length > 0 && !selectedPatient) {
-            setSelectedPatient(list[0]);
+            const initial = initialPatientId
+              ? (list.find((p) => p.id === initialPatientId) || list[0])
+              : list[0];
+            setSelectedPatient(initial);
           }
         }
       } catch (err: any) {
@@ -90,7 +101,16 @@ export const NurseNursingSummaryPage: React.FC = () => {
     };
     fetchPatients();
     return () => { mounted = false; };
-  }, []);
+  }, [initialPatientId]);
+
+  useEffect(() => {
+    if (initialPatientId && patients.length > 0) {
+      const match = patients.find((p) => p.id === initialPatientId);
+      if (match && selectedPatient?.id !== match.id) {
+        setSelectedPatient(match);
+      }
+    }
+  }, [initialPatientId, patients, selectedPatient]);
 
   // ── Load Clinical Context & Summaries for Selected Patient ────────────────
   const loadPatientData = useCallback(async (patientId: number) => {

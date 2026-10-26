@@ -682,6 +682,8 @@ export const DashboardPage: React.FC<{ initialRole?: string; defaultTab?: string
       setActiveView('ai-summaries');
     } else if (isDoctor && action === 'Browse Clinical Guidelines') {
       setActiveView('guidelines');
+    } else if (isDoctor && (action === 'View Medical History' || action === 'Medical History' || action === 'Patient Medical History')) {
+      setActiveView('medical-history');
     } else if (isPatient) {
       if (action === 'Upload Medical Document' || action === 'Upload Prior Medical Records' || action === 'View Lab Results') {
         setActiveView('documents');
@@ -968,7 +970,12 @@ export const DashboardPage: React.FC<{ initialRole?: string; defaultTab?: string
           case 'ai-summaries':
             return <AIPatientSummaryPage />;
           case 'medical-history':
-            return <PatientMedicalHistoryPage />;
+            return (
+              <PatientMedicalHistoryPage
+                isDoctorView={true}
+                initialPatientId={doctorInitialPatientId}
+              />
+            );
           case 'guidelines':
             return <ClinicalGuidelinesPage />;
           case 'appointments':
