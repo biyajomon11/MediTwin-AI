@@ -726,8 +726,9 @@ export async function createInpatientAdmission(
       }
     } else if (isJson) {
       const errJson = await res.json().catch(() => ({}));
-      if (errJson.error) {
-        return { success: false, error: errJson.error };
+      const msg = errJson.error || (errJson.details ? Object.values(errJson.details).flat()[0] : null);
+      if (msg) {
+        return { success: false, error: String(msg) };
       }
     }
   } catch (err: any) {

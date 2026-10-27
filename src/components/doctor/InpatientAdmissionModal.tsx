@@ -82,9 +82,52 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
   const [chiefComplaint, setChiefComplaint] = useState('');
   const [nursingHandoverInstructions, setNursingHandoverInstructions] = useState('');
 
+  const [fieldErrors, setFieldErrors] = useState<{
+    admissionDiagnosis?: string;
+    chiefComplaint?: string;
+    nursingHandoverInstructions?: string;
+  }>({});
+  const [touched, setTouched] = useState<{
+    admissionDiagnosis?: boolean;
+    chiefComplaint?: boolean;
+    nursingHandoverInstructions?: boolean;
+  }>({});
+
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const validateField = (
+    field: 'admissionDiagnosis' | 'chiefComplaint' | 'nursingHandoverInstructions',
+    val: string
+  ): string | undefined => {
+    const trimmed = (val || '').trim();
+    if (!trimmed) {
+      if (field === 'admissionDiagnosis') return 'Admission diagnosis is required (minimum 50 characters).';
+      if (field === 'chiefComplaint') return 'Chief complaint is required (minimum 50 characters).';
+      return 'Nursing handover & telemetry instructions are required (minimum 50 characters).';
+    }
+    if (trimmed.length < 50) {
+      return `Must contain at least 50 characters (currently ${trimmed.length}/50).`;
+    }
+    return undefined;
+  };
+
+  const getCounterCls = (length: number) => {
+    if (length >= 50) return 'text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/30';
+    if (length > 0) return 'text-amber-400 font-medium bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/30';
+    return 'text-gray-400 font-normal bg-white/[0.04] px-2 py-0.5 rounded-md border border-white/10';
+  };
+
+  const getFieldInputCls = (hasError?: boolean, length: number = 0) => {
+    if (hasError) {
+      return 'w-full bg-slate-900/90 border border-rose-500/60 rounded-xl px-3.5 py-2 text-xs text-white focus:border-rose-400 focus:ring-1 focus:ring-rose-500/50 outline-none transition-colors';
+    }
+    if (length >= 50) {
+      return 'w-full bg-slate-900/90 border border-emerald-500/40 rounded-xl px-3.5 py-2 text-xs text-white focus:border-emerald-400 focus:ring-1 focus:ring-emerald-500/30 outline-none transition-colors';
+    }
+    return 'w-full bg-slate-900/90 border border-white/20 rounded-xl px-3.5 py-2 text-xs text-white focus:border-accent outline-none transition-colors';
+  };
 
   // ── Load Wards on Open ───────────────────────────────────────
   useEffect(() => {
@@ -92,6 +135,8 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
 
     setErrorMessage(null);
     setSuccessMessage(null);
+    setFieldErrors({});
+    setTouched({});
 
     const loadWards = async () => {
       setLoadingWards(true);
@@ -273,13 +318,25 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
       return;
     }
 
-    if (!admissionDiagnosis.trim()) {
-      setErrorMessage('Admission diagnosis is required.');
-      return;
-    }
+    setTouched({
+      admissionDiagnosis: true,
+      chiefComplaint: true,
+      nursingHandoverInstructions: true,
+    });
 
-    if (!chiefComplaint.trim()) {
-      setErrorMessage('Chief complaint is required.');
+    const diagErr = validateField('admissionDiagnosis', admissionDiagnosis);
+    const compErr = validateField('chiefComplaint', chiefComplaint);
+    const handErr = validateField('nursingHandoverInstructions', nursingHandoverInstructions);
+
+    setFieldErrors({
+      admissionDiagnosis: diagErr,
+      chiefComplaint: compErr,
+      nursingHandoverInstructions: handErr,
+    });
+
+    if (diagErr || compErr || handErr) {
+      const firstErr = diagErr || compErr || handErr;
+      setErrorMessage(firstErr || 'Admission diagnosis, chief complaint, and nursing handover instructions must each contain at least 50 characters.');
       return;
     }
 
@@ -292,7 +349,7 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
         bedId: selectedBedId,
         admissionDiagnosis: admissionDiagnosis.trim(),
         chiefComplaint: chiefComplaint.trim(),
-        nursingHandoverInstructions: nursingHandoverInstructions.trim() || undefined,
+        nursingHandoverInstructions: nursingHandoverInstructions.trim(),
         admissionStatus,
         acuityLevel,
       });
@@ -627,33 +684,75 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
             {/* 4. Admission Diagnosis & Chief Complaint */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-xs font-semibold text-gray-300 flex items-center gap-1.5 mb-1.5">
-                  <Stethoscope className="w-3.5 h-3.5 text-accent" />
-                  <span>Admission Diagnosis <span className="text-rose-400">*</span></span>
+                <label className="text-xs font-semibold text-gray-300 flex items-center justify-between mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Stethoscope className="w-3.5 h-3.5 text-accent" />
+                    <span>Admission Diagnosis <span className="text-rose-400">*</span></span>
+                  </span>
+                  <span className={`text-[11px] font-mono transition-colors ${getCounterCls(admissionDiagnosis.trim().length)}`}>
+                    {admissionDiagnosis.trim().length}/50 min chars
+                  </span>
                 </label>
                 <input
                   type="text"
                   value={admissionDiagnosis}
-                  onChange={(e) => setAdmissionDiagnosis(e.target.value)}
-                  placeholder="e.g. Community-Acquired Pneumonia, Acute Appendicitis"
-                  className="w-full bg-slate-900/90 border border-white/20 rounded-xl px-3.5 py-2 text-xs text-white focus:border-accent outline-none"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setAdmissionDiagnosis(val);
+                    if (touched.admissionDiagnosis) {
+                      setFieldErrors((prev) => ({ ...prev, admissionDiagnosis: validateField('admissionDiagnosis', val) }));
+                    }
+                  }}
+                  onBlur={() => {
+                    setTouched((prev) => ({ ...prev, admissionDiagnosis: true }));
+                    setFieldErrors((prev) => ({ ...prev, admissionDiagnosis: validateField('admissionDiagnosis', admissionDiagnosis) }));
+                  }}
+                  placeholder="e.g. Community-Acquired Pneumonia with secondary acute respiratory distress (min 50 characters)"
+                  className={getFieldInputCls(Boolean(fieldErrors.admissionDiagnosis), admissionDiagnosis.trim().length)}
                   required
                 />
+                {fieldErrors.admissionDiagnosis && (
+                  <p className="text-[11px] text-rose-400 mt-1.5 flex items-center gap-1 animate-fadeIn">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                    <span>{fieldErrors.admissionDiagnosis}</span>
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-gray-300 flex items-center gap-1.5 mb-1.5">
-                  <Activity className="w-3.5 h-3.5 text-accent" />
-                  <span>Chief Complaint <span className="text-rose-400">*</span></span>
+                <label className="text-xs font-semibold text-gray-300 flex items-center justify-between mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-accent" />
+                    <span>Chief Complaint <span className="text-rose-400">*</span></span>
+                  </span>
+                  <span className={`text-[11px] font-mono transition-colors ${getCounterCls(chiefComplaint.trim().length)}`}>
+                    {chiefComplaint.trim().length}/50 min chars
+                  </span>
                 </label>
                 <input
                   type="text"
                   value={chiefComplaint}
-                  onChange={(e) => setChiefComplaint(e.target.value)}
-                  placeholder="e.g. Severe shortness of breath, SpO2 88%, productive cough"
-                  className="w-full bg-slate-900/90 border border-white/20 rounded-xl px-3.5 py-2 text-xs text-white focus:border-accent outline-none"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setChiefComplaint(val);
+                    if (touched.chiefComplaint) {
+                      setFieldErrors((prev) => ({ ...prev, chiefComplaint: validateField('chiefComplaint', val) }));
+                    }
+                  }}
+                  onBlur={() => {
+                    setTouched((prev) => ({ ...prev, chiefComplaint: true }));
+                    setFieldErrors((prev) => ({ ...prev, chiefComplaint: validateField('chiefComplaint', chiefComplaint) }));
+                  }}
+                  placeholder="e.g. Severe shortness of breath, SpO2 88% on room air, productive cough (min 50 characters)"
+                  className={getFieldInputCls(Boolean(fieldErrors.chiefComplaint), chiefComplaint.trim().length)}
                   required
                 />
+                {fieldErrors.chiefComplaint && (
+                  <p className="text-[11px] text-rose-400 mt-1.5 flex items-center gap-1 animate-fadeIn">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                    <span>{fieldErrors.chiefComplaint}</span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -662,17 +761,39 @@ export const InpatientAdmissionModal: React.FC<InpatientAdmissionModalProps> = (
               <label className="text-xs font-semibold text-gray-300 flex items-center justify-between mb-1.5">
                 <span className="flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-accent" />
-                  <span>Nursing Handover & Immediate Telemetry Instructions</span>
+                  <span>Nursing Handover & Immediate Telemetry Instructions <span className="text-rose-400">*</span></span>
                 </span>
-                <span className="text-[10px] text-emerald-400">Persisted in Nurse Telemetry</span>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[10px] text-emerald-400 font-medium">Persisted in Nurse Telemetry</span>
+                  <span className={`text-[11px] font-mono transition-colors ${getCounterCls(nursingHandoverInstructions.trim().length)}`}>
+                    {nursingHandoverInstructions.trim().length}/50 min chars
+                  </span>
+                </div>
               </label>
               <textarea
                 value={nursingHandoverInstructions}
-                onChange={(e) => setNursingHandoverInstructions(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNursingHandoverInstructions(val);
+                  if (touched.nursingHandoverInstructions) {
+                    setFieldErrors((prev) => ({ ...prev, nursingHandoverInstructions: validateField('nursingHandoverInstructions', val) }));
+                  }
+                }}
+                onBlur={() => {
+                  setTouched((prev) => ({ ...prev, nursingHandoverInstructions: true }));
+                  setFieldErrors((prev) => ({ ...prev, nursingHandoverInstructions: validateField('nursingHandoverInstructions', nursingHandoverInstructions) }));
+                }}
                 rows={3}
-                placeholder="e.g. Initiate O2 via nasal cannula at 2L/min. Record vitals q4h. Administer IV Ceftriaxone 1g after skin sensitivity test. Notify on-call doctor if SBP < 90 or SpO2 < 92%."
-                className="w-full bg-slate-900/90 border border-white/20 rounded-xl px-3.5 py-2 text-xs text-white focus:border-accent outline-none resize-none leading-relaxed"
+                placeholder="e.g. Initiate O2 via nasal cannula at 2L/min. Record vitals q4h. Administer IV Ceftriaxone 1g after skin sensitivity test. Notify on-call doctor if SBP < 90 or SpO2 < 92%. (min 50 characters)"
+                className={`${getFieldInputCls(Boolean(fieldErrors.nursingHandoverInstructions), nursingHandoverInstructions.trim().length)} resize-none leading-relaxed`}
+                required
               />
+              {fieldErrors.nursingHandoverInstructions && (
+                <p className="text-[11px] text-rose-400 mt-1.5 flex items-center gap-1 animate-fadeIn">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                  <span>{fieldErrors.nursingHandoverInstructions}</span>
+                </p>
+              )}
             </div>
 
             {/* Footer Actions */}

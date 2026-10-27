@@ -1224,9 +1224,9 @@ const createAdmissionSchema = z.object({
   ward: z.string().optional().nullable(),
   bedId: z.number().int().positive().optional().nullable(),
   bedNumber: z.string().optional().nullable(),
-  admissionDiagnosis: z.string().min(3, { message: 'Admission diagnosis must be at least 3 characters.' }).max(255),
-  chiefComplaint: z.string().min(3, { message: 'Chief complaint must be at least 3 characters.' }),
-  nursingHandoverInstructions: z.string().optional().nullable(),
+  admissionDiagnosis: z.string().min(50, { message: 'Admission diagnosis must contain at least 50 characters.' }).max(1000),
+  chiefComplaint: z.string().min(50, { message: 'Chief complaint must contain at least 50 characters.' }).max(1000),
+  nursingHandoverInstructions: z.string().min(50, { message: 'Nursing handover & telemetry instructions must contain at least 50 characters.' }).max(2000),
   admissionStatus: z.enum(['ADMITTED', 'UNDER_OBSERVATION']).default('ADMITTED'),
   acuityLevel: z.enum(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']).default('MODERATE'),
   sourceAppointmentId: z.number().int().positive().optional().nullable(),
@@ -1245,10 +1245,12 @@ router.post(
     try {
       const parsed = createAdmissionSchema.safeParse(req.body);
       if (!parsed.success) {
+        const flattened = parsed.error.flatten().fieldErrors;
+        const firstError = Object.values(flattened).flat()[0] || 'Validation failed.';
         return res.status(400).json({
           success: false,
-          error: 'Validation failed.',
-          details: parsed.error.flatten().fieldErrors,
+          error: firstError,
+          details: flattened,
         });
       }
 
