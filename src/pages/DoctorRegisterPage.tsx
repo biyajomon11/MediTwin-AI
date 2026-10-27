@@ -22,6 +22,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { Button } from '../components/Button';
+import { isDuplicateRegistration } from '../utils/registrationValidation';
 
 export interface DoctorFormData {
   fullName: string;
@@ -339,6 +340,21 @@ export const DoctorRegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setApiError(null);
+
+    // 1. Immediate duplicate check: validates email, username & license offline and online
+    const dupCheck = isDuplicateRegistration({
+      email: form.email,
+      username: form.username,
+      licenseNumber: form.licenseNumber,
+      role: 'doctor',
+    });
+    if (dupCheck.isDuplicate) {
+      setApiError(dupCheck.error || 'An account with this email already exists.');
+      setIsSubmitting(false);
+      return;
+    }
+
     if (!isFormValid) {
       // Mark all fields touched
       const allTouched: Record<string, boolean> = {};
@@ -348,7 +364,6 @@ export const DoctorRegisterPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    setApiError(null);
 
     const nameParts = form.fullName.trim().split(' ');
     const firstName = nameParts[0];
@@ -361,6 +376,7 @@ export const DoctorRegisterPage: React.FC = () => {
         body: JSON.stringify({
           firstName,
           lastName,
+          username:          form.username.trim(),
           email:             form.email.trim(),
           password:          form.password,
           phone:             form.phone ? `${form.countryCode} ${form.phone}` : undefined,
@@ -406,7 +422,19 @@ export const DoctorRegisterPage: React.FC = () => {
       setIsSubmittedSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
-      // Offline fallback: save locally
+      // Offline fallback: Check duplicate registration before local persistence
+      const offlineDupCheck = isDuplicateRegistration({
+        email: form.email,
+        username: form.username,
+        licenseNumber: form.licenseNumber,
+        role: 'doctor',
+      });
+      if (offlineDupCheck.isDuplicate) {
+        setApiError(offlineDupCheck.error || 'An account with this email already exists.');
+        setIsSubmitting(false);
+        return;
+      }
+
       try {
         const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
         const newRecord = {
@@ -565,12 +593,29 @@ export const DoctorRegisterPage: React.FC = () => {
               </p>
             </div>
 
+            {/* TOP ERROR & DUPLICATE ALERT BANNER */}
+            {apiError && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                id="doctor-registration-error-alert-top"
+                className="max-w-2xl mx-auto p-4 rounded-2xl bg-rose-500/20 border-2 border-rose-500/60 text-rose-200 text-sm flex items-start gap-3 shadow-xl shadow-rose-950/50 animate-fade-in"
+              >
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 text-left">
+                  <span className="font-bold text-rose-300 block text-xs tracking-wider uppercase">Registration Notice:</span>
+                  <p className="text-white font-semibold text-sm">{apiError}</p>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-8" noValidate autoComplete="off">
               {/* Decoy fields to trap browser credential autofill */}
               <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, overflow: 'hidden', zIndex: -1 }} aria-hidden="true">
                 <input type="text" name="fake_username_prevent_autofill" tabIndex={-1} autoComplete="username" />
                 <input type="password" name="fake_password_prevent_autofill" tabIndex={-1} autoComplete="current-password" />
               </div>
+
               
               {/* ================================================== */}
               {/* SECTION 1 — PERSONAL INFORMATION                   */}
@@ -1407,11 +1452,20 @@ export const DoctorRegisterPage: React.FC = () => {
 
               {/* API Error Banner */}
               {apiError && (
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">
-                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
-                  <span>{apiError}</span>
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  id="doctor-registration-error-alert"
+                  className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/20 border-2 border-rose-500/60 text-rose-200 text-sm shadow-lg shadow-rose-950/40"
+                >
+                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-rose-400" />
+                  <div className="space-y-0.5 text-left">
+                    <span className="font-bold text-rose-300 block text-xs tracking-wider uppercase">Registration Notice:</span>
+                    <span className="text-white font-semibold">{apiError}</span>
+                  </div>
                 </div>
               )}
+
 
               {/* ================================================== */}
               {/* SECTION 6 — ACTION BUTTONS                         */}

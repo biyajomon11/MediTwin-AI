@@ -21,6 +21,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { Button } from '../components/Button';
+import { isDuplicateRegistration } from '../utils/registrationValidation';
 
 export interface PatientFormData {
   fullName: string;
@@ -165,35 +166,28 @@ export const PatientRegisterPage: React.FC = () => {
     errors.email = 'Please enter a valid email address.';
   }
 
-  // 6. Address (Required for Patient)
-  if (!form.address.trim()) {
-    errors.address = 'Address is required.';
+  // 6. Address (Optional, validated if provided)
+  if (form.address.trim() && form.address.trim().length < 3) {
+    errors.address = 'Address must be at least 3 characters.';
   }
 
-  // 7. Emergency Contact Name
-  if (!form.emergencyName.trim()) {
-    errors.emergencyName = 'Emergency contact is required.';
-  } else if (form.emergencyName.trim().length < 2) {
+  // 7. Emergency Contact Name (Optional, validated if provided)
+  if (form.emergencyName.trim() && form.emergencyName.trim().length < 2) {
     errors.emergencyName = 'Emergency contact name must be at least 2 characters.';
   }
 
-  // 8. Emergency Relationship
-  if (!form.emergencyRelationship) {
-    errors.emergencyRelationship = 'Relationship is required.';
-  }
+  // 8. Emergency Relationship (Optional)
 
-  // 9. Emergency Phone
-  if (!form.emergencyPhone.trim()) {
-    errors.emergencyPhone = 'Emergency contact phone is required.';
-  } else if (!/^\d{10}$/.test(form.emergencyPhone.replace(/[\s-]/g, ''))) {
-    errors.emergencyPhone = 'Emergency phone number must be exactly 10 digits.';
+  // 9. Emergency Phone (Optional, validated if provided)
+  if (form.emergencyPhone.trim() && !/^\d{7,15}$/.test(form.emergencyPhone.replace(/[\s\-\(\)]/g, ''))) {
+    errors.emergencyPhone = 'Emergency phone number must be valid.';
   }
 
   // 10. Username
   if (!form.username.trim()) {
     errors.username = 'Username is required.';
-  } else if (form.username.trim().length < 4) {
-    errors.username = 'Username must be at least 4 characters.';
+  } else if (form.username.trim().length < 3) {
+    errors.username = 'Username must be at least 3 characters.';
   } else if (!/^[a-zA-Z0-9_]+$/.test(form.username.trim())) {
     errors.username = 'Username can only contain letters, numbers, and underscores.';
   }
@@ -236,9 +230,9 @@ export const PatientRegisterPage: React.FC = () => {
     errors.confirmPassword = 'Passwords do not match.';
   }
 
-  // 13. Consent Checkboxes
-  if (!form.confirmAccurate || !form.agreeTerms || !form.consentDataStorage) {
-    errors.consent = 'Please accept the Privacy Policy and consent terms.';
+  // 13. Terms & Consent Checkbox
+  if (!form.agreeTerms) {
+    errors.consent = 'Please agree to the MediTwin AI Terms of Use and Privacy Policy.';
   }
 
   const isFormValid = Object.keys(errors).length === 0;
@@ -246,10 +240,26 @@ export const PatientRegisterPage: React.FC = () => {
   const handleClearForm = () => {
     setForm(initialForm);
     setTouched({});
+    setApiError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setApiError(null);
+
+    // 1. Immediate duplicate check: validates duplicate email & username offline or prior to network call
+    const dupCheck = isDuplicateRegistration({
+      email: form.email,
+      username: form.username,
+      role: 'patient',
+    });
+    if (dupCheck.isDuplicate) {
+      setApiError(dupCheck.error || 'An account with this email already exists.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    // 2. Validate all form fields
     if (!isFormValid) {
       const allTouched: Record<string, boolean> = {};
       Object.keys(form).forEach((k) => (allTouched[k] = true));
@@ -258,7 +268,6 @@ export const PatientRegisterPage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    setApiError(null);
 
     const nameParts = form.fullName.trim().split(' ');
     const firstName = nameParts[0];
@@ -271,6 +280,7 @@ export const PatientRegisterPage: React.FC = () => {
         body: JSON.stringify({
           firstName,
           lastName,
+          username:              form.username.trim(),
           email:                 form.email.trim(),
           password:              form.password,
           dob:                   form.dob,
@@ -293,7 +303,7 @@ export const PatientRegisterPage: React.FC = () => {
       const data = await res.json();
 
       if (!res.ok) {
-        setApiError(data.error || 'Registration failed. Please try again.');
+        setApiError(data.error || 'An account with this email already exists.');
         setIsSubmitting(false);
         return;
       }
@@ -336,7 +346,18 @@ export const PatientRegisterPage: React.FC = () => {
       setIsSubmittedSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch {
-      // Offline fallback: save locally
+      // Offline fallback: Check duplicate registration before local persistence
+      const offlineDupCheck = isDuplicateRegistration({
+        email: form.email,
+        username: form.username,
+        role: 'patient',
+      });
+      if (offlineDupCheck.isDuplicate) {
+        setApiError(offlineDupCheck.error || 'An account with this email already exists.');
+        setIsSubmitting(false);
+        return;
+      }
+
       try {
         const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
         const newRecord = {
@@ -505,12 +526,29 @@ export const PatientRegisterPage: React.FC = () => {
               </p>
             </div>
 
+            {/* TOP ERROR & DUPLICATE ALERT BANNER */}
+            {apiError && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                id="registration-error-alert-top"
+                className="max-w-2xl mx-auto p-4 rounded-2xl bg-rose-500/20 border-2 border-rose-500/60 text-rose-200 text-sm flex items-start gap-3 shadow-xl shadow-rose-950/50 animate-fade-in"
+              >
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 text-left">
+                  <span className="font-bold text-rose-300 block text-xs tracking-wider uppercase">Registration Notice:</span>
+                  <p className="text-white font-semibold text-sm">{apiError}</p>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-8" noValidate autoComplete="off">
               {/* Decoy fields to trap browser credential autofill */}
               <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, overflow: 'hidden', zIndex: -1 }} aria-hidden="true">
                 <input type="text" name="fake_username_prevent_autofill" tabIndex={-1} autoComplete="username" />
                 <input type="password" name="fake_password_prevent_autofill" tabIndex={-1} autoComplete="current-password" />
               </div>
+
               
               {/* ================================================== */}
               {/* SECTION 1 — PERSONAL INFORMATION                   */}
@@ -1231,9 +1269,17 @@ export const PatientRegisterPage: React.FC = () => {
 
               {/* API Error Banner */}
               {apiError && (
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm">
-                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
-                  <span>{apiError}</span>
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  id="registration-error-alert"
+                  className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/20 border-2 border-rose-500/60 text-rose-200 text-sm shadow-lg shadow-rose-950/40"
+                >
+                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-rose-400" />
+                  <div className="space-y-0.5 text-left">
+                    <span className="font-bold text-rose-300 block text-xs tracking-wider uppercase">Registration Notice:</span>
+                    <span className="text-white font-semibold">{apiError}</span>
+                  </div>
                 </div>
               )}
 
@@ -1256,10 +1302,10 @@ export const PatientRegisterPage: React.FC = () => {
                   type="submit"
                   variant="primary"
                   size="lg"
-                  disabled={!isFormValid || isSubmitting}
+                  disabled={isSubmitting}
                   icon={isSubmitting ? <Sparkles className="w-5 h-5 animate-spin" /> : <ArrowRight className="w-5 h-5" />}
                   iconPosition="right"
-                  className="w-full sm:w-auto shadow-glow-primary min-w-[240px] justify-center"
+                  className="w-full sm:w-auto shadow-glow-primary min-w-[240px] justify-center cursor-pointer"
                 >
                   {isSubmitting ? 'Creating Account...' : 'Create Patient Account'}
                 </Button>

@@ -15,11 +15,11 @@ const hashPassword = (plain: string) => bcrypt.hash(plain, 12);
 // POST /api/register/patient
 // ─────────────────────────────────────────────────────────────────────────────
 const patientSchema = z.object({
-  firstName:             z.string().min(1),
-  lastName:              z.string().min(1),
-  email:                 z.string().email(),
-  password:              z.string().min(8),
-  dob:                   z.string().min(1),
+  firstName:             z.string().min(1, 'First name is required.'),
+  lastName:              z.string().min(1, 'Last name is required.'),
+  email:                 z.string().email('Please enter a valid email address.'),
+  password:              z.string().min(8, 'Password must be at least 8 characters.'),
+  dob:                   z.string().min(1, 'Date of birth is required.'),
   gender:                z.string().optional(),
   phone:                 z.string().optional(),
   address:               z.string().optional(),
@@ -31,7 +31,9 @@ const patientSchema = z.object({
   medicalConditions:     z.string().optional(),
   medications:           z.string().optional(),
   primaryProvider:       z.string().optional(),
+  username:              z.string().optional(),
 });
+
 
 router.post('/patient', async (req: Request, res: Response) => {
   try {
@@ -378,16 +380,18 @@ router.post('/nurse', async (req: Request, res: Response) => {
 // POST /api/register/doctor
 // ─────────────────────────────────────────────────────────────────────────────
 const doctorSchema = z.object({
-  firstName:        z.string().min(1),
-  lastName:         z.string().min(1),
-  email:            z.string().email(),
-  password:         z.string().min(8),
+  firstName:        z.string().min(1, 'First name is required.'),
+  lastName:         z.string().min(1, 'Last name is required.'),
+  email:            z.string().email('Please enter a valid email address.'),
+  password:         z.string().min(8, 'Password must be at least 8 characters.'),
   phone:            z.string().optional(),
   licenseNumber:    z.string().optional(),
   specialization:   z.string().optional(),
   department:       z.string().optional(),
   yearsOfExperience:z.number().int().min(0).optional(),
+  username:         z.string().optional(),
 });
+
 
 router.post('/doctor', async (req: Request, res: Response) => {
   try {
@@ -462,15 +466,17 @@ router.post('/doctor', async (req: Request, res: Response) => {
 // POST /api/register/admin
 // ─────────────────────────────────────────────────────────────────────────────
 const adminSchema = z.object({
-  firstName:    z.string().min(1),
-  lastName:     z.string().min(1),
-  email:        z.string().email(),
-  password:     z.string().min(6),
+  firstName:    z.string().min(1, 'First name is required.'),
+  lastName:     z.string().min(1, 'Last name is required.'),
+  email:        z.string().email('Please enter a valid email address.'),
+  password:     z.string().min(6, 'Password must be at least 6 characters.'),
   phone:        z.string().optional(),
   hospitalName: z.string().optional(),
   department:   z.string().optional(),
   employeeId:   z.string().optional(),
+  username:     z.string().optional(),
 });
+
 
 router.post('/admin', async (req: Request, res: Response) => {
   try {

@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mail, User, Stethoscope, ArrowRight, ShieldCheck, CheckCircle2, Sparkles, Calendar, Droplets, Building2 } from 'lucide-react';
+import { X, Mail, User, Stethoscope, ArrowRight, ShieldCheck, CheckCircle2, Sparkles, Calendar, Droplets, Building2, AlertCircle } from 'lucide-react';
 import { Button } from './Button';
 import { LoginForm } from './LoginForm';
 import { Input } from './Input';
 import { PasswordInput } from './PasswordInput';
 import { SocialLogin } from './SocialLogin';
 import { GoogleAuthModal } from './GoogleAuthModal';
+import { isDuplicateRegistration } from '../utils/registrationValidation';
+
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -53,7 +55,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [registeredSuccess, setRegisteredSuccess] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
+
 
   const isMedicalRole = role === 'doctor' || role === 'nurse' || role === 'admin';
 
@@ -85,6 +89,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setRegisterError(null);
+
     if (
       !firstName ||
       !lastName ||
@@ -96,13 +102,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       !confirmPassword ||
       password !== confirmPassword
     ) {
+      if (password && confirmPassword && password !== confirmPassword) {
+        setRegisterError('Passwords do not match.');
+      } else {
+        setRegisterError('Please fill in all required fields.');
+      }
+      return;
+    }
+
+    const username = email.trim().split('@')[0];
+
+    // 1. Immediate duplicate check: catches existing accounts in demo/offline mode
+    const dupCheck = isDuplicateRegistration({
+      email: email.trim(),
+      username,
+      role,
+    });
+    if (dupCheck.isDuplicate) {
+      setRegisterError(dupCheck.error || 'An account with this email already exists.');
       return;
     }
 
     setIsLoading(true);
 
     const genderFormatted = gender === 'male' ? 'Male' : gender === 'female' ? 'Female' : 'Other';
-    const username = email.trim().split('@')[0];
 
     // Try backend registration
     let backendUserId: number | string | null = null;
@@ -114,6 +137,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       let bodyData: any = {
         firstName,
         lastName,
+        username,
         email: email.trim(),
         password,
       };
@@ -151,13 +175,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         body: JSON.stringify(bodyData),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
         if (data.userId) backendUserId = data.userId;
+      } else {
+        setRegisterError(data.error || 'An account with this email already exists.');
+        setIsLoading(false);
+        return;
       }
     } catch (err) {
+      // Offline fallback: Check duplicate registration before local persistence
+      const offlineDupCheck = isDuplicateRegistration({
+        email: email.trim(),
+        username,
+        role,
+      });
+      if (offlineDupCheck.isDuplicate) {
+        setRegisterError(offlineDupCheck.error || 'An account with this email already exists.');
+        setIsLoading(false);
+        return;
+      }
       console.warn('Backend registration failed, using local storage fallback:', err);
     }
+
 
     // Persist registered user to local database storage
     const newUserRecord = {
@@ -285,9 +326,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input type="text" name="fake_username_prevent_autofill" tabIndex={-1} autoComplete="username" />
                 <input type="password" name="fake_password_prevent_autofill" tabIndex={-1} autoComplete="current-password" />
               </div>
+
+              {/* Error Notice */}
+              {registerError && (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/50 text-rose-200 text-xs flex items-center gap-2.5 animate-fade-in"
+                >
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span className="font-medium text-white/95">{registerError}</span>
+                </div>
+              )}
+
               {/* Role Picker */}
               <div>
                 <label className="block text-[11px] font-semibold text-gray-300 uppercase tracking-wider mb-2">
+
                   Select System Role *
                 </label>
                 <div className="grid grid-cols-4 gap-2 text-center text-xs">

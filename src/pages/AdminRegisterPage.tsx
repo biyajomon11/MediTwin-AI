@@ -27,6 +27,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Button } from '../components/Button';
+import { isDuplicateRegistration } from '../utils/registrationValidation';
 
 export interface AdminFormData {
   fullName: string;
@@ -119,6 +120,8 @@ export const AdminRegisterPage: React.FC = () => {
   // Submission State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittedSuccess, setIsSubmittedSuccess] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+
 
   // Field change handler
   const handleChange = (
@@ -357,6 +360,21 @@ export const AdminRegisterPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setApiError(null);
+
+    // 1. Immediate duplicate check: validates email, username & employee ID
+    const dupCheck = isDuplicateRegistration({
+      email: form.officialEmail,
+      username: form.username,
+      employeeId: form.employeeId,
+      role: 'admin',
+    });
+    if (dupCheck.isDuplicate) {
+      setApiError(dupCheck.error || 'An account with this email already exists.');
+      setIsSubmitting(false);
+      return;
+    }
+
     if (!isFormValid) {
       const allTouched: Record<string, boolean> = {};
       Object.keys(form).forEach((k) => (allTouched[k] = true));
@@ -368,6 +386,45 @@ export const AdminRegisterPage: React.FC = () => {
 
     const firstName = form.fullName.split(' ')[0] || form.fullName;
     const lastName = form.fullName.split(' ').slice(1).join(' ') || '';
+
+    // Try backend registration if available
+    try {
+      const res = await fetch('/api/register/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName,
+          lastName,
+          username: form.username.trim(),
+          email: form.officialEmail.trim(),
+          password: form.password,
+          phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
+          hospitalName: form.hospitalName || undefined,
+          department: form.department || undefined,
+          employeeId: form.employeeId || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setApiError(data.error || 'Registration failed. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+    } catch {
+      // Backend may be offline; validate duplicate check offline
+      const offlineDupCheck = isDuplicateRegistration({
+        email: form.officialEmail,
+        username: form.username,
+        employeeId: form.employeeId,
+        role: 'admin',
+      });
+      if (offlineDupCheck.isDuplicate) {
+        setApiError(offlineDupCheck.error || 'An account with this email already exists.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
     // Save administrator record in localStorage
     const newAdminRecord = {
@@ -390,38 +447,17 @@ export const AdminRegisterPage: React.FC = () => {
 
     try {
       const stored = JSON.parse(localStorage.getItem('meditwin_registered_users') || '[]');
-      // Update or prepend record
       const filtered = stored.filter((u: any) => u.email !== form.officialEmail.trim() && u.username !== form.username.trim());
       localStorage.setItem('meditwin_registered_users', JSON.stringify([newAdminRecord, ...filtered]));
     } catch (err) {
       console.error('Error saving administrator registration:', err);
     }
 
-    // Try backend registration if available
-    try {
-      await fetch('/api/register/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName,
-          lastName,
-          email: form.officialEmail.trim(),
-          password: form.password,
-          phone: form.phone ? `${form.countryCode} ${form.phone}` : undefined,
-          hospitalName: form.hospitalName || undefined,
-          department: form.department || undefined,
-          employeeId: form.employeeId || undefined,
-        }),
-      });
-    } catch {
-      // Backend may be offline in demo mode; localStorage already updated
-    }
-
     setTimeout(() => {
       setIsSubmitting(false);
       setIsSubmittedSuccess(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 1200);
+    }, 500);
   };
 
   return (
@@ -561,12 +597,29 @@ export const AdminRegisterPage: React.FC = () => {
               </div>
             </div>
 
+            {/* TOP ERROR & DUPLICATE ALERT BANNER */}
+            {apiError && (
+              <div
+                role="alert"
+                aria-live="assertive"
+                id="admin-registration-error-alert-top"
+                className="max-w-2xl mx-auto p-4 rounded-2xl bg-rose-500/20 border-2 border-rose-500/60 text-rose-200 text-sm flex items-start gap-3 shadow-xl shadow-rose-950/50 animate-fade-in"
+              >
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 text-left">
+                  <span className="font-bold text-rose-300 block text-xs tracking-wider uppercase">Registration Notice:</span>
+                  <p className="text-white font-semibold text-sm">{apiError}</p>
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-8" noValidate autoComplete="off">
               {/* Decoy fields to trap browser credential autofill */}
               <div style={{ position: 'absolute', opacity: 0, height: 0, width: 0, overflow: 'hidden', zIndex: -1 }} aria-hidden="true">
                 <input type="text" name="fake_username_prevent_autofill" tabIndex={-1} autoComplete="username" />
                 <input type="password" name="fake_password_prevent_autofill" tabIndex={-1} autoComplete="current-password" />
               </div>
+
               
               {/* ================================================== */}
               {/* SECTION 1 — PERSONAL INFORMATION                   */}
@@ -1459,10 +1512,27 @@ export const AdminRegisterPage: React.FC = () => {
                 </div>
               </div>
 
+              {/* API Error Banner */}
+              {apiError && (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  id="admin-registration-error-alert"
+                  className="flex items-start gap-3 p-4 rounded-xl bg-rose-500/20 border-2 border-rose-500/60 text-rose-200 text-sm shadow-lg shadow-rose-950/40"
+                >
+                  <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-rose-400" />
+                  <div className="space-y-0.5 text-left">
+                    <span className="font-bold text-rose-300 block text-xs tracking-wider uppercase">Registration Notice:</span>
+                    <span className="text-white font-semibold">{apiError}</span>
+                  </div>
+                </div>
+              )}
+
               {/* ================================================== */}
               {/* SECTION 6 — ACTION BUTTONS                         */}
               {/* ================================================== */}
               <div className="flex flex-col sm:flex-row items-center justify-end gap-4 pt-4">
+
                 <Button
                   type="button"
                   variant="glass"

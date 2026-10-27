@@ -1,9 +1,10 @@
 import React from 'react';
-import { DoctorRegisterPage } from './DoctorRegisterPage';
+import { PatientRegisterPage } from './PatientRegisterPage';
 
 export const RegisterPage: React.FC = () => {
-  return <DoctorRegisterPage />;
+  return <PatientRegisterPage />;
 };
 
 export default RegisterPage;
+
 
